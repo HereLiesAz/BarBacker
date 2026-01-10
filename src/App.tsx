@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
@@ -20,7 +19,6 @@ import {
   doc,
   serverTimestamp,
   setDoc,
-  getDoc,
   deleteDoc
 } from 'firebase/firestore';
 import { 
@@ -45,200 +43,14 @@ import '@material/web/chips/chip-set.js';
 import '@material/web/chips/filter-chip.js';
 import '@material/web/radio/radio.js';
 import '@material/web/dialog/dialog.js';
+import '@material/web/iconbutton/icon-button.js';
 
-import { LogOut, PowerOff } from 'lucide-react';
+import { PowerOff } from 'lucide-react';
 
-// --- Types ---
-interface Bar {
-  id: string;
-  name: string;
-  buttons: ButtonConfig[];
-  address?: string;
-  osmId?: string;
-  status: 'verified' | 'temporary';
-}
-
-interface ButtonConfig {
-  id: string;
-  label: string;
-  icon?: string;
-  isCustom?: boolean;
-  children?: ButtonConfig[];
-}
-
-interface Request {
-  id: string;
-  label: string;
-  requesterId: string;
-  requesterName?: string;
-  requesterRole?: string;
-  status: 'pending' | 'claimed';
-  timestamp: any;
-  barId: string;
-  claimerName?: string;
-}
-
-const ROLES = ['Bartender', 'Barback', 'Server', 'Manager', 'Security', 'Runner'];
-
-const DEFAULT_BUTTONS: ButtonConfig[] = [
-  { id: 'ice', label: 'ICE', icon: 'ac_unit' },
-  { 
-    id: 'glass', label: 'GLASSWARE', icon: 'wine_bar',
-    children: [
-      { id: 'rocks', label: 'ROCKS' },
-      { id: 'collins', label: 'COLLINS' },
-      { id: 'pint', label: 'PINT' },
-      { id: 'coupe', label: 'COUPE' },
-      { id: 'shot', label: 'SHOT GLASS' },
-      { id: 'wine', label: 'WINE GLASS' }
-    ]
-  },
-  { 
-    id: 'fruit', label: 'FRUIT / GARNISH', icon: 'restaurant',
-    children: [
-      { id: 'lime', label: 'LIMES' },
-      { id: 'lemon', label: 'LEMONS' },
-      { id: 'orange', label: 'ORANGES' },
-      { id: 'cherry', label: 'CHERRIES' },
-      { id: 'olive', label: 'OLIVES' },
-      { id: 'mint', label: 'MINT' }
-    ] 
-  },
-  { 
-    id: 'restock', label: 'RESTOCK WELL', icon: 'liquor',
-    children: [
-      { id: 'vodka', label: 'VODKA' },
-      { id: 'gin', label: 'GIN' },
-      { id: 'tequila', label: 'TEQUILA' },
-      { id: 'rum', label: 'RUM' },
-      { id: 'whiskey', label: 'WHISKEY' },
-      { id: 'cordial', label: 'MIXERS' },
-      { id: 'beer', label: 'BEER' }
-    ]
-  },
-  { id: 'keg', label: 'KEG KICKED', icon: 'keg' },
-  { id: 'trash', label: 'TRASH / SPILL', icon: 'delete' },
-  { id: 'security', label: 'SECURITY', icon: 'security' },
-  { id: 'manager', label: 'MANAGER', icon: 'manage_accounts' },
-];
-
-// --- Helper: OSM Search ---
-interface OSMResult {
-  place_id: number; osm_id: number; display_name: string; name: string;
-}
-const searchOSM = async (query: string): Promise<OSMResult[]> => {
-  if (!query || query.length < 3) return [];
-  try {
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`, { headers: { 'User-Agent': 'BarBackerPWA/1.0' } });
-    return await response.json();
-  } catch (e) { return []; }
-};
-
-// --- Component: Bar Search ---
-const BarSearch = ({ onJoin }: { onJoin: (bar: Partial<Bar>) => void }) => {
-  const [mode, setMode] = useState<'search' | 'create'>('search');
-  const [queryText, setQueryText] = useState('');
-  const [results, setResults] = useState<OSMResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [tempName, setTempName] = useState('');
-
-  useEffect(() => {
-    if (mode !== 'search') return;
-    const t = setTimeout(async () => {
-      if (queryText.length >= 3) {
-        setSearching(true);
-        setResults(await searchOSM(queryText));
-        setSearching(false);
-      } else setResults([]);
-    }, 500);
-    return () => clearTimeout(t);
-  }, [queryText, mode]);
-
-  const handleSelect = (item: OSMResult) => {
-    onJoin({
-      id: `osm_${item.place_id}`,
-      name: item.name || item.display_name.split(',')[0],
-      address: item.display_name,
-      osmId: item.osm_id.toString(),
-      status: 'verified'
-    });
-  };
-
-  return (
-    <div className="w-full max-w-sm space-y-6">
-      <md-chip-set>
-        <md-filter-chip label="Search" selected={mode === 'search'} onClick={() => setMode('search')} />
-        <md-filter-chip label="Create Temp" selected={mode === 'create'} onClick={() => setMode('create')} />
-      </md-chip-set>
-      {mode === 'search' ? (
-        <div className="space-y-4">
-          <md-filled-text-field label="Search OpenStreetMap" value={queryText} onInput={(e: any) => setQueryText(e.target.value)} type="search">
-            <md-icon slot="leading-icon">search</md-icon>
-          </md-filled-text-field>
-          {searching && <md-circular-progress indeterminate />}
-          {results.length > 0 && (
-            <md-list className="bg-[#1E1E1E] rounded-xl overflow-hidden">
-              {results.map((item) => (
-                <md-list-item key={item.place_id} type="button" onClick={() => handleSelect(item)}>
-                  <div slot="headline">{item.name || item.display_name.split(',')[0]}</div>
-                  <div slot="supporting-text">{item.display_name}</div>
-                  <md-icon slot="end">arrow_forward</md-icon>
-                </md-list-item>
-              ))}
-            </md-list>
-          )}
-        </div>
-      ) : (
-        <form onSubmit={(e) => { e.preventDefault(); if(tempName) onJoin({ id: `temp_${Date.now()}`, name: tempName, status: 'temporary' }); }} className="space-y-4">
-          <md-filled-text-field label="Bar Name" value={tempName} onInput={(e: any) => setTempName(e.target.value)} required />
-          <md-filled-button type="submit">Create Bar</md-filled-button>
-        </form>
-      )}
-    </div>
-  );
-};
-
-// --- Component: Identity Selector ---
-const RoleSelector = ({ onSelect }: { onSelect: (role: string, name: string) => void }) => {
-  const [selectedRole, setSelectedRole] = useState('');
-  const [displayName, setDisplayName] = useState('');
-
-  return (
-    <div className="w-full max-w-sm space-y-6 animate-in fade-in slide-in-from-bottom-4">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-white">Identification</h2>
-        <p className="text-gray-500">Name and Rank, soldier.</p>
-      </div>
-      
-      <md-filled-text-field
-        label="Display Name (e.g. 'Angry Steve')"
-        value={displayName}
-        onInput={(e: any) => setDisplayName(e.target.value)}
-        required
-      />
-
-      <div className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800 max-h-60 overflow-y-auto">
-        {ROLES.map((role) => (
-          <div 
-            key={role}
-            onClick={() => setSelectedRole(role)}
-            className={`p-4 flex items-center justify-between cursor-pointer border-b border-gray-800 last:border-0 hover:bg-white/5 ${selectedRole === role ? 'bg-white/10' : ''}`}
-          >
-            <div className="flex items-center gap-3">
-              <md-icon>{role === 'Bartender' ? 'local_bar' : 'person'}</md-icon>
-              <span className="font-medium text-lg">{role}</span>
-            </div>
-            <md-radio checked={selectedRole === role} touch-target="wrapper"></md-radio>
-          </div>
-        ))}
-      </div>
-
-      <md-filled-button disabled={!selectedRole || !displayName} onClick={() => onSelect(selectedRole, displayName)}>
-        Clock In
-      </md-filled-button>
-    </div>
-  );
-};
+import { Bar, ButtonConfig, Request } from './types';
+import { DEFAULT_BUTTONS } from './constants';
+import BarSearch from './components/BarSearch';
+import RoleSelector from './components/RoleSelector';
 
 // --- MAIN APP COMPONENT ---
 function App() {

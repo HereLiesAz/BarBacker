@@ -5,18 +5,23 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Helper to handle undefined env vars
+const getEnv = (key, fallback) => process.env[key] || fallback;
+
 const swContent = `
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
-firebase.initializeApp({
-  apiKey: "${process.env.VITE_FIREBASE_API_KEY}",
-  authDomain: "${process.env.VITE_FIREBASE_AUTH_DOMAIN}",
-  projectId: "${process.env.VITE_FIREBASE_PROJECT_ID}",
-  storageBucket: "${process.env.VITE_FIREBASE_STORAGE_BUCKET}",
-  messagingSenderId: "${process.env.VITE_FIREBASE_MESSAGING_SENDER_ID}",
-  appId: "${process.env.VITE_FIREBASE_APP_ID}"
-});
+const firebaseConfig = {
+  apiKey: "${getEnv('VITE_FIREBASE_API_KEY', 'YOUR_API_KEY')}",
+  authDomain: "${getEnv('VITE_FIREBASE_AUTH_DOMAIN', 'YOUR_AUTH_DOMAIN')}",
+  projectId: "${getEnv('VITE_FIREBASE_PROJECT_ID', 'YOUR_PROJECT_ID')}",
+  storageBucket: "${getEnv('VITE_FIREBASE_STORAGE_BUCKET', 'YOUR_STORAGE_BUCKET')}",
+  messagingSenderId: "${getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID', 'YOUR_MESSAGING_SENDER_ID')}",
+  appId: "${getEnv('VITE_FIREBASE_APP_ID', 'YOUR_APP_ID')}"
+};
+
+firebase.initializeApp(firebaseConfig);
 
 const messaging = firebase.messaging();
 

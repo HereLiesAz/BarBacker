@@ -1,9 +1,12 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  OAuthProvider 
+} from "firebase/auth";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
-// REPLACE THESE WITH YOUR REAL FIREBASE CONFIGURATION
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -18,13 +21,16 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const messaging = getMessaging(app);
 
+// Auth Providers
+export const googleProvider = new GoogleAuthProvider();
+export const appleProvider = new OAuthProvider('apple.com');
+
 export const requestNotificationPermission = async () => {
   try {
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-      // REPLACE WITH YOUR KEY FROM FIREBASE CONSOLE -> PROJECT SETTINGS -> CLOUD MESSAGING -> WEB PUSH CERTIFICATES
       const token = await getToken(messaging, { 
-        vapidKey: "YOUR_VAPID_PUBLIC_KEY" 
+        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY 
       });
       return token;
     }

@@ -147,3 +147,6 @@ dist
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated service worker
+public/firebase-messaging-sw.js

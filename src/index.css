@@ -42,8 +42,16 @@ body {
   color: var(--md-sys-color-on-surface);
 }
 
-/* Custom Element Overrides for Full Width */
-md-filled-text-field, md-outlined-text-field {
+/* Custom Element Overrides for Full Width and High Contrast */
+md-filled-text-field {
+  width: 100%;
+  --md-filled-text-field-container-color: #2D2D2D;
+  --md-filled-text-field-input-text-color: #FFFFFF;
+  --md-filled-text-field-label-text-color: #AAAAAA;
+  --md-filled-text-field-focus-label-text-color: #FFFFFF;
+}
+
+md-outlined-text-field {
   width: 100%;
 }
 

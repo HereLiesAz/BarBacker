@@ -241,7 +241,19 @@ function App() {
           <p className="text-gray-500 text-sm">You are {user.email}</p>
         </div>
         <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
-        <BarSearch onJoin={(b) => { if(b.id) setBarId(b.id); }} />
+        <BarSearch onJoin={async (b) => {
+          if(b.id) {
+            if (b.status === 'temporary') {
+               await setDoc(doc(db, 'bars', b.id), {
+                 name: b.name,
+                 address: b.address || '',
+                 status: 'temporary',
+                 buttons: []
+               }, { merge: true });
+            }
+            setBarId(b.id);
+          }
+        }} />
       </div>
     );
   }

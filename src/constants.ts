@@ -1,6 +1,6 @@
 import { ButtonConfig } from './types';
 
-export const ROLES = ['Bartender', 'Barback', 'Server', 'Manager', 'Security', 'Runner'];
+export const ROLES = ['Bartender', 'Barback', 'Server', 'Manager', 'Security', 'Runner', 'Busser', 'Host'];
 
 export const DEFAULT_BUTTONS: ButtonConfig[] = [
   { id: 'ice', label: 'ICE', icon: 'ac_unit' },

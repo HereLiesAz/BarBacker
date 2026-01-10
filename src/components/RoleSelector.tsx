@@ -2,7 +2,6 @@ import { useState } from 'react';
 import '@material/web/button/filled-button.js';
 import '@material/web/textfield/filled-text-field.js';
 import '@material/web/icon/icon.js';
-import '@material/web/radio/radio.js';
 import { ROLES } from '../constants';
 
 interface RoleSelectorProps {
@@ -28,19 +27,22 @@ const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
       />
 
       <div className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800 max-h-60 overflow-y-auto">
-        {ROLES.map((role) => (
-          <div
-            key={role}
-            onClick={() => setSelectedRole(role)}
-            className={`p-4 flex items-center justify-between cursor-pointer border-b border-gray-800 last:border-0 hover:bg-white/5 ${selectedRole === role ? 'bg-white/10' : ''}`}
-          >
-            <div className="flex items-center gap-3">
-              <md-icon>{role === 'Bartender' ? 'local_bar' : 'person'}</md-icon>
-              <span className="font-medium text-lg">{role}</span>
+        {ROLES.map((role) => {
+          const isSelected = selectedRole === role;
+          return (
+            <div
+              key={role}
+              onClick={() => setSelectedRole(role)}
+              className={`p-4 flex items-center justify-between cursor-pointer border-b border-gray-800 last:border-0 hover:bg-white/5 transition-colors ${isSelected ? 'bg-white/10 border-l-4 border-l-white' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <md-icon>{role === 'Bartender' ? 'local_bar' : 'person'}</md-icon>
+                <span className={`font-medium text-lg ${isSelected ? 'text-white' : 'text-gray-400'}`}>{role}</span>
+              </div>
+              {isSelected && <md-icon className="text-white">check_circle</md-icon>}
             </div>
-            <md-radio checked={selectedRole === role} touch-target="wrapper"></md-radio>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <md-filled-button disabled={!selectedRole || !displayName} onClick={() => onSelect(selectedRole, displayName)}>

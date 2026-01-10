@@ -1,0 +1,26 @@
+name: The Nag Bot
+
+on:
+  schedule:
+    # Runs every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allows you to manually trigger it for testing
+
+jobs:
+  harass_users:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install Dependencies
+        run: npm install firebase-admin
+        
+      - name: Run Nag Script
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scripts/nag-bot.js

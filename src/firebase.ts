@@ -3,12 +3,12 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
-// REPLACE THESE WITH YOUR FIREBASE CONFIG
+// REPLACE THESE WITH YOUR REAL FIREBASE CONFIGURATION
 const firebaseConfig = {
   apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
   projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
   messagingSenderId: "YOUR_SENDER_ID",
   appId: "YOUR_APP_ID"
 };
@@ -22,7 +22,7 @@ export const requestNotificationPermission = async () => {
   try {
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-      // REPLACE WITH YOUR VAPID KEY FROM FIREBASE CONSOLE
+      // REPLACE WITH YOUR KEY FROM FIREBASE CONSOLE -> PROJECT SETTINGS -> CLOUD MESSAGING -> WEB PUSH CERTIFICATES
       const token = await getToken(messaging, { 
         vapidKey: "YOUR_VAPID_PUBLIC_KEY" 
       });

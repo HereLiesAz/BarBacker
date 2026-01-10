@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   signInAnonymously, 
   onAuthStateChanged,
@@ -18,7 +19,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { auth, db, requestNotificationPermission, onMessageListener } from './firebase';
-import { Bell, CheckCircle, Plus, LogOut, AlertTriangle } from 'lucide-react';
+import { CheckCircle, Plus, LogOut, AlertTriangle } from 'lucide-react';
 
 // --- Types ---
 interface Bar {
@@ -54,7 +55,12 @@ const DEFAULT_BUTTONS = [
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [barId, setBarId] = useState<string | null>(localStorage.getItem('barId'));
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Initialize barId from URL or LocalStorage
+  const initialBarId = searchParams.get('bar') || localStorage.getItem('barId');
+  const [barId, setBarId] = useState<string | null>(initialBarId);
+  
   const [barName, setBarName] = useState('');
   const [requests, setRequests] = useState<Request[]>([]);
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
@@ -65,7 +71,6 @@ function App() {
     signInAnonymously(auth);
     onAuthStateChanged(auth, (u) => setUser(u));
     
-    // Request permission immediately on load (brute force)
     requestNotificationPermission().then(token => {
       if (token) {
         setFcmToken(token);
@@ -73,11 +78,8 @@ function App() {
       }
     });
 
-    // Listen for foreground messages
     onMessageListener().then((payload: any) => {
-      // If app is open, VIBRATE HARD
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-      // Play a sound if you add an audio element
       new Audio('/alert.mp3').play().catch(() => {});
       console.log("Foreground alert:", payload);
     });
@@ -87,7 +89,10 @@ function App() {
   useEffect(() => {
     if (!user || !barId) return;
 
-    // Save token to bar's user list for cloud functions to find
+    // Sync URL with current Bar ID
+    setSearchParams({ bar: barId });
+    localStorage.setItem('barId', barId);
+
     const registerToken = async () => {
       if (fcmToken) {
         await setDoc(doc(db, `bars/${barId}/tokens`, user.uid), {
@@ -98,7 +103,6 @@ function App() {
     };
     registerToken();
 
-    // Listen to Bar Config (Custom Buttons)
     const unsubBar = onSnapshot(doc(db, 'bars', barId), (doc) => {
       if (doc.exists()) {
         const data = doc.data() as Bar;
@@ -107,11 +111,10 @@ function App() {
       }
     });
 
-    // Listen to Requests (The Pulse)
     const q = query(
       collection(db, 'requests'),
       where('barId', '==', barId),
-      orderBy('timestamp', 'desc') // Get newest first
+      orderBy('timestamp', 'desc')
     );
 
     const unsubReq = onSnapshot(q, (snapshot) => {
@@ -120,23 +123,24 @@ function App() {
     });
 
     return () => { unsubBar(); unsubReq(); };
-  }, [user, barId, fcmToken]);
+  }, [user, barId, fcmToken, setSearchParams]);
 
   // --- Actions ---
 
   const joinBar = async (name: string) => {
-    // Simplified: Using name as ID for chaos. In production, use real IDs.
     const id = name.toLowerCase().replace(/\s/g, '-');
-    
-    // Create bar if not exists
     const barRef = doc(db, 'bars', id);
     const snap = await getDoc(barRef);
     if (!snap.exists()) {
       await setDoc(barRef, { name, buttons: [] });
     }
-    
-    localStorage.setItem('barId', id);
     setBarId(id);
+  };
+
+  const leaveBar = () => {
+    localStorage.removeItem('barId');
+    setSearchParams({});
+    setBarId(null);
   };
 
   const sendRequest = async (btn: ButtonConfig) => {
@@ -149,7 +153,6 @@ function App() {
       timestamp: serverTimestamp(),
       lastNotification: serverTimestamp()
     });
-    // Trigger vibration to confirm press
     if (navigator.vibrate) navigator.vibrate(50);
   };
 
@@ -164,9 +167,7 @@ function App() {
     const label = prompt("New button label?");
     if (!label || !barId) return;
     const newBtn = { id: Date.now().toString(), label, isCustom: true };
-    
     const barRef = doc(db, 'bars', barId);
-    // Note: In real app, use arrayUnion
     const currentCustom = buttons.filter(b => b.isCustom);
     await updateDoc(barRef, {
       buttons: [...currentCustom, newBtn]
@@ -181,7 +182,7 @@ function App() {
     return (
       <div className="flex flex-col h-screen items-center justify-center p-6 space-y-4">
         <h1 className="text-2xl font-bold uppercase tracking-widest">The Well</h1>
-        <p className="text-gray-400 text-sm text-center">Enter your Bar ID to join the collective suffering.</p>
+        <p className="text-gray-400 text-sm text-center">Enter Bar ID to join the collective suffering.</p>
         <form 
           onSubmit={(e) => {
             e.preventDefault();
@@ -203,7 +204,6 @@ function App() {
   }
 
   const activeRequests = requests.filter(r => r.status === 'pending');
-  // Sort logs: claimed requests at top of log section, but below active
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 
   return (
@@ -211,12 +211,12 @@ function App() {
       {/* Header */}
       <div className="flex justify-between items-center p-4 border-b border-gray-800">
         <h2 className="font-bold uppercase">{barName}</h2>
-        <button onClick={() => { localStorage.removeItem('barId'); setBarId(null); }}>
+        <button onClick={leaveBar}>
           <LogOut size={20} />
         </button>
       </div>
 
-      {/* iOS Warning (Only show if standalone is false - tricky to detect perfectly, simplified here) */}
+      {/* iOS Warning */}
       <div className="bg-blue-900/30 p-2 text-xs text-center text-blue-200">
         iOS Users: Share → Add to Home Screen for Notifications
       </div>
@@ -224,7 +224,6 @@ function App() {
       {/* Grid */}
       <div className="grid grid-cols-2 gap-4 p-4">
         {buttons.map(btn => {
-          // Is this button currently active?
           const isPending = activeRequests.some(r => r.label === btn.label);
           return (
             <button

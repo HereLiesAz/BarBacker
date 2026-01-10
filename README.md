@@ -30,10 +30,3 @@ This project is built with:
 *   **Vite**
 *   **Firebase** (Firestore, Auth, Messaging)
 *   **Material Web Components**
-
-### Running Locally
-
-1.  Clone the repository.
-2.  Install dependencies: `npm install`
-3.  Set up your `.env` file with Firebase credentials.
-4.  Run: `npm run dev`

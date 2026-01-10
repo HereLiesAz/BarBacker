@@ -8,7 +8,8 @@
     "generate-sw": "node scripts/generate-sw.js",
     "build": "npm run generate-sw && tsc && vite build",
     "preview": "vite preview",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "test": "vitest"
   },
   "dependencies": {
     "@material/web": "^1.0.0",

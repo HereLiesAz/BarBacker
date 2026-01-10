@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
-  signInAnonymously, 
   onAuthStateChanged,
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
   User 
 } from 'firebase/auth';
 import { 
@@ -18,8 +21,14 @@ import {
   setDoc,
   getDoc
 } from 'firebase/firestore';
-import { auth, db, requestNotificationPermission, onMessageListener } from './firebase';
-import { CheckCircle, Plus, LogOut, AlertTriangle } from 'lucide-react';
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  requestNotificationPermission, 
+  onMessageListener 
+} from './firebase';
+import { CheckCircle, Plus, LogOut, AlertTriangle, Mail, Smartphone } from 'lucide-react';
 
 // --- Types ---
 interface Bar {
@@ -43,7 +52,6 @@ interface Request {
   barId: string;
 }
 
-// --- Default Buttons ---
 const DEFAULT_BUTTONS = [
   { id: 'ice', label: 'ICE' },
   { id: 'glass', label: 'GLASSWARE' },
@@ -55,9 +63,10 @@ const DEFAULT_BUTTONS = [
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isRegistering, setIsRegistering] = useState(false);
   
-  // Initialize barId from URL or LocalStorage
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialBarId = searchParams.get('bar') || localStorage.getItem('barId');
   const [barId, setBarId] = useState<string | null>(initialBarId);
   
@@ -66,30 +75,29 @@ function App() {
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
 
-  // 1. Auth & Notification Setup
+  // --- Auth Listeners ---
   useEffect(() => {
-    signInAnonymously(auth);
-    onAuthStateChanged(auth, (u) => setUser(u));
-    
-    requestNotificationPermission().then(token => {
-      if (token) {
-        setFcmToken(token);
-        console.log("FCM Token:", token);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        requestNotificationPermission().then(token => {
+          if (token) setFcmToken(token);
+        });
       }
     });
 
     onMessageListener().then((payload: any) => {
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
       new Audio('/alert.mp3').play().catch(() => {});
-      console.log("Foreground alert:", payload);
     });
+
+    return () => unsubscribe();
   }, []);
 
-  // 2. Bar Sync & Token Registration
+  // --- Data Sync ---
   useEffect(() => {
     if (!user || !barId) return;
 
-    // Sync URL with current Bar ID
     setSearchParams({ bar: barId });
     localStorage.setItem('barId', barId);
 
@@ -125,7 +133,32 @@ function App() {
     return () => { unsubBar(); unsubReq(); };
   }, [user, barId, fcmToken, setSearchParams]);
 
-  // --- Actions ---
+  // --- Handlers ---
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const email = fd.get('email') as string;
+    const password = fd.get('password') as string;
+    
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err: any) {
+      setAuthError(err.message);
+    }
+  };
 
   const joinBar = async (name: string) => {
     const id = name.toLowerCase().replace(/\s/g, '-');
@@ -135,12 +168,6 @@ function App() {
       await setDoc(barRef, { name, buttons: [] });
     }
     setBarId(id);
-  };
-
-  const leaveBar = () => {
-    localStorage.removeItem('barId');
-    setSearchParams({});
-    setBarId(null);
   };
 
   const sendRequest = async (btn: ButtonConfig) => {
@@ -174,15 +201,79 @@ function App() {
     });
   };
 
-  // --- Views ---
+  // --- LOGIN VIEW (The Gatekeeper) ---
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 space-y-8">
+        <h1 className="text-3xl font-bold uppercase tracking-[0.5em] text-center border-b border-gray-800 pb-4">
+          The Well
+        </h1>
+        
+        {authError && (
+          <div className="bg-red-900/30 border border-red-500 p-4 rounded text-sm text-red-200 max-w-sm text-center">
+            {authError}
+          </div>
+        )}
 
-  if (!user) return <div className="p-10 text-center">Connecting to the void...</div>;
+        <div className="w-full max-w-sm space-y-4">
+          {/* Email Form */}
+          <form onSubmit={handleEmailLogin} className="flex flex-col gap-3">
+            <input 
+              name="email" 
+              type="email" 
+              placeholder="Email" 
+              className="bg-gray-900 border border-gray-700 p-3 rounded text-white placeholder-gray-500"
+              required 
+            />
+            <input 
+              name="password" 
+              type="password" 
+              placeholder="Password" 
+              className="bg-gray-900 border border-gray-700 p-3 rounded text-white placeholder-gray-500"
+              required 
+            />
+            <button className="bg-white text-black font-bold p-3 rounded uppercase hover:bg-gray-200 transition-colors">
+              {isRegistering ? 'Create Account' : 'Sign In'}
+            </button>
+          </form>
 
+          <div className="text-center text-xs text-gray-500 cursor-pointer hover:text-white" onClick={() => setIsRegistering(!isRegistering)}>
+            {isRegistering ? 'Back to Login' : 'Need an account? Register'}
+          </div>
+
+          <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-gray-800"></div>
+            <span className="flex-shrink mx-4 text-gray-600 text-xs">OR</span>
+            <div className="flex-grow border-t border-gray-800"></div>
+          </div>
+
+          {/* Social Providers */}
+          <button 
+            onClick={handleGoogleLogin}
+            className="w-full flex items-center justify-center gap-2 bg-gray-900 border border-gray-700 p-3 rounded hover:bg-gray-800"
+          >
+            <Mail size={16} /> <span>Sign in with Google</span>
+          </button>
+          
+          {/* Placeholders for Apple/Phone - requires config */}
+          <button disabled className="w-full flex items-center justify-center gap-2 bg-gray-900 border border-gray-800 p-3 rounded text-gray-600 cursor-not-allowed">
+            <Smartphone size={16} /> <span>Phone / Apple (Config Required)</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- BAR SELECTION VIEW ---
   if (!barId) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center p-6 space-y-4">
-        <h1 className="text-2xl font-bold uppercase tracking-widest">The Well</h1>
-        <p className="text-gray-400 text-sm text-center">Enter Bar ID to join the collective suffering.</p>
+      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 space-y-4">
+        <h2 className="text-xl font-bold uppercase tracking-widest text-gray-500">Select Identity</h2>
+        <div className="text-sm text-gray-400">Logged in as: {user.email || 'Unknown'}</div>
+        <button onClick={() => signOut(auth)} className="text-xs text-red-500 border-b border-red-900 pb-1 mb-8">
+          Sign Out
+        </button>
+
         <form 
           onSubmit={(e) => {
             e.preventDefault();
@@ -197,12 +288,13 @@ function App() {
             className="bg-gray-800 border border-gray-700 p-4 rounded text-white text-center uppercase"
             autoFocus
           />
-          <button className="bg-white text-black p-4 rounded font-bold uppercase">Enter</button>
+          <button className="bg-white text-black p-4 rounded font-bold uppercase">Enter Bar</button>
         </form>
       </div>
     );
   }
 
+  // --- MAIN APP VIEW ---
   const activeRequests = requests.filter(r => r.status === 'pending');
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 
@@ -210,8 +302,11 @@ function App() {
     <div className="min-h-screen bg-black text-white pb-20">
       {/* Header */}
       <div className="flex justify-between items-center p-4 border-b border-gray-800">
-        <h2 className="font-bold uppercase">{barName}</h2>
-        <button onClick={leaveBar}>
+        <div>
+          <h2 className="font-bold uppercase">{barName}</h2>
+          <span className="text-xs text-gray-600">{user.email}</span>
+        </div>
+        <button onClick={() => { localStorage.removeItem('barId'); setBarId(null); }}>
           <LogOut size={20} />
         </button>
       </div>

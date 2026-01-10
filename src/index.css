@@ -3,48 +3,77 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: dark;
-  color: #ffffff;
-  background-color: #0a0a0a;
+  /* Typeface */
+  font-family: 'Roboto', sans-serif;
+  
+  /* Material 3 Dark Theme Tokens - BarBacker Edition */
+  --md-sys-color-surface: #121212;
+  --md-sys-color-on-surface: #E2E2E2;
+  --md-sys-color-surface-container: #1E1E1E;
+  
+  /* Primary Action Color (White for high contrast) */
+  --md-sys-color-primary: #FFFFFF;
+  --md-sys-color-on-primary: #000000;
+  
+  /* Danger / Alert Color (Red) */
+  --md-sys-color-error: #EF4444;
+  --md-sys-color-on-error: #FFFFFF;
+  --md-sys-color-error-container: #93000A;
+
+  /* Secondary / Tonal */
+  --md-sys-color-secondary-container: #333333;
+  --md-sys-color-on-secondary-container: #E2E2E2;
+
+  /* Shape - Expressive but Precise */
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  
+  /* Typography */
+  --md-sys-typescale-body-large-size: 16px;
+  --md-sys-typescale-title-large-size: 22px;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: #000000;
+  color: var(--md-sys-color-on-surface);
 }
 
-button {
-  cursor: pointer;
+/* Custom Element Overrides for Full Width */
+md-filled-text-field, md-outlined-text-field {
+  width: 100%;
 }
 
-/* The Pulsing Red Alert */
-.animate-pulse-fast {
+md-filled-button, md-outlined-button, md-elevated-button {
+  width: 100%;
+}
+
+/* The Pulsing Red Alert for Material Buttons */
+.btn-alert {
+  --md-filled-button-container-color: var(--md-sys-color-error);
+  --md-filled-button-label-text-color: var(--md-sys-color-on-error);
   animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; background-color: #ef4444; }
-  50% { opacity: .5; background-color: #7f1d1d; }
+  0%, 100% { opacity: 1; }
+  50% { opacity: .7; }
 }
 
-.grid-btn {
-  aspect-ratio: 1;
+.grid-btn-content {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid #333;
-  border-radius: 8px;
-  background: #1a1a1a;
-  font-weight: bold;
-  font-size: 1.1rem;
-  transition: all 0.1s;
+  gap: 8px;
+  padding: 16px;
+  height: 100%;
 }
 
-.grid-btn:active {
-  transform: scale(0.95);
+/* Material Icon Sizing */
+md-icon {
+  font-size: 24px;
 }

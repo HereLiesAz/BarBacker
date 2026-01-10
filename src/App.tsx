@@ -44,7 +44,7 @@ import '@material/web/progress/circular-progress.js';
 import '@material/web/chips/chip-set.js';
 import '@material/web/chips/filter-chip.js';
 import '@material/web/radio/radio.js';
-import '@material/web/dialog/dialog.js'; // The Guilt Trip
+import '@material/web/dialog/dialog.js';
 
 import { LogOut, PowerOff } from 'lucide-react';
 
@@ -70,11 +70,12 @@ interface Request {
   id: string;
   label: string;
   requesterId: string;
-  requesterName?: string; // New: Steve
-  requesterRole?: string; // New: Bartender
+  requesterName?: string;
+  requesterRole?: string;
   status: 'pending' | 'claimed';
   timestamp: any;
   barId: string;
+  claimerName?: string;
 }
 
 const ROLES = ['Bartender', 'Barback', 'Server', 'Manager', 'Security', 'Runner'];
@@ -121,7 +122,7 @@ const DEFAULT_BUTTONS: ButtonConfig[] = [
   { id: 'manager', label: 'MANAGER', icon: 'manage_accounts' },
 ];
 
-// --- Helper: OSM Search (Unchanged) ---
+// --- Helper: OSM Search ---
 interface OSMResult {
   place_id: number; osm_id: number; display_name: string; name: string;
 }
@@ -133,7 +134,7 @@ const searchOSM = async (query: string): Promise<OSMResult[]> => {
   } catch (e) { return []; }
 };
 
-// --- Component: Bar Search (Unchanged) ---
+// --- Component: Bar Search ---
 const BarSearch = ({ onJoin }: { onJoin: (bar: Partial<Bar>) => void }) => {
   const [mode, setMode] = useState<'search' | 'create'>('search');
   const [queryText, setQueryText] = useState('');
@@ -258,7 +259,8 @@ function App() {
   const [fcmToken, setFcmToken] = useState<string | null>(null);
 
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // FIX 1: Use proper return type for browser environment
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
 
   // --- 1. Auth & Token Sync ---
@@ -284,31 +286,27 @@ function App() {
     const userRef = doc(db, `bars/${barId}/users`, user.uid);
     const tokenRef = doc(db, `bars/${barId}/tokens`, user.uid);
 
-    // 2a. AUTO-CLOCK IN: If the app is open, you are working.
-    // We force the token into the DB every time the component mounts.
     const autoClockIn = async () => {
       if (fcmToken) {
         await setDoc(tokenRef, {
           token: fcmToken,
           updated: serverTimestamp()
         });
-        // Also ensure user status is active in profile
         await updateDoc(userRef, { 
           status: 'active',
           lastSeen: serverTimestamp()
-        }).catch(() => {}); // Catch if user doc doesn't exist yet
+        }).catch(() => {});
       }
     };
     autoClockIn();
 
-    // 2b. Listen to Profile
     const unsubUser = onSnapshot(userRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setUserRole(data.role);
         setDisplayName(data.displayName || 'Unknown');
       } else {
-        setUserRole(null); // Trigger selector
+        setUserRole(null);
       }
     });
 
@@ -333,6 +331,7 @@ function App() {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (navStack.length > 0) {
       timerRef.current = setTimeout(() => {
+        // FIX 2: Removed unused 'lastItem'
         const trail = navStack.map(b => b.label).join(': ');
         submitRequest(`${trail} (Ask Me)`);
         setNavStack([]);
@@ -354,7 +353,6 @@ function App() {
       lastSeen: serverTimestamp()
     }, { merge: true });
     
-    // Register token immediately
     if (fcmToken) {
       await setDoc(doc(db, `bars/${barId}/tokens`, user.uid), {
         token: fcmToken,
@@ -365,13 +363,10 @@ function App() {
 
   const goOffClock = async () => {
     if (!user || !barId) return;
-    // 1. Delete the token so Cloud Functions stop nagging
     await deleteDoc(doc(db, `bars/${barId}/tokens`, user.uid));
-    // 2. Mark profile as off_clock
     await updateDoc(doc(db, `bars/${barId}/users`, user.uid), {
       status: 'off_clock'
     });
-    // 3. Clear local barId to show the landing page (soft logout)
     setBarId(null);
     localStorage.removeItem('barId');
     setShowOffClockDialog(false);
@@ -400,7 +395,6 @@ function App() {
     });
   };
 
-  // --- Auth Handlers ---
   const handleEmailAuth = async (e: any) => {
     e.preventDefault(); const fd = new FormData(e.target);
     try { isRegistering ? await createUserWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string) : await signInWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string); } catch (e: any) { setAuthError(e.message); }
@@ -456,7 +450,6 @@ function App() {
   return (
     <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
       
-      {/* Off Clock Dialog */}
       <md-dialog open={showOffClockDialog} onClose={() => setShowOffClockDialog(false)}>
         <div slot="headline">Abandon Ship?</div>
         <div slot="content">
@@ -468,7 +461,6 @@ function App() {
         </div>
       </md-dialog>
 
-      {/* Header */}
       <div className="flex justify-between items-center p-4 bg-[#121212] sticky top-0 z-10 border-b border-[#333]">
         <div className="flex flex-col">
           <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
@@ -478,14 +470,12 @@ function App() {
           </div>
         </div>
         <div className="flex gap-2">
-           {/* Off Clock Button */}
            <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock">
              <PowerOff className="text-gray-500 hover:text-red-500" />
            </md-icon-button>
         </div>
       </div>
 
-      {/* Drill Down */}
       {navStack.length > 0 && (
         <div className="fixed inset-0 bg-black/95 z-50 flex flex-col p-6 animate-in fade-in duration-300">
           <div className="flex items-center gap-4 mb-8">
@@ -502,7 +492,6 @@ function App() {
         </div>
       )}
 
-      {/* Main Grid */}
       <div className="grid grid-cols-2 gap-3 p-4">
         {buttons.map(btn => {
           const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
@@ -518,7 +507,6 @@ function App() {
         })}
       </div>
 
-      {/* Claims */}
       <div className="px-4 mt-4">
         {activeRequests.map(req => (
           <div key={req.id} onClick={() => claimRequest(req.id)} className="mb-2 p-4 bg-[#2C1A1A] border-l-4 border-red-500 rounded-r-lg flex justify-between items-center cursor-pointer active:bg-red-900/40 transition-colors">
@@ -531,7 +519,6 @@ function App() {
         ))}
       </div>
 
-      {/* Log */}
       <div className="px-4 mt-8 pb-10">
         <div className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-widest">Shift Log</div>
         <md-list className="bg-transparent">

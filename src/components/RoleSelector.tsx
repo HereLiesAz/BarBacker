@@ -45,7 +45,7 @@ const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
         })}
       </div>
 
-      <md-filled-button disabled={!selectedRole || !displayName} onClick={() => onSelect(selectedRole, displayName)}>
+      <md-filled-button disabled={(!selectedRole || !displayName) || undefined} onClick={() => onSelect(selectedRole, displayName)}>
         Clock In
       </md-filled-button>
     </div>

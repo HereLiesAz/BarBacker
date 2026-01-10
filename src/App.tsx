@@ -28,13 +28,16 @@ import {
   requestNotificationPermission, 
   onMessageListener 
 } from './firebase';
-import { CheckCircle, Plus, LogOut, AlertTriangle, Mail, Smartphone } from 'lucide-react';
+import { CheckCircle, Plus, LogOut, AlertTriangle, Mail, Smartphone, Search, MapPin } from 'lucide-react';
 
 // --- Types ---
 interface Bar {
   id: string;
   name: string;
   buttons: ButtonConfig[];
+  address?: string;
+  osmId?: string;
+  status: 'verified' | 'temporary';
 }
 
 interface ButtonConfig {
@@ -61,6 +64,176 @@ const DEFAULT_BUTTONS = [
   { id: 'manager', label: 'MANAGER' },
 ];
 
+// --- Helper: OSM Search ---
+interface OSMResult {
+  place_id: number;
+  osm_id: number;
+  display_name: string;
+  name: string;
+  address: {
+    city?: string;
+    town?: string;
+    village?: string;
+  };
+}
+
+const searchOSM = async (query: string): Promise<OSMResult[]> => {
+  if (!query || query.length < 3) return [];
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`,
+      {
+        headers: {
+          'User-Agent': 'TheWellPWA/1.0' // Polite identification
+        }
+      }
+    );
+    return await response.json();
+  } catch (e) {
+    console.error("OSM Search failed", e);
+    return [];
+  }
+};
+
+// --- Component: Bar Search ---
+const BarSearch = ({ onJoin }: { onJoin: (bar: Partial<Bar>) => void }) => {
+  const [mode, setMode] = useState<'search' | 'create'>('search');
+  const [queryText, setQueryText] = useState('');
+  const [results, setResults] = useState<OSMResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  
+  // Create Form State
+  const [tempName, setTempName] = useState('');
+  const [tempCity, setTempCity] = useState('');
+
+  // Debounced Search
+  useEffect(() => {
+    if (mode !== 'search') return;
+    const timeoutId = setTimeout(async () => {
+      if (queryText.length >= 3) {
+        setSearching(true);
+        const data = await searchOSM(queryText);
+        setResults(data);
+        setSearching(false);
+      } else {
+        setResults([]);
+      }
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }, [queryText, mode]);
+
+  const handleSelect = (item: OSMResult) => {
+    // Extract a clean name (first part of comma separated string usually)
+    // Or use item.name if available
+    const name = item.name || item.display_name.split(',')[0];
+    
+    onJoin({
+      id: `osm_${item.place_id}`,
+      name: name,
+      address: item.display_name,
+      osmId: item.osm_id.toString(),
+      status: 'verified'
+    });
+  };
+
+  const handleManualCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tempName) return;
+    
+    const randomId = `temp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    onJoin({
+      id: randomId,
+      name: tempName,
+      address: tempCity,
+      status: 'temporary'
+    });
+  };
+
+  return (
+    <div className="w-full max-w-sm space-y-4">
+      
+      {/* Toggle Header */}
+      <div className="flex border-b border-gray-800 mb-4">
+        <button 
+          onClick={() => setMode('search')}
+          className={`flex-1 pb-2 text-sm uppercase tracking-widest ${mode === 'search' ? 'text-white border-b-2 border-white' : 'text-gray-600'}`}
+        >
+          Search (OSM)
+        </button>
+        <button 
+          onClick={() => setMode('create')}
+          className={`flex-1 pb-2 text-sm uppercase tracking-widest ${mode === 'create' ? 'text-white border-b-2 border-white' : 'text-gray-600'}`}
+        >
+          Create Temp
+        </button>
+      </div>
+
+      {mode === 'search' ? (
+        <div className="relative space-y-2">
+          <div className="flex items-center bg-gray-900 border border-gray-700 p-3 rounded">
+            <Search className="text-gray-500 mr-2" size={20} />
+            <input
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
+              placeholder="Search Bar Name..."
+              className="bg-transparent text-white w-full focus:outline-none"
+            />
+          </div>
+          
+          {searching && <div className="text-xs text-gray-500 text-center animate-pulse">Searching the atlas...</div>}
+
+          {/* Results List */}
+          {results.length > 0 && (
+            <ul className="w-full bg-gray-800 border border-gray-700 rounded max-h-60 overflow-auto shadow-2xl">
+              {results.map((item) => (
+                <li
+                  key={item.place_id}
+                  onClick={() => handleSelect(item)}
+                  className="p-3 hover:bg-gray-700 cursor-pointer border-b border-gray-700/50 last:border-0"
+                >
+                  <div className="font-bold text-white text-sm">{item.name || item.display_name.split(',')[0]}</div>
+                  <div className="text-xs text-gray-400 truncate">{item.display_name}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+          
+          {results.length === 0 && queryText.length > 3 && !searching && (
+            <div className="text-center p-4 text-gray-500 text-sm">
+              <span className="block mb-2">No verified location found.</span>
+              <button onClick={() => setMode('create')} className="text-white underline">Create temporary listing</button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <form onSubmit={handleManualCreate} className="space-y-3 animate-in fade-in">
+           <div className="bg-yellow-900/20 border border-yellow-700/50 p-3 rounded text-xs text-yellow-200 flex gap-2">
+            <AlertTriangle size={16} className="shrink-0" />
+            <span>Temporary listings are for use until your venue is verified on OpenStreetMap.</span>
+          </div>
+          <input
+            placeholder="Bar Name"
+            value={tempName}
+            onChange={e => setTempName(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 p-3 rounded text-white"
+            autoFocus
+          />
+          <input
+            placeholder="City / Area (Optional)"
+            value={tempCity}
+            onChange={e => setTempCity(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 p-3 rounded text-white"
+          />
+          <button className="w-full bg-white text-black font-bold p-3 rounded uppercase hover:bg-gray-200">
+            Create Temporary Bar
+          </button>
+        </form>
+      )}
+    </div>
+  );
+};
+
+// --- MAIN APP COMPONENT ---
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -160,14 +333,24 @@ function App() {
     }
   };
 
-  const joinBar = async (name: string) => {
-    const id = name.toLowerCase().replace(/\s/g, '-');
-    const barRef = doc(db, 'bars', id);
+  const joinBar = async (barInfo: Partial<Bar>) => {
+    if (!barInfo.id) return;
+    
+    // Check if bar exists, if not create it
+    const barRef = doc(db, 'bars', barInfo.id);
     const snap = await getDoc(barRef);
+    
     if (!snap.exists()) {
-      await setDoc(barRef, { name, buttons: [] });
+      await setDoc(barRef, {
+        name: barInfo.name,
+        address: barInfo.address || '',
+        osmId: barInfo.osmId || null,
+        status: barInfo.status || 'temporary',
+        buttons: [],
+        createdAt: serverTimestamp()
+      });
     }
-    setBarId(id);
+    setBarId(barInfo.id);
   };
 
   const sendRequest = async (btn: ButtonConfig) => {
@@ -201,7 +384,7 @@ function App() {
     });
   };
 
-  // --- LOGIN VIEW (The Gatekeeper) ---
+  // --- LOGIN VIEW ---
   if (!user) {
     return (
       <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 space-y-8">
@@ -216,7 +399,6 @@ function App() {
         )}
 
         <div className="w-full max-w-sm space-y-4">
-          {/* Email Form */}
           <form onSubmit={handleEmailLogin} className="flex flex-col gap-3">
             <input 
               name="email" 
@@ -247,17 +429,11 @@ function App() {
             <div className="flex-grow border-t border-gray-800"></div>
           </div>
 
-          {/* Social Providers */}
           <button 
             onClick={handleGoogleLogin}
             className="w-full flex items-center justify-center gap-2 bg-gray-900 border border-gray-700 p-3 rounded hover:bg-gray-800"
           >
             <Mail size={16} /> <span>Sign in with Google</span>
-          </button>
-          
-          {/* Placeholders for Apple/Phone - requires config */}
-          <button disabled className="w-full flex items-center justify-center gap-2 bg-gray-900 border border-gray-800 p-3 rounded text-gray-600 cursor-not-allowed">
-            <Smartphone size={16} /> <span>Phone / Apple (Config Required)</span>
           </button>
         </div>
       </div>
@@ -268,28 +444,14 @@ function App() {
   if (!barId) {
     return (
       <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 space-y-4">
-        <h2 className="text-xl font-bold uppercase tracking-widest text-gray-500">Select Identity</h2>
+        <h2 className="text-xl font-bold uppercase tracking-widest text-gray-500">Select Bar</h2>
         <div className="text-sm text-gray-400">Logged in as: {user.email || 'Unknown'}</div>
         <button onClick={() => signOut(auth)} className="text-xs text-red-500 border-b border-red-900 pb-1 mb-8">
           Sign Out
         </button>
 
-        <form 
-          onSubmit={(e) => {
-            e.preventDefault();
-            const fd = new FormData(e.currentTarget);
-            joinBar(fd.get('barName') as string);
-          }}
-          className="w-full max-w-xs flex flex-col gap-3"
-        >
-          <input 
-            name="barName" 
-            placeholder="Bar Name (e.g. diving-bell)" 
-            className="bg-gray-800 border border-gray-700 p-4 rounded text-white text-center uppercase"
-            autoFocus
-          />
-          <button className="bg-white text-black p-4 rounded font-bold uppercase">Enter Bar</button>
-        </form>
+        {/* Replaced manual form with the OSM Search Component */}
+        <BarSearch onJoin={joinBar} />
       </div>
     );
   }
@@ -304,7 +466,10 @@ function App() {
       <div className="flex justify-between items-center p-4 border-b border-gray-800">
         <div>
           <h2 className="font-bold uppercase">{barName}</h2>
-          <span className="text-xs text-gray-600">{user.email}</span>
+          <span className="text-xs text-gray-600 flex items-center gap-1">
+            <MapPin size={10} />
+            {barId.startsWith('osm_') ? 'Verified' : 'Temporary'}
+          </span>
         </div>
         <button onClick={() => { localStorage.removeItem('barId'); setBarId(null); }}>
           <LogOut size={20} />

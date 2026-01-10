@@ -27,6 +27,7 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
   const [results, setResults] = useState<OSMResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [tempName, setTempName] = useState('');
+  const [tempLocation, setTempLocation] = useState('');
 
   useEffect(() => {
     if (mode !== 'search') return;
@@ -75,8 +76,28 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
           )}
         </div>
       ) : (
-        <form onSubmit={(e) => { e.preventDefault(); if(tempName) onJoin({ id: `temp_${Date.now()}`, name: tempName, status: 'temporary' }); }} className="space-y-4">
-          <md-filled-text-field label="Bar Name" value={tempName} onInput={(e: any) => setTempName(e.target.value)} required />
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          if(tempName) {
+            onJoin({
+              id: `temp_${Date.now()}`,
+              name: tempName,
+              address: tempLocation,
+              status: 'temporary'
+            });
+          }
+        }} className="space-y-4">
+          <md-filled-text-field
+            label="Bar Name"
+            value={tempName}
+            onInput={(e: any) => setTempName(e.target.value)}
+            required
+          />
+          <md-filled-text-field
+            label="Location (City/Address)"
+            value={tempLocation}
+            onInput={(e: any) => setTempLocation(e.target.value)}
+          />
           <md-filled-button type="submit">Create Bar</md-filled-button>
         </form>
       )}

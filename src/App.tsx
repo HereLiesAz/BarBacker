@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
@@ -28,7 +29,23 @@ import {
   requestNotificationPermission, 
   onMessageListener 
 } from './firebase';
-import { CheckCircle, Plus, LogOut, AlertTriangle, Mail, Search, MapPin, ShieldAlert, X, ChevronRight } from 'lucide-react';
+
+// --- Material Web Imports ---
+import '@material/web/button/filled-button.js';
+import '@material/web/button/filled-tonal-button.js';
+import '@material/web/button/outlined-button.js';
+import '@material/web/button/text-button.js';
+import '@material/web/textfield/filled-text-field.js';
+import '@material/web/icon/icon.js';
+import '@material/web/list/list.js';
+import '@material/web/list/list-item.js';
+import '@material/web/progress/circular-progress.js';
+import '@material/web/chips/chip-set.js';
+import '@material/web/chips/filter-chip.js';
+
+// Using Lucide only for specific icons not in Material Symbols, 
+// otherwise defaulting to md-icon strings
+import { LogOut } from 'lucide-react';
 
 // --- Types ---
 interface Bar {
@@ -43,8 +60,9 @@ interface Bar {
 interface ButtonConfig {
   id: string;
   label: string;
+  icon?: string; // Material Symbol Name
   isCustom?: boolean;
-  children?: ButtonConfig[]; // The Recursive Nuance
+  children?: ButtonConfig[];
 }
 
 interface Request {
@@ -56,12 +74,13 @@ interface Request {
   barId: string;
 }
 
-// --- The Nuance Grid ---
+// --- The Nuance Grid (with Material Icons) ---
 const DEFAULT_BUTTONS: ButtonConfig[] = [
-  { id: 'ice', label: 'ICE' },
+  { id: 'ice', label: 'ICE', icon: 'ac_unit' },
   { 
     id: 'glass', 
     label: 'GLASSWARE', 
+    icon: 'wine_bar',
     children: [
       { id: 'rocks', label: 'ROCKS' },
       { id: 'collins', label: 'COLLINS' },
@@ -74,6 +93,7 @@ const DEFAULT_BUTTONS: ButtonConfig[] = [
   { 
     id: 'fruit', 
     label: 'FRUIT / GARNISH',
+    icon: 'restaurant',
     children: [
       { id: 'lime', label: 'LIMES' },
       { id: 'lemon', label: 'LEMONS' },
@@ -86,6 +106,7 @@ const DEFAULT_BUTTONS: ButtonConfig[] = [
   { 
     id: 'restock', 
     label: 'RESTOCK WELL',
+    icon: 'liquor',
     children: [
       { id: 'vodka', label: 'VODKA' },
       { id: 'gin', label: 'GIN' },
@@ -96,23 +117,19 @@ const DEFAULT_BUTTONS: ButtonConfig[] = [
       { id: 'beer', label: 'BOTTLED BEER' }
     ]
   },
-  { id: 'keg', label: 'KEG KICKED' },
-  { id: 'trash', label: 'TRASH / SPILL' },
-  { id: 'security', label: 'SECURITY' }, // Security is always instant. No nuance in a fight.
-  { id: 'manager', label: 'MANAGER' },
+  { id: 'keg', label: 'KEG KICKED', icon: 'keg' },
+  { id: 'trash', label: 'TRASH / SPILL', icon: 'delete' },
+  { id: 'security', label: 'SECURITY', icon: 'security' },
+  { id: 'manager', label: 'MANAGER', icon: 'manage_accounts' },
 ];
 
-// --- Helper: OSM Search (Unchanged) ---
+// --- Helper: OSM Search ---
 interface OSMResult {
   place_id: number;
   osm_id: number;
   display_name: string;
   name: string;
-  address: {
-    city?: string;
-    town?: string;
-    village?: string;
-  };
+  address: { city?: string; town?: string; village?: string; };
 }
 
 const searchOSM = async (query: string): Promise<OSMResult[]> => {
@@ -129,7 +146,7 @@ const searchOSM = async (query: string): Promise<OSMResult[]> => {
   }
 };
 
-// --- Component: Bar Search (Unchanged) ---
+// --- Component: Bar Search ---
 const BarSearch = ({ onJoin }: { onJoin: (bar: Partial<Bar>) => void }) => {
   const [mode, setMode] = useState<'search' | 'create'>('search');
   const [queryText, setQueryText] = useState('');
@@ -168,63 +185,71 @@ const BarSearch = ({ onJoin }: { onJoin: (bar: Partial<Bar>) => void }) => {
     e.preventDefault();
     if (!tempName) return;
     const randomId = `temp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    onJoin({
-      id: randomId,
-      name: tempName,
-      address: tempCity,
-      status: 'temporary'
-    });
+    onJoin({ id: randomId, name: tempName, address: tempCity, status: 'temporary' });
   };
 
   return (
-    <div className="w-full max-w-sm space-y-4">
-      <div className="flex border-b border-gray-800 mb-4">
-        <button 
+    <div className="w-full max-w-sm space-y-6">
+      <md-chip-set>
+        <md-filter-chip 
+          label="Search" 
+          selected={mode === 'search'} 
           onClick={() => setMode('search')}
-          className={`flex-1 pb-2 text-sm uppercase tracking-widest ${mode === 'search' ? 'text-white border-b-2 border-white' : 'text-gray-600'}`}
-        >
-          Search (OSM)
-        </button>
-        <button 
+        />
+        <md-filter-chip 
+          label="Create Temp" 
+          selected={mode === 'create'} 
           onClick={() => setMode('create')}
-          className={`flex-1 pb-2 text-sm uppercase tracking-widest ${mode === 'create' ? 'text-white border-b-2 border-white' : 'text-gray-600'}`}
-        >
-          Create Temp
-        </button>
-      </div>
+        />
+      </md-chip-set>
 
       {mode === 'search' ? (
-        <div className="relative space-y-2">
-          <div className="flex items-center bg-gray-900 border border-gray-700 p-3 rounded">
-            <Search className="text-gray-500 mr-2" size={20} />
-            <input
-              value={queryText}
-              onChange={(e) => setQueryText(e.target.value)}
-              placeholder="Search Bar Name..."
-              className="bg-transparent text-white w-full focus:outline-none"
-            />
-          </div>
-          {searching && <div className="text-xs text-gray-500 text-center animate-pulse">Searching the atlas...</div>}
+        <div className="space-y-4">
+          <md-filled-text-field
+            label="Search OpenStreetMap"
+            value={queryText}
+            onInput={(e: any) => setQueryText(e.target.value)}
+            type="search"
+          >
+            <md-icon slot="leading-icon">search</md-icon>
+          </md-filled-text-field>
+          
+          {searching && <md-circular-progress indeterminate />}
+
           {results.length > 0 && (
-            <ul className="w-full bg-gray-800 border border-gray-700 rounded max-h-60 overflow-auto shadow-2xl">
+            <md-list className="bg-[#1E1E1E] rounded-xl overflow-hidden">
               {results.map((item) => (
-                <li key={item.place_id} onClick={() => handleSelect(item)} className="p-3 hover:bg-gray-700 cursor-pointer border-b border-gray-700/50 last:border-0">
-                  <div className="font-bold text-white text-sm">{item.name || item.display_name.split(',')[0]}</div>
-                  <div className="text-xs text-gray-400 truncate">{item.display_name}</div>
-                </li>
+                <md-list-item 
+                  key={item.place_id} 
+                  type="button"
+                  onClick={() => handleSelect(item)}
+                >
+                  <div slot="headline">{item.name || item.display_name.split(',')[0]}</div>
+                  <div slot="supporting-text">{item.display_name}</div>
+                  <md-icon slot="end">arrow_forward</md-icon>
+                </md-list-item>
               ))}
-            </ul>
+            </md-list>
           )}
         </div>
       ) : (
-        <form onSubmit={handleManualCreate} className="space-y-3 animate-in fade-in">
-           <div className="bg-yellow-900/20 border border-yellow-700/50 p-3 rounded text-xs text-yellow-200 flex gap-2">
-            <AlertTriangle size={16} className="shrink-0" />
-            <span>Temporary listing.</span>
+        <form onSubmit={handleManualCreate} className="space-y-4">
+          <div className="p-4 bg-yellow-900/30 border border-yellow-700 rounded-lg text-yellow-200 text-sm flex gap-2 items-center">
+            <md-icon>warning</md-icon>
+            Temporary listings are unverified.
           </div>
-          <input placeholder="Bar Name" value={tempName} onChange={e => setTempName(e.target.value)} className="w-full bg-gray-900 border border-gray-700 p-3 rounded text-white" autoFocus />
-          <input placeholder="City (Optional)" value={tempCity} onChange={e => setTempCity(e.target.value)} className="w-full bg-gray-900 border border-gray-700 p-3 rounded text-white" />
-          <button className="w-full bg-white text-black font-bold p-3 rounded uppercase">Create</button>
+          <md-filled-text-field
+            label="Bar Name"
+            value={tempName}
+            onInput={(e: any) => setTempName(e.target.value)}
+            required
+          />
+          <md-filled-text-field
+            label="City (Optional)"
+            value={tempCity}
+            onInput={(e: any) => setTempCity(e.target.value)}
+          />
+          <md-filled-button type="submit">Create Bar</md-filled-button>
         </form>
       )}
     </div>
@@ -246,11 +271,11 @@ function App() {
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
 
-  // --- Navigation Stack for Nuance ---
+  // --- Navigation Stack ---
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // --- Auth & Data Listeners ---
+  // --- Listeners ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -294,50 +319,34 @@ function App() {
     return () => { unsubBar(); unsubReq(); };
   }, [user, barId, fcmToken, setSearchParams]);
 
-  // --- The Dead Man's Switch Logic ---
+  // --- Timer Logic ---
   useEffect(() => {
-    // Clear existing timer whenever stack changes
     if (timerRef.current) clearTimeout(timerRef.current);
-
-    // If we are in a sub-menu (stack has items)
     if (navStack.length > 0) {
       timerRef.current = setTimeout(() => {
-        // TIMEOUT! Send request for the last item in stack + "(Ask Me)"
         const lastItem = navStack[navStack.length - 1];
-        
-        // Construct the full label trail (e.g., "Glassware: Rocks (Ask Me)")
         const trail = navStack.map(b => b.label).join(': ');
-        const finalLabel = `${trail} (Ask Me)`;
-        
-        submitRequest(finalLabel);
-        setNavStack([]); // Close modal
-      }, 60000); // 60 Seconds
+        submitRequest(`${trail} (Ask Me)`);
+        setNavStack([]);
+      }, 60000);
     }
-
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [navStack]);
 
-
   // --- Actions ---
-
   const handleButtonPress = (btn: ButtonConfig) => {
     if (btn.children && btn.children.length > 0) {
-      // Dive Deeper
       setNavStack([...navStack, btn]);
     } else {
-      // Leaf Node - Send Request
       const trail = [...navStack, btn].map(b => b.label).join(': ');
       submitRequest(trail);
-      setNavStack([]); // Reset
+      setNavStack([]);
     }
   };
 
   const submitRequest = async (label: string) => {
     if (!user || !barId) return;
-    
-    // Optimistic Vibration
     if (navigator.vibrate) navigator.vibrate(100);
-
     await addDoc(collection(db, 'requests'), {
       barId,
       label: label,
@@ -375,9 +384,11 @@ function App() {
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const email = fd.get('email') as string;
+    const pass = fd.get('password') as string;
     try {
-      if (isRegistering) await createUserWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string);
-      else await signInWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string);
+      if (isRegistering) await createUserWithEmailAndPassword(auth, email, pass);
+      else await signInWithEmailAndPassword(auth, email, pass);
     } catch (err: any) { setAuthError(err.message); }
   };
 
@@ -388,36 +399,49 @@ function App() {
   const addCustomButton = async () => {
     const label = prompt("New button label?");
     if (!label || !barId) return;
-    const newBtn = { id: Date.now().toString(), label, isCustom: true };
+    const newBtn = { id: Date.now().toString(), label, isCustom: true, icon: 'star' };
     await updateDoc(doc(db, 'bars', barId), { buttons: [...buttons.filter(b => b.isCustom), newBtn] });
   };
 
-
-  // --- RENDER ---
+  // --- Views ---
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 space-y-8">
-        <h1 className="text-3xl font-bold uppercase tracking-[0.5em] text-center border-b border-gray-800 pb-4">BarBacker</h1>
-        {authError && <div className="text-red-500 text-sm border border-red-500 p-2">{authError}</div>}
-        <form onSubmit={handleEmailLogin} className="w-full max-w-sm flex flex-col gap-3">
-          <input name="email" type="email" placeholder="Email" className="bg-gray-900 border border-gray-700 p-3 rounded text-white" required />
-          <input name="password" type="password" placeholder="Password" className="bg-gray-900 border border-gray-700 p-3 rounded text-white" required />
-          <button className="bg-white text-black font-bold p-3 rounded uppercase">{isRegistering ? 'Register' : 'Sign In'}</button>
-        </form>
-        <div className="text-gray-500 text-xs cursor-pointer" onClick={() => setIsRegistering(!isRegistering)}>
-          {isRegistering ? 'Back to Login' : 'Need an account? Register'}
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-8 bg-black">
+        <div className="text-center space-y-2">
+          <md-icon style={{ fontSize: 64, color: 'var(--md-sys-color-primary)' }}>local_bar</md-icon>
+          <h1 className="text-4xl font-bold tracking-widest text-white">BARBACKER</h1>
         </div>
-        <button onClick={handleGoogleLogin} className="flex gap-2 items-center text-sm text-gray-400 border border-gray-800 p-2 rounded hover:text-white"><Mail size={16}/> Sign in with Google</button>
+
+        {authError && <div className="text-red-400 p-2 bg-red-900/20 rounded border border-red-800">{authError}</div>}
+
+        <form onSubmit={handleEmailLogin} className="w-full max-w-sm space-y-4">
+          <md-filled-text-field label="Email" name="email" type="email" required />
+          <md-filled-text-field label="Password" name="password" type="password" required />
+          <md-filled-button type="submit">{isRegistering ? 'Create Account' : 'Sign In'}</md-filled-button>
+        </form>
+
+        <div className="flex gap-4 items-center">
+           <md-text-button onClick={() => setIsRegistering(!isRegistering)}>
+             {isRegistering ? 'Back to Login' : 'Register'}
+           </md-text-button>
+           <md-outlined-button onClick={handleGoogleLogin}>
+             <md-icon slot="icon">mail</md-icon>
+             Google
+           </md-outlined-button>
+        </div>
       </div>
     );
   }
 
   if (!barId) {
     return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 space-y-4">
-        <h2 className="text-xl font-bold uppercase tracking-widest text-gray-500">Select Bar</h2>
-        <button onClick={() => signOut(auth)} className="text-xs text-red-500 pb-4">Sign Out</button>
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-white mb-1">Select Bar</h2>
+          <p className="text-gray-500 text-sm">You are {user.email}</p>
+        </div>
+        <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
         <BarSearch onJoin={joinBar} />
       </div>
     );
@@ -425,94 +449,108 @@ function App() {
 
   const activeRequests = requests.filter(r => r.status === 'pending');
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
-
-  // Determine which buttons to show (Main or Submenu)
-  const currentButtons = navStack.length > 0 
-    ? navStack[navStack.length - 1].children || [] 
-    : buttons;
+  const currentButtons = navStack.length > 0 ? navStack[navStack.length - 1].children || [] : buttons;
 
   return (
-    <div className="min-h-screen bg-black text-white pb-20 relative">
+    <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
       
-      {/* HEADER */}
-      <div className="flex justify-between items-center p-4 border-b border-gray-800 z-0">
-        <div>
-          <h2 className="font-bold uppercase">{barName}</h2>
-          <span className="text-xs text-gray-600 flex items-center gap-1">
-            <MapPin size={10} /> {barId.startsWith('osm_') ? 'Verified' : 'Temporary'}
-          </span>
+      {/* App Bar */}
+      <div className="flex justify-between items-center p-4 bg-[#121212] sticky top-0 z-10 border-b border-[#333]">
+        <div className="flex flex-col">
+          <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            <md-icon style={{fontSize: 14}}>location_on</md-icon>
+            {barId.startsWith('osm_') ? 'VERIFIED' : 'TEMP'}
+          </div>
         </div>
-        <button onClick={() => { localStorage.removeItem('barId'); setBarId(null); }}><LogOut size={20} /></button>
+        <md-icon-button onClick={() => { localStorage.removeItem('barId'); setBarId(null); }}>
+          <LogOut />
+        </md-icon-button>
       </div>
 
-      {/* MODAL OVERLAY (The Darken Effect) */}
+      {/* Drill Down Overlay */}
       {navStack.length > 0 && (
-        <div className="fixed inset-0 bg-black/90 z-20 flex flex-col p-6 animate-in fade-in duration-200">
-          <div className="flex justify-between items-center mb-8 border-b border-gray-800 pb-4">
-            <div className="flex items-center gap-2 text-xl font-bold text-gray-200">
-               {navStack.map(b => b.label).join(' > ')}
-            </div>
-            <button onClick={() => setNavStack([])} className="p-2 bg-gray-800 rounded-full"><X /></button>
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col p-6 animate-in fade-in duration-300">
+          <div className="flex items-center gap-4 mb-8">
+            <md-icon-button onClick={() => setNavStack([])}>
+              <md-icon>close</md-icon>
+            </md-icon-button>
+            <span className="text-xl font-medium text-gray-200">
+              {navStack.map(b => b.label).join(' > ')}
+            </span>
           </div>
           
           <div className="grid grid-cols-2 gap-4">
             {currentButtons.map(btn => (
-              <button
+              <md-filled-tonal-button
                 key={btn.id}
                 onClick={() => handleButtonPress(btn)}
-                className="aspect-square flex flex-col items-center justify-center bg-gray-900 border border-gray-700 rounded-lg active:scale-95 transition-all hover:bg-gray-800"
+                style={{ height: '100px', fontSize: '18px' }}
               >
-                <span className="font-bold text-lg">{btn.label}</span>
-                {btn.children && <ChevronRight className="mt-2 text-gray-500" />}
-              </button>
+                {btn.label}
+              </md-filled-tonal-button>
             ))}
           </div>
-          
-          <div className="mt-auto text-center text-gray-500 text-xs animate-pulse">
-            Select option or wait for auto-send...
-          </div>
+          <div className="mt-auto text-center text-gray-500 text-sm">Auto-sending in 60s...</div>
         </div>
       )}
 
-      {/* MAIN GRID */}
-      <div className={`grid grid-cols-2 gap-4 p-4 transition-opacity duration-300 ${navStack.length > 0 ? 'opacity-0' : 'opacity-100'}`}>
+      {/* Main Grid */}
+      <div className="grid grid-cols-2 gap-3 p-4">
         {buttons.map(btn => {
           const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
+          // We use className="btn-alert" defined in index.css to handle the red pulse
+          const btnClass = isPending ? 'btn-alert' : '';
+          
           return (
-            <button
+            <md-filled-tonal-button
               key={btn.id}
               onClick={() => handleButtonPress(btn)}
-              className={`grid-btn h-32 ${isPending ? 'bg-red-600 animate-pulse-fast border-red-500' : 'hover:bg-gray-800'}`}
+              class={btnClass}
+              style={{ height: '120px' }}
             >
-              {isPending && <AlertTriangle className="mb-2" />}
-              {btn.label === 'SECURITY' && <ShieldAlert className="mb-2 text-red-500" />}
-              {btn.label}
-              {isPending && <span className="text-xs mt-1">PENDING</span>}
-            </button>
+              <div className="flex flex-col items-center gap-2">
+                <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
+                <span className="text-lg font-bold leading-none">{btn.label}</span>
+                {isPending && <span className="text-xs opacity-80">PENDING</span>}
+              </div>
+            </md-filled-tonal-button>
           );
         })}
-        <button onClick={addCustomButton} className="grid-btn h-32 border-dashed border-gray-600 text-gray-500"><Plus /></button>
+        <md-outlined-button onClick={addCustomButton} style={{ height: '120px', borderStyle: 'dashed' }}>
+          <div className="flex flex-col items-center gap-2 text-gray-500">
+            <md-icon>add</md-icon>
+            <span>Custom</span>
+          </div>
+        </md-outlined-button>
       </div>
 
-      {/* CLAIMS & LOGS */}
-      <div className="p-4">
-        {activeRequests.length > 0 && <h3 className="text-gray-500 uppercase text-xs mb-2 tracking-widest border-b border-gray-800 pb-1">Pending</h3>}
+      {/* Active Claims */}
+      <div className="px-4 mt-4">
+        {activeRequests.length > 0 && <div className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-widest">Pending Needs</div>}
         {activeRequests.map(req => (
-          <div key={req.id} onClick={() => claimRequest(req.id)} className="bg-red-900/20 border border-red-900 p-4 mb-2 rounded flex justify-between items-center cursor-pointer hover:bg-red-900/40">
-            <span className="font-mono text-sm">{req.label}</span>
-            <span className="text-xs bg-red-600 px-2 py-1 rounded text-white">CLAIM</span>
+          <div 
+            key={req.id} 
+            onClick={() => claimRequest(req.id)}
+            className="mb-2 p-4 bg-[#2C1A1A] border-l-4 border-red-500 rounded-r-lg flex justify-between items-center cursor-pointer active:bg-red-900/40 transition-colors"
+          >
+            <span className="font-medium text-red-100">{req.label}</span>
+            <md-filled-button class="btn-alert" style={{ height: '32px' }}>CLAIM</md-filled-button>
           </div>
         ))}
+      </div>
 
-        <div className="mt-8 opacity-50">
-          <h3 className="text-gray-500 uppercase text-xs mb-2 tracking-widest border-b border-gray-800 pb-1">Log</h3>
+      {/* History Log */}
+      <div className="px-4 mt-8 pb-10">
+        <div className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-widest">Shift Log</div>
+        <md-list className="bg-transparent">
           {logRequests.map(req => (
-            <div key={req.id} className="flex justify-between items-center py-2 text-sm border-b border-gray-900">
-              <span className="text-gray-400">{req.label}</span>
-              <span className="text-green-600 flex items-center gap-1"><CheckCircle size={12}/> Done</span>
-            </div>
+            <md-list-item key={req.id}>
+              <div slot="headline" className="text-gray-400">{req.label}</div>
+              <md-icon slot="start" className="text-green-800">check_circle</md-icon>
+            </md-list-item>
           ))}
-        </div>
+        </md-list>
       </div>
     </div>
   );

@@ -2,14 +2,16 @@
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
-firebase.initializeApp({
+const firebaseConfig = {
   apiKey: "AIzaSyCfkeRu4DVuSBBBa9bc0rrhtu-gCixFqIo",
   authDomain: "barbacker-6c683.firebaseapp.com",
   projectId: "barbacker-6c683",
   storageBucket: "barbacker-6c683.firebasestorage.app",
   messagingSenderId: "869145643734",
   appId: "1:869145643734:web:d902468d6942df6bc81777"
-});
+};
+
+firebase.initializeApp(firebaseConfig);
 
 const messaging = firebase.messaging();
 

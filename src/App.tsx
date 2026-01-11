@@ -74,7 +74,8 @@ function App() {
   const [fcmToken, setFcmToken] = useState<string | null>(null);
 
   const [beerInventory, setBeerInventory] = useState<Record<string, string[]>>({});
-  const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
+  const [wells, setWells] = useState<string[]>([]);
+  const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
@@ -153,6 +154,7 @@ function App() {
         setBarName(data.name);
         if (data.buttons) setButtons([...DEFAULT_BUTTONS, ...data.buttons]);
         if (data.beerInventory) setBeerInventory(data.beerInventory);
+        if (data.wells) setWells(data.wells);
       }
     });
 
@@ -233,7 +235,40 @@ function App() {
     setNavStack(prev => [...prev, typeBtn]);
   };
 
+  const saveWell = async (wellName: string) => {
+    if (!user || !barId) return;
+
+    if (wells.includes(wellName)) {
+        setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+        // Just submit request for existing well
+        submitRequest(`ICE: ${wellName}`);
+        setNavStack([]);
+        return;
+    }
+
+    await updateDoc(doc(db, 'bars', barId), {
+        wells: arrayUnion(wellName)
+    });
+
+    setWells(prev => [...prev, wellName]);
+    setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+
+    // Submit request
+    submitRequest(`ICE: ${wellName}`);
+    setNavStack([]);
+  };
+
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
+    if (btn.id === 'ice') {
+        const wellButtons: ButtonConfig[] = wells.map(w => ({
+            id: `well_${w}`,
+            label: w
+        }));
+        return [...wellButtons, { id: 'add_well', label: '+ ADD WELL', action: 'add_brand', isCustom: true }];
+        // Reusing 'add_brand' action type logic? No, need distinct logic or reuse carefully.
+        // Let's use a new action type or map it in handleButtonClick.
+    }
+
     if (btn.id === 'restock_beer') {
       const brandButtons: ButtonConfig[] = Object.keys(beerInventory).map(brand => ({
         id: `brand_${brand}`,
@@ -274,6 +309,11 @@ function App() {
   };
 
   const handleButtonClick = (btn: ButtonConfig) => {
+    if (btn.id === 'add_well') {
+      const defaultName = `Well #${wells.length + 1}`;
+      setInputDialog({ type: 'well', open: true, searchTerm: defaultName });
+      return;
+    }
     if (btn.action === 'add_brand') {
       setInputDialog({ type: 'brand', open: true, searchTerm: '' });
       return;
@@ -468,49 +508,59 @@ function App() {
       />
 
       <md-dialog open={inputDialog.open} onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}>
-        <div slot="headline">{inputDialog.type === 'brand' ? 'Select or Add Brand' : 'Select or Add Type'}</div>
+        <div slot="headline">
+            {inputDialog.type === 'brand' && 'Select or Add Brand'}
+            {inputDialog.type === 'type' && 'Select or Add Type'}
+            {inputDialog.type === 'well' && 'Add Well'}
+        </div>
         <div slot="content" className="flex flex-col gap-4 min-w-[300px] h-[300px]">
            <md-filled-text-field
-             label="Search..."
+             label={inputDialog.type === 'well' ? 'Well Name' : 'Search...'}
              value={inputDialog.searchTerm}
              onInput={(e: Event) => setInputDialog(prev => ({ ...prev, searchTerm: (e.target as HTMLInputElement).value }))}
              style={{ width: '100%' }}
            />
-           <div className="flex-1 overflow-y-auto border border-gray-800 rounded p-2">
-             <md-list>
-               {(() => {
-                 const term = inputDialog.searchTerm.toLowerCase();
-                 // Determine source list
-                 let items: string[] = [];
-                 if (inputDialog.type === 'brand') {
-                    items = Object.keys(beerInventory);
-                 } else {
-                    // For types, collect all unique types across all brands to suggest
-                    items = Array.from(new Set(Object.values(beerInventory).flat()));
-                 }
+           {inputDialog.type !== 'well' ? (
+               <div className="flex-1 overflow-y-auto border border-gray-800 rounded p-2">
+                 <md-list>
+                   {(() => {
+                     const term = inputDialog.searchTerm.toLowerCase();
+                     // Determine source list
+                     let items: string[] = [];
+                     if (inputDialog.type === 'brand') {
+                        items = Object.keys(beerInventory);
+                     } else {
+                        // For types, collect all unique types across all brands to suggest
+                        items = Array.from(new Set(Object.values(beerInventory).flat()));
+                     }
 
-                 const matches = items.filter(i => i.toLowerCase().includes(term));
-                 const exactMatch = matches.some(i => i.toLowerCase() === term);
+                     const matches = items.filter(i => i.toLowerCase().includes(term));
+                     const exactMatch = matches.some(i => i.toLowerCase() === term);
 
-                 return (
-                   <>
-                     {matches.map(item => (
-                       <md-list-item key={item} type="button" onClick={() => inputDialog.type === 'brand' ? saveBrand(item) : saveType(item)}>
-                         <div slot="headline">{item}</div>
-                         <md-icon slot="end">arrow_forward</md-icon>
-                       </md-list-item>
-                     ))}
-                     {inputDialog.searchTerm && !exactMatch && (
-                       <md-list-item type="button" onClick={() => inputDialog.type === 'brand' ? saveBrand(inputDialog.searchTerm) : saveType(inputDialog.searchTerm)}>
-                         <div slot="headline" className="text-blue-400">Create "{inputDialog.searchTerm}"</div>
-                         <md-icon slot="end" className="text-blue-400">add_circle</md-icon>
-                       </md-list-item>
-                     )}
-                   </>
-                 );
-               })()}
-             </md-list>
-           </div>
+                     return (
+                       <>
+                         {matches.map(item => (
+                           <md-list-item key={item} type="button" onClick={() => inputDialog.type === 'brand' ? saveBrand(item) : saveType(item)}>
+                             <div slot="headline">{item}</div>
+                             <md-icon slot="end">arrow_forward</md-icon>
+                           </md-list-item>
+                         ))}
+                         {inputDialog.searchTerm && !exactMatch && (
+                           <md-list-item type="button" onClick={() => inputDialog.type === 'brand' ? saveBrand(inputDialog.searchTerm) : saveType(inputDialog.searchTerm)}>
+                             <div slot="headline" className="text-blue-400">Create "{inputDialog.searchTerm}"</div>
+                             <md-icon slot="end" className="text-blue-400">add_circle</md-icon>
+                           </md-list-item>
+                         )}
+                       </>
+                     );
+                   })()}
+                 </md-list>
+               </div>
+           ) : (
+               <div className="flex justify-center p-4">
+                   <md-filled-button onClick={() => saveWell(inputDialog.searchTerm)}>Save & Request</md-filled-button>
+               </div>
+           )}
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setInputDialog(prev => ({ ...prev, open: false }))}>Cancel</md-text-button>

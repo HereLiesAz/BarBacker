@@ -16,6 +16,7 @@ export interface Bar {
   status: 'verified' | 'temporary';
   type?: 'bar' | 'restaurant';
   beerInventory?: Record<string, string[]>;
+  wells?: string[];
 }
 
 export interface Request {

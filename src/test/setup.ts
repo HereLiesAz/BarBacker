@@ -34,9 +34,37 @@ if (typeof Element.prototype.animate === 'undefined') {
       finish: () => {},
       addEventListener: () => {},
       removeEventListener: () => {},
-      // add other methods if needed
+      finished: Promise.resolve(), // Add finished promise
     } as any;
   };
+}
+
+// Polyfill IntersectionObserver
+if (typeof IntersectionObserver === 'undefined') {
+  class IntersectionObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  Object.defineProperty(window, 'IntersectionObserver', {
+    writable: true,
+    configurable: true,
+    value: IntersectionObserver
+  });
+}
+
+// Polyfill HTMLDialogElement
+if (typeof HTMLDialogElement !== 'undefined') {
+    HTMLDialogElement.prototype.show = function() {
+        this.open = true;
+    };
+    HTMLDialogElement.prototype.showModal = function() {
+        this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function() {
+        this.open = false;
+        this.dispatchEvent(new Event('close'));
+    };
 }
 
 

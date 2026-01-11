@@ -65,6 +65,7 @@ describe('App Integration', () => {
     );
     await waitFor(() => {
         expect(screen.getByText('BARBACKER')).toBeInTheDocument();
+        expect(screen.getByText('Clock In')).toBeInTheDocument();
     });
   });
 });

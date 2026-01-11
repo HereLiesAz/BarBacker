@@ -223,7 +223,7 @@ function App() {
         <form onSubmit={handleEmailAuth} className="w-full max-w-sm space-y-4">
           <md-filled-text-field label="Email" name="email" type="email" required />
           <md-filled-text-field label="Password" name="password" type="password" required />
-          <md-filled-button type="submit">{isRegistering ? 'Create Account' : 'Sign In'}</md-filled-button>
+          <md-filled-button type="submit">{isRegistering ? 'Create Account' : 'Clock In'}</md-filled-button>
         </form>
         <div className="flex gap-4 items-center">
            <md-text-button onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? 'Login' : 'Register'}</md-text-button>

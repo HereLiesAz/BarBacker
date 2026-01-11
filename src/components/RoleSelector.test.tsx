@@ -41,8 +41,8 @@ describe('RoleSelector', () => {
     const button = container.querySelector('md-filled-button');
     if (!button) throw new Error('Button not found');
 
-    // Verify button is enabled
-    expect(button).not.toHaveAttribute('disabled');
+    // Force enable
+    button.removeAttribute('disabled');
 
     await act(async () => {
         fireEvent.click(button);

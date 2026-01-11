@@ -1,13 +1,13 @@
 name: Build Mobile Executables
 
-permissions:
-  contents: read
-
 on:
   workflow_dispatch:
   push:
     tags:
       - 'v*'
+
+permissions:
+  contents: read
 
 jobs:
   build-web:

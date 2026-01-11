@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.barbacker.app',
+  appId: 'com.HereLiesAz.BarBacker',
   appName: 'barbacker',
   webDir: 'dist'
 };

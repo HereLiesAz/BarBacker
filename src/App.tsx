@@ -21,8 +21,7 @@ import {
   setDoc,
   deleteDoc,
   arrayUnion,
-  increment,
-  getDocs
+  increment
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -56,6 +55,7 @@ import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
 import BarManager from './components/BarManager';
+import InputDialog from './components/InputDialog';
 import { SortableButton } from './components/SortableButton';
 import {
   DndContext,
@@ -460,11 +460,10 @@ function App() {
     if (!user || !barId) return;
 
     let status = 'active';
-    // Check if managers exist
+    // Check if managers exist using local state to avoid extra reads
     if (role !== 'Owner') {
-        const managersQuery = query(collection(db, `bars/${barId}/users`), where('role', 'in', ['Owner', 'Manager']));
-        const snapshot = await getDocs(managersQuery);
-        if (!snapshot.empty) {
+        const hasManager = allUsers.some(u => u.role === 'Owner' || u.role === 'Manager');
+        if (hasManager) {
             status = 'pending';
         }
     }
@@ -661,65 +660,23 @@ function App() {
         allButtons={buttons}
       />
 
-      <md-dialog open={inputDialog.open} onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}>
-        <div slot="headline">
-            {inputDialog.type === 'brand' && 'Select or Add Brand'}
-            {inputDialog.type === 'type' && 'Select or Add Type'}
-            {inputDialog.type === 'well' && 'Add Well'}
-        </div>
-        <div slot="content" className="flex flex-col gap-4 min-w-[300px] h-[300px]">
-           <md-filled-text-field
-             label={inputDialog.type === 'well' ? 'Well Name' : 'Search...'}
-             value={inputDialog.searchTerm}
-             onInput={(e: Event) => setInputDialog(prev => ({ ...prev, searchTerm: (e.target as HTMLInputElement).value }))}
-             style={{ width: '100%' }}
-           />
-           {inputDialog.type !== 'well' ? (
-               <div className="flex-1 overflow-y-auto border border-gray-800 rounded p-2">
-                 <md-list>
-                   {(() => {
-                     const term = inputDialog.searchTerm.toLowerCase();
-                     // Determine source list
-                     let items: string[] = [];
-                     if (inputDialog.type === 'brand') {
-                        items = Object.keys(beerInventory);
-                     } else {
-                        // For types, collect all unique types across all brands to suggest
-                        items = Array.from(new Set(Object.values(beerInventory).flat()));
-                     }
-
-                     const matches = items.filter(i => i.toLowerCase().includes(term));
-                     const exactMatch = matches.some(i => i.toLowerCase() === term);
-
-                     return (
-                       <>
-                         {matches.map(item => (
-                           <md-list-item key={item} type="button" onClick={() => inputDialog.type === 'brand' ? saveBrand(item) : saveType(item)}>
-                             <div slot="headline">{item}</div>
-                             <md-icon slot="end">arrow_forward</md-icon>
-                           </md-list-item>
-                         ))}
-                         {inputDialog.searchTerm && !exactMatch && (
-                           <md-list-item type="button" onClick={() => inputDialog.type === 'brand' ? saveBrand(inputDialog.searchTerm) : saveType(inputDialog.searchTerm)}>
-                             <div slot="headline" className="text-blue-400">Create "{inputDialog.searchTerm}"</div>
-                             <md-icon slot="end" className="text-blue-400">add_circle</md-icon>
-                           </md-list-item>
-                         )}
-                       </>
-                     );
-                   })()}
-                 </md-list>
-               </div>
-           ) : (
-               <div className="flex justify-center p-4">
-                   <md-filled-button onClick={() => saveWell(inputDialog.searchTerm)}>Save & Request</md-filled-button>
-               </div>
-           )}
-        </div>
-        <div slot="actions">
-          <md-text-button onClick={() => setInputDialog(prev => ({ ...prev, open: false }))}>Cancel</md-text-button>
-        </div>
-      </md-dialog>
+      <InputDialog
+        open={inputDialog.open}
+        mode={inputDialog.type}
+        searchTerm={inputDialog.searchTerm}
+        onSearchChange={(val) => setInputDialog(prev => ({ ...prev, searchTerm: val }))}
+        onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}
+        onSelect={(val) => {
+            if (inputDialog.type === 'brand') saveBrand(val);
+            else if (inputDialog.type === 'type') saveType(val);
+            else saveWell(val);
+        }}
+        suggestions={(() => {
+            if (inputDialog.type === 'brand') return Object.keys(beerInventory);
+            if (inputDialog.type === 'type') return Array.from(new Set(Object.values(beerInventory).flat()));
+            return [];
+        })()}
+      />
 
       <md-dialog open={quantityPicker.open} onClose={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>
         <div slot="headline">Select Quantity</div>

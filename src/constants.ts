@@ -43,3 +43,14 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
   { id: 'security', label: 'SECURITY', icon: 'security' },
   { id: 'manager', label: 'MANAGER', icon: 'manage_accounts' },
 ];
+
+// Map of Role -> Array of Button IDs that are enabled by default
+export const ROLE_NOTIFICATION_DEFAULTS: Record<string, string[]> = {
+  'Owner': ['manager', 'security', 'keg', 'trash', 'ice', 'glass', 'fruit', 'restock'], // Owner gets everything
+  'Manager': ['manager', 'security', 'keg', 'trash', 'restock'],
+  'Bartender': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash'],
+  'Barback': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash'],
+  'Server': [], // Servers usually send, not receive? Or maybe "Table Ready"? For now, empty.
+  'Runner': ['ice', 'glass', 'restock'],
+  'Security': ['security', 'fight', 'manager'] // "fight" isn't in default buttons but might be custom? defaulting 'security'
+};

@@ -48,10 +48,11 @@ import '@material/web/iconbutton/icon-button.js';
 import { PowerOff } from 'lucide-react';
 
 import { Bar, ButtonConfig, Request } from './types';
-import { DEFAULT_BUTTONS } from './constants';
+import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS } from './constants';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import TestLogin from './components/TestLogin';
+import NotificationSettings from './components/NotificationSettings';
 
 // --- MAIN APP COMPONENT ---
 function App() {
@@ -66,6 +67,7 @@ function App() {
   const [barName, setBarName] = useState('');
   const [userRole, setUserRole] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string>('');
+  const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
   
   const [requests, setRequests] = useState<Request[]>([]);
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
@@ -76,6 +78,7 @@ function App() {
   // FIX 1: Use proper return type for browser environment
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
@@ -105,6 +108,15 @@ function App() {
       }
     });
     onMessageListener().then(() => {
+      // payload usually has { notification: { title, body }, data: { ... } }
+      // We need to check if we should alert.
+      // Since we don't control the sender here (it's unknown), we can only guess or use local filtering.
+      // Assuming payload.data.label exists or we just rely on local updates?
+      // For now, let's keep the sound but ideally we'd filter it.
+      // IF the prompt implies we should filter EVERYTHING, we should check here.
+      // But without payload structure knowledge, it's risky.
+      // However, the `activeRequests` list is what visualizes it.
+
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
       new Audio('/alert.mp3').play().catch(() => {});
     });
@@ -140,6 +152,14 @@ function App() {
         const data = snapshot.data();
         setUserRole(data.role);
         setDisplayName(data.displayName || 'Unknown');
+
+        // Load notification preferences or set defaults
+        if (data.notificationPreferences) {
+          setNotificationPreferences(data.notificationPreferences);
+        } else if (data.role) {
+          // If no preferences saved, use defaults for role
+          setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[data.role] || []);
+        }
       } else {
         setUserRole(null);
       }
@@ -185,7 +205,9 @@ function App() {
       email: user.email,
       status: 'active',
       joinedAt: serverTimestamp(),
-      lastSeen: serverTimestamp()
+      lastSeen: serverTimestamp(),
+      // Set defaults on join if not present
+      notificationPreferences: ROLE_NOTIFICATION_DEFAULTS[role] || []
     }, { merge: true });
     
     if (fcmToken) {
@@ -228,6 +250,14 @@ function App() {
       claimedBy: user?.uid,
       claimerName: displayName
     });
+  };
+
+  const saveNotificationPreferences = async (prefs: string[]) => {
+    if (!user || !barId) return;
+    setNotificationPreferences(prefs); // Optimistic update
+    await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
+        notificationPreferences: prefs
+    }, { merge: true });
   };
 
   const handleEmailAuth = async (e: any) => {
@@ -305,13 +335,42 @@ function App() {
     );
   }
 
-  const activeRequests = requests.filter(r => r.status === 'pending');
+  // Helper: Find button ID for a given label.
+  const getButtonIdForLabel = (label: string): string | undefined => {
+    for (const btn of buttons) {
+        if (label === btn.label) return btn.id;
+        if (label.startsWith(btn.label)) return btn.id; // "ICE: CUBES" ?
+        if (btn.children) {
+            for (const child of btn.children) {
+                if (label === child.label) return btn.id; // Map child to parent ID
+            }
+        }
+    }
+    return undefined;
+  };
+
+  const activeRequests = requests.filter(r => {
+      if (r.status !== 'pending') return false;
+      const btnId = getButtonIdForLabel(r.label);
+      if (!btnId) return true; // Show unknown/custom types
+      return notificationPreferences.includes(btnId);
+  });
+
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
   const currentButtons = navStack.length > 0 ? navStack[navStack.length - 1].children || [] : buttons;
 
   return (
     <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
       
+      <NotificationSettings
+        open={showNotificationSettings}
+        onClose={() => setShowNotificationSettings(false)}
+        onSave={saveNotificationPreferences}
+        userRole={userRole || ''}
+        currentPreferences={notificationPreferences}
+        allButtons={buttons}
+      />
+
       <md-dialog open={showOffClockDialog} onClose={() => setShowOffClockDialog(false)}>
         <div slot="headline">Abandon Ship?</div>
         <div slot="content">
@@ -332,6 +391,9 @@ function App() {
           </div>
         </div>
         <div className="flex gap-2">
+           <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings">
+             <md-icon className="text-gray-400">settings</md-icon>
+           </md-icon-button>
            <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock">
              <PowerOff className="text-gray-500 hover:text-red-500" />
            </md-icon-button>

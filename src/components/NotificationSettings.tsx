@@ -57,7 +57,7 @@ const NotificationSettings = ({
   // For now, assume all top-level buttons are notification categories.
 
   return (
-    <md-dialog open={open ? true : undefined} onClose={onClose}>
+    <md-dialog open={open || undefined} onClose={onClose}>
       <div slot="headline">Notification Settings</div>
       <div slot="content" className="flex flex-col gap-4 min-w-[300px]">
         <div className="text-sm text-gray-400">

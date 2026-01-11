@@ -1,5 +1,8 @@
 name: Build Mobile Executables
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
   push:

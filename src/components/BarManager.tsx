@@ -72,7 +72,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
                 <div className="text-sm text-gray-400">
                     Manage active pager buttons. Hiding a button removes it from the main dashboard but keeps it in the database.
                 </div>
-                <div className="border border-gray-800 rounded overflow-hidden">
+                <div className="border border-gray-800 rounded overflow-y-auto max-h-[50vh]">
                     <md-list>
                     {activeButtons.map(btn => (
                         <md-list-item key={btn.id}>
@@ -96,7 +96,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
                    {pendingUsers.length > 0 && (
                        <div className="space-y-2">
                            <h3 className="text-yellow-500 font-bold text-sm uppercase tracking-wide">Pending Approval</h3>
-                           <div className="border border-yellow-900/50 bg-yellow-900/10 rounded overflow-hidden">
+                           <div className="border border-yellow-900/50 bg-yellow-900/10 rounded overflow-y-auto max-h-[30vh]">
                                <md-list>
                                    {pendingUsers.map(u => (
                                        <md-list-item key={u.id}>
@@ -120,7 +120,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
 
                    <div className="space-y-2">
                        <h3 className="text-gray-500 font-bold text-sm uppercase tracking-wide">Active Staff</h3>
-                       <div className="border border-gray-800 rounded overflow-hidden">
+                       <div className="border border-gray-800 rounded overflow-y-auto max-h-[30vh]">
                            <md-list>
                                {activeUsers.map(u => (
                                    <md-list-item key={u.id}>

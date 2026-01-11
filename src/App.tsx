@@ -645,7 +645,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
+    <div className="min-h-screen pb-24 bg-black relative overflow-x-hidden">
       
       <BarManager
         open={showBarManager}
@@ -740,7 +740,7 @@ function App() {
       </div>
 
       {navStack.length > 0 && (
-        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col p-6 animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col p-6 animate-in fade-in duration-300 overflow-y-auto">
           <div className="flex items-center gap-4 mb-8">
             <md-icon-button onClick={() => setNavStack([])}><md-icon>close</md-icon></md-icon-button>
             <span className="text-xl font-medium text-gray-200">{navStack.map(b => b.label).join(' > ')}</span>

@@ -77,10 +77,16 @@ describe('BarSearch', () => {
         const activeBtn = screen.getByText('Create Temp');
         expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
     });
+
+    const input = container.querySelector('md-filled-text-field[name="name"]');
+    expect(input).toBeInTheDocument();
   });
 
-  it('calls onJoin when creating a temp bar', async () => {
+  it('submits new bar when no duplicate found', async () => {
     const handleJoin = vi.fn();
+    mockGetDocs.mockResolvedValue({ empty: true, forEach: () => {} });
+    mockAddDoc.mockResolvedValue({ id: 'new-id' });
+
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
     // Switch to create mode
@@ -93,9 +99,14 @@ describe('BarSearch', () => {
         expect(screen.getByText('Create Bar')).toBeInTheDocument();
     });
 
-    // Fill form
-    const input = container.querySelector('md-filled-text-field');
-    if (!input) throw new Error('Input not found');
+    class MockFormData {
+        constructor(form: HTMLFormElement) {}
+        get(key: string) {
+            if (key === 'name') return 'New Bar';
+            if (key === 'zip') return '90210';
+            return '';
+        }
+    }
 
     await act(async () => {
         (input as any).value = 'My Bar';

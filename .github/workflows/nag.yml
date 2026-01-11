@@ -1,5 +1,7 @@
 name: The Nag Bot
-
+permissions:
+  contents: read
+  pull-requests: write
 on:
   schedule:
     # Runs every 5 minutes

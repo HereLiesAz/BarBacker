@@ -26,6 +26,127 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
       { id: 'mint', label: 'MINT' }
     ]
   },
+  { id: 'restock_beer', label: 'RESTOCK BEER', icon: 'sports_bar' },
+  {
+    id: 'mixers', label: 'MIXERS', icon: 'local_bar',
+    children: [
+      { id: 'soda', label: 'SODA' },
+      { id: 'tonic', label: 'TONIC' },
+      { id: 'coke', label: 'COKE' },
+      { id: 'diet', label: 'DIET COKE' },
+      { id: 'sprite', label: 'SPRITE' },
+      { id: 'ginger_ale', label: 'GINGER ALE' },
+      { id: 'ginger_beer', label: 'GINGER BEER' },
+      { id: 'cranberry', label: 'CRANBERRY' },
+      { id: 'oj', label: 'OJ' },
+      { id: 'pineapple', label: 'PINEAPPLE' },
+      { id: 'grapefruit', label: 'GRAPEFRUIT' },
+      { id: 'sour', label: 'SOUR MIX' },
+      { id: 'simple', label: 'SIMPLE SYRUP' },
+      { id: 'grenadine', label: 'GRENADINE' },
+      { id: 'bitters', label: 'BITTERS' }
+    ]
+  },
+  {
+    id: 'mixers', label: 'MIXERS', icon: 'local_bar',
+    children: [
+      { id: 'soda', label: 'SODA' },
+      { id: 'tonic', label: 'TONIC' },
+      { id: 'coke', label: 'COKE' },
+      { id: 'diet', label: 'DIET COKE' },
+      { id: 'sprite', label: 'SPRITE' },
+      { id: 'ginger_ale', label: 'GINGER ALE' },
+      { id: 'ginger_beer', label: 'GINGER BEER' },
+      { id: 'cranberry', label: 'CRANBERRY' },
+      { id: 'oj', label: 'OJ' },
+      { id: 'pineapple', label: 'PINEAPPLE' },
+      { id: 'grapefruit', label: 'GRAPEFRUIT' },
+      { id: 'sour', label: 'SOUR MIX' },
+      { id: 'simple', label: 'SIMPLE SYRUP' },
+      { id: 'grenadine', label: 'GRENADINE' },
+      { id: 'bitters', label: 'BITTERS' }
+    ]
+  },
+  {
+    id: 'mixers', label: 'MIXERS', icon: 'local_bar',
+    children: [
+      { id: 'soda', label: 'SODA' },
+      { id: 'tonic', label: 'TONIC' },
+      { id: 'coke', label: 'COKE' },
+      { id: 'diet', label: 'DIET COKE' },
+      { id: 'sprite', label: 'SPRITE' },
+      { id: 'ginger_ale', label: 'GINGER ALE' },
+      { id: 'ginger_beer', label: 'GINGER BEER' },
+      { id: 'cranberry', label: 'CRANBERRY' },
+      { id: 'oj', label: 'OJ' },
+      { id: 'pineapple', label: 'PINEAPPLE' },
+      { id: 'grapefruit', label: 'GRAPEFRUIT' },
+      { id: 'sour', label: 'SOUR MIX' },
+      { id: 'simple', label: 'SIMPLE SYRUP' },
+      { id: 'grenadine', label: 'GRENADINE' },
+      { id: 'bitters', label: 'BITTERS' }
+    ]
+  },
+  {
+    id: 'mixers', label: 'MIXERS', icon: 'local_bar',
+    children: [
+      { id: 'soda', label: 'SODA' },
+      { id: 'tonic', label: 'TONIC' },
+      { id: 'coke', label: 'COKE' },
+      { id: 'diet', label: 'DIET COKE' },
+      { id: 'sprite', label: 'SPRITE' },
+      { id: 'ginger_ale', label: 'GINGER ALE' },
+      { id: 'ginger_beer', label: 'GINGER BEER' },
+      { id: 'cranberry', label: 'CRANBERRY' },
+      { id: 'oj', label: 'OJ' },
+      { id: 'pineapple', label: 'PINEAPPLE' },
+      { id: 'grapefruit', label: 'GRAPEFRUIT' },
+      { id: 'sour', label: 'SOUR MIX' },
+      { id: 'simple', label: 'SIMPLE SYRUP' },
+      { id: 'grenadine', label: 'GRENADINE' },
+      { id: 'bitters', label: 'BITTERS' }
+    ]
+  },
+  {
+    id: 'mixers', label: 'MIXERS', icon: 'local_bar',
+    children: [
+      { id: 'soda', label: 'SODA' },
+      { id: 'tonic', label: 'TONIC' },
+      { id: 'coke', label: 'COKE' },
+      { id: 'diet', label: 'DIET COKE' },
+      { id: 'sprite', label: 'SPRITE' },
+      { id: 'ginger_ale', label: 'GINGER ALE' },
+      { id: 'ginger_beer', label: 'GINGER BEER' },
+      { id: 'cranberry', label: 'CRANBERRY' },
+      { id: 'oj', label: 'OJ' },
+      { id: 'pineapple', label: 'PINEAPPLE' },
+      { id: 'grapefruit', label: 'GRAPEFRUIT' },
+      { id: 'sour', label: 'SOUR MIX' },
+      { id: 'simple', label: 'SIMPLE SYRUP' },
+      { id: 'grenadine', label: 'GRENADINE' },
+      { id: 'bitters', label: 'BITTERS' }
+    ]
+  },
+  {
+    id: 'mixers', label: 'MIXERS', icon: 'local_bar',
+    children: [
+      { id: 'soda', label: 'SODA' },
+      { id: 'tonic', label: 'TONIC' },
+      { id: 'coke', label: 'COKE' },
+      { id: 'diet', label: 'DIET COKE' },
+      { id: 'sprite', label: 'SPRITE' },
+      { id: 'ginger_ale', label: 'GINGER ALE' },
+      { id: 'ginger_beer', label: 'GINGER BEER' },
+      { id: 'cranberry', label: 'CRANBERRY' },
+      { id: 'oj', label: 'OJ' },
+      { id: 'pineapple', label: 'PINEAPPLE' },
+      { id: 'grapefruit', label: 'GRAPEFRUIT' },
+      { id: 'sour', label: 'SOUR MIX' },
+      { id: 'simple', label: 'SIMPLE SYRUP' },
+      { id: 'grenadine', label: 'GRENADINE' },
+      { id: 'bitters', label: 'BITTERS' }
+    ]
+  },
   {
     id: 'mixers', label: 'MIXERS', icon: 'local_bar',
     children: [

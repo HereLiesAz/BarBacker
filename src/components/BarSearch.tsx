@@ -47,7 +47,12 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
 
   const handleCreate = (e: React.FormEvent) => {
       e.preventDefault();
-      onJoin({ name: queryText, status: 'temporary', type: barType });
+      onJoin({
+          id: `temp_${Date.now()}`,
+          name: queryText,
+          status: 'temporary',
+          type: barType
+      });
   };
 
   return (

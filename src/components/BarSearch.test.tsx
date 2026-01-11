@@ -1,5 +1,4 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import BarSearch from '../components/BarSearch';
 
@@ -84,7 +83,7 @@ describe('BarSearch', () => {
     expect(input).toBeInTheDocument();
   });
 
-  it('submits new bar when no duplicate found', async () => {
+  it('calls onJoin when creating a temp bar', async () => {
     const handleJoin = vi.fn();
 
     const { container } = render(<BarSearch onJoin={handleJoin} />);

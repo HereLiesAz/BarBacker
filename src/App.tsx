@@ -19,7 +19,8 @@ import {
   doc,
   serverTimestamp,
   setDoc,
-  deleteDoc
+  deleteDoc,
+  arrayUnion
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -51,7 +52,6 @@ import { Bar, ButtonConfig, Request } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS } from './constants';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
-import TestLogin from './components/TestLogin';
 import NotificationSettings from './components/NotificationSettings';
 
 // --- MAIN APP COMPONENT ---
@@ -72,6 +72,10 @@ function App() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
+
+  const [beerInventory, setBeerInventory] = useState<Record<string, string[]>>({});
+  const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
+  const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
   // FIX 1: Use proper return type for browser environment
@@ -148,6 +152,7 @@ function App() {
         const data = d.data() as Bar;
         setBarName(data.name);
         if (data.buttons) setButtons([...DEFAULT_BUTTONS, ...data.buttons]);
+        if (data.beerInventory) setBeerInventory(data.beerInventory);
       }
     });
 
@@ -174,6 +179,133 @@ function App() {
   }, [navStack]);
 
   // --- Actions ---
+
+  const saveBrand = async (brandName: string) => {
+    if (!user || !barId) return;
+
+    // Check if it already exists locally
+    if (beerInventory[brandName]) {
+        setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+        // Navigate to existing brand
+        const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
+        setNavStack(prev => [...prev, brandBtn]);
+        return;
+    }
+
+    // Atomic update: merge new brand into map
+    await setDoc(doc(db, 'bars', barId), {
+        beerInventory: { [brandName]: [] }
+    }, { merge: true });
+
+    // Optimistic update
+    setBeerInventory(prev => ({ ...prev, [brandName]: [] }));
+    setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+
+    // Navigate to new brand
+    const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
+    setNavStack(prev => [...prev, brandBtn]);
+  };
+
+  const saveType = async (typeName: string) => {
+    if (!user || !barId || !inputDialog.parentContext) return;
+    const brand = inputDialog.parentContext;
+    const currentTypes = beerInventory[brand] || [];
+
+    // Check duplication locally
+    if (currentTypes.includes(typeName)) {
+        setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+        const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
+        setNavStack(prev => [...prev, typeBtn]);
+        return;
+    }
+
+    // Atomic update: add to array
+    await updateDoc(doc(db, 'bars', barId), {
+        [`beerInventory.${brand}`]: arrayUnion(typeName)
+    });
+
+    // Optimistic update
+    setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), typeName] }));
+    setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+
+    // Navigate to new type
+    const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
+    setNavStack(prev => [...prev, typeBtn]);
+  };
+
+  const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
+    if (btn.id === 'restock_beer') {
+      const brandButtons: ButtonConfig[] = Object.keys(beerInventory).map(brand => ({
+        id: `brand_${brand}`,
+        label: brand,
+        // Since we are creating these on the fly, we don't have explicit children stored,
+        // but we know logic dictates they have children (types).
+        // We set 'children: []' as a signal that it has children,
+        // but the actual retrieval will be recursive via getDynamicChildren.
+        children: []
+      }));
+      return [...brandButtons, { id: 'add_brand', label: '+ ADD BRAND', action: 'add_brand', isCustom: true }];
+    }
+
+    // Check if button is a Brand
+    if (btn.id.startsWith('brand_')) {
+      const brandName = btn.label;
+      const types = beerInventory[brandName] || [];
+      const typeButtons: ButtonConfig[] = types.map(t => ({
+        id: `type_${brandName}_${t}`,
+        label: t,
+        children: [] // Signal it has children (quantities)
+      }));
+      return [...typeButtons, { id: 'add_type', label: '+ ADD TYPE', action: 'add_type', isCustom: true }];
+    }
+
+    // Check if button is a Type
+    if (btn.id.startsWith('type_')) {
+      // Return quantity options
+      return [
+        { id: 'qty_6', label: '6' },
+        { id: 'qty_12', label: '12' },
+        { id: 'qty_24', label: '24' },
+        { id: 'qty_other', label: 'Other', action: 'custom_qty' }
+      ];
+    }
+
+    return btn.children || [];
+  };
+
+  const handleButtonClick = (btn: ButtonConfig) => {
+    if (btn.action === 'add_brand') {
+      setInputDialog({ type: 'brand', open: true, searchTerm: '' });
+      return;
+    }
+    if (btn.action === 'add_type') {
+      // Parent context is the brand name. The navStack has [Restock Beer, BrandName]
+      const brandBtn = navStack[navStack.length - 1];
+      setInputDialog({ type: 'type', open: true, parentContext: brandBtn.label, searchTerm: '' });
+      return;
+    }
+    if (btn.action === 'custom_qty') {
+      // We want context "RESTOCK BEER: Corona: Bottle"
+      setQuantityPicker({
+        open: true,
+        currentQty: 1,
+        context: navStack.map(b => b.label).join(': ')
+      });
+      return;
+    }
+
+    // Standard navigation
+    // We check if it SHOULD have children.
+    // getDynamicChildren will return children if it's dynamic.
+    const children = getDynamicChildren(btn);
+    if (children && children.length > 0) {
+      setNavStack([...navStack, btn]);
+    } else {
+      // Leaf node
+      submitRequest([...navStack, btn].map(b => b.label).join(': '));
+      setNavStack([]);
+    }
+  };
 
   const confirmRole = async (role: string, name: string) => {
     if (!user || !barId) return;
@@ -321,7 +453,7 @@ function App() {
   });
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
-  const currentButtons = navStack.length > 0 ? navStack[navStack.length - 1].children || [] : buttons;
+  const currentButtons = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
 
   return (
     <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
@@ -334,6 +466,77 @@ function App() {
         currentPreferences={notificationPreferences}
         allButtons={buttons}
       />
+
+      <md-dialog open={inputDialog.open} onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}>
+        <div slot="headline">{inputDialog.type === 'brand' ? 'Select or Add Brand' : 'Select or Add Type'}</div>
+        <div slot="content" className="flex flex-col gap-4 min-w-[300px] h-[300px]">
+           <md-filled-text-field
+             label="Search..."
+             value={inputDialog.searchTerm}
+             onInput={(e: Event) => setInputDialog(prev => ({ ...prev, searchTerm: (e.target as HTMLInputElement).value }))}
+             style={{ width: '100%' }}
+           />
+           <div className="flex-1 overflow-y-auto border border-gray-800 rounded p-2">
+             <md-list>
+               {(() => {
+                 const term = inputDialog.searchTerm.toLowerCase();
+                 // Determine source list
+                 let items: string[] = [];
+                 if (inputDialog.type === 'brand') {
+                    items = Object.keys(beerInventory);
+                 } else {
+                    // For types, collect all unique types across all brands to suggest
+                    items = Array.from(new Set(Object.values(beerInventory).flat()));
+                 }
+
+                 const matches = items.filter(i => i.toLowerCase().includes(term));
+                 const exactMatch = matches.some(i => i.toLowerCase() === term);
+
+                 return (
+                   <>
+                     {matches.map(item => (
+                       <md-list-item key={item} type="button" onClick={() => inputDialog.type === 'brand' ? saveBrand(item) : saveType(item)}>
+                         <div slot="headline">{item}</div>
+                         <md-icon slot="end">arrow_forward</md-icon>
+                       </md-list-item>
+                     ))}
+                     {inputDialog.searchTerm && !exactMatch && (
+                       <md-list-item type="button" onClick={() => inputDialog.type === 'brand' ? saveBrand(inputDialog.searchTerm) : saveType(inputDialog.searchTerm)}>
+                         <div slot="headline" className="text-blue-400">Create "{inputDialog.searchTerm}"</div>
+                         <md-icon slot="end" className="text-blue-400">add_circle</md-icon>
+                       </md-list-item>
+                     )}
+                   </>
+                 );
+               })()}
+             </md-list>
+           </div>
+        </div>
+        <div slot="actions">
+          <md-text-button onClick={() => setInputDialog(prev => ({ ...prev, open: false }))}>Cancel</md-text-button>
+        </div>
+      </md-dialog>
+
+      <md-dialog open={quantityPicker.open} onClose={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>
+        <div slot="headline">Select Quantity</div>
+        <div slot="content" className="flex items-center justify-center gap-6 py-6">
+           <md-filled-tonal-button onClick={() => setQuantityPicker(prev => ({ ...prev, currentQty: Math.max(1, prev.currentQty - 1) }))}>
+             <md-icon>remove</md-icon>
+           </md-filled-tonal-button>
+           <span className="text-4xl font-bold text-white">{quantityPicker.currentQty}</span>
+           <md-filled-tonal-button onClick={() => setQuantityPicker(prev => ({ ...prev, currentQty: prev.currentQty + 1 }))}>
+             <md-icon>add</md-icon>
+           </md-filled-tonal-button>
+        </div>
+        <div slot="actions">
+          <md-text-button onClick={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>Cancel</md-text-button>
+          <md-filled-button onClick={() => {
+             submitRequest(`${quantityPicker.context}: ${quantityPicker.currentQty}`);
+             setQuantityPicker(prev => ({ ...prev, open: false }));
+             setNavStack([]);
+          }}>Send</md-filled-button>
+        </div>
+      </md-dialog>
 
       <md-dialog open={showOffClockDialog} onClose={() => setShowOffClockDialog(false)}>
         <div slot="headline">Abandon Ship?</div>
@@ -370,12 +573,17 @@ function App() {
             <md-icon-button onClick={() => setNavStack([])}><md-icon>close</md-icon></md-icon-button>
             <span className="text-xl font-medium text-gray-200">{navStack.map(b => b.label).join(' > ')}</span>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 mb-auto">
             {currentButtons.map(btn => (
-              <md-filled-tonal-button key={btn.id} onClick={() => { if(btn.children) setNavStack([...navStack, btn]); else { submitRequest([...navStack, btn].map(b=>b.label).join(': ')); setNavStack([]); }}} style={{ height: '100px', fontSize: '18px' }}>
+              <md-filled-tonal-button key={btn.id} onClick={() => handleButtonClick(btn)} style={{ height: '100px', fontSize: '18px' }}>
                 {btn.label}
               </md-filled-tonal-button>
             ))}
+          </div>
+          <div className="mt-8">
+            <md-filled-button class="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
+               Cancel
+            </md-filled-button>
           </div>
         </div>
       )}
@@ -384,7 +592,7 @@ function App() {
         {buttons.map(btn => {
           const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
           return (
-            <md-filled-tonal-button key={btn.id} onClick={() => { if(btn.children) setNavStack([...navStack, btn]); else submitRequest(btn.label); }} class={isPending ? 'btn-alert' : ''} style={{ height: '120px' }}>
+            <md-filled-tonal-button key={btn.id} onClick={() => handleButtonClick(btn)} class={isPending ? 'btn-alert' : ''} style={{ height: '120px' }}>
               <div className="flex flex-col items-center gap-2">
                 <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
                 <span className="text-lg font-bold leading-none">{btn.label}</span>

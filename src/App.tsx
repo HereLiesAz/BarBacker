@@ -687,7 +687,7 @@ function App() {
         })()}
       />
 
-      <md-dialog open={quantityPicker.open} onClose={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>
+      <md-dialog open={quantityPicker.open || undefined} onClose={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>
         <div slot="headline">Select Quantity</div>
         <div slot="content" className="flex items-center justify-center gap-6 py-6">
            <md-filled-tonal-button onClick={() => setQuantityPicker(prev => ({ ...prev, currentQty: Math.max(1, prev.currentQty - 1) }))}>
@@ -708,7 +708,7 @@ function App() {
         </div>
       </md-dialog>
 
-      <md-dialog open={showOffClockDialog} onClose={() => setShowOffClockDialog(false)}>
+      <md-dialog open={showOffClockDialog || undefined} onClose={() => setShowOffClockDialog(false)}>
         <div slot="headline">Abandon Ship?</div>
         <div slot="content">
           Going off clock stops all notifications. The bar will be unprotected. Are you sure?

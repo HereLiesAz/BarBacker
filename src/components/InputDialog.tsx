@@ -22,7 +22,7 @@ const InputDialog = ({ open, mode, searchTerm, onSearchChange, onClose, onSelect
   const exactMatch = matches.some(i => i.toLowerCase() === term);
 
   return (
-    <md-dialog open={open} onClose={onClose}>
+    <md-dialog open={open || undefined} onClose={onClose}>
       <div slot="headline">
         {mode === 'brand' && 'Select or Add Brand'}
         {mode === 'type' && 'Select or Add Type'}

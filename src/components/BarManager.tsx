@@ -55,7 +55,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
 
   return (
     <>
-      <md-dialog open={open} onClose={onClose} style={{ maxHeight: '80vh' }}>
+      <md-dialog open={open || undefined} onClose={onClose} style={{ maxHeight: '80vh' }}>
         <div slot="headline">Manage {barName}</div>
         <div slot="content" className="flex flex-col gap-4 min-w-[300px]">
            <div className="flex gap-2 border-b border-gray-800 pb-2">
@@ -142,7 +142,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
         </div>
       </md-dialog>
 
-      <md-dialog open={!!confirmDeleteId} onClose={() => setConfirmDeleteId(null)}>
+      <md-dialog open={!!confirmDeleteId || undefined} onClose={() => setConfirmDeleteId(null)}>
         <div slot="headline">Remove Button?</div>
         <div slot="content">
           Are you sure you want to remove this button from the dashboard?
@@ -153,7 +153,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
         </div>
       </md-dialog>
 
-      <md-dialog open={!!confirmUserId} onClose={() => setConfirmUserId(null)}>
+      <md-dialog open={!!confirmUserId || undefined} onClose={() => setConfirmUserId(null)}>
         <div slot="headline">Remove User?</div>
         <div slot="content">
           Are you sure you want to remove this user from the bar? This action cannot be undone.

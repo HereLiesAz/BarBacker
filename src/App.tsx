@@ -51,7 +51,6 @@ import { Bar, ButtonConfig, Request } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS } from './constants';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
-import TestLogin from './components/TestLogin';
 import NotificationSettings from './components/NotificationSettings';
 
 // --- MAIN APP COMPONENT ---

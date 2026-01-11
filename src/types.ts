@@ -18,6 +18,7 @@ export interface Bar {
   beerInventory?: Record<string, string[]>;
   wells?: string[];
   hiddenButtonIds?: string[];
+  buttonUsage?: Record<string, number>;
 }
 
 export interface Request {

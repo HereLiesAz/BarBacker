@@ -20,7 +20,8 @@ import {
   serverTimestamp,
   setDoc,
   deleteDoc,
-  arrayUnion
+  arrayUnion,
+  increment
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -77,6 +78,7 @@ function App() {
   const [beerInventory, setBeerInventory] = useState<Record<string, string[]>>({});
   const [wells, setWells] = useState<string[]>([]);
   const [hiddenButtonIds, setHiddenButtonIds] = useState<string[]>([]);
+  const [buttonUsage, setButtonUsage] = useState<Record<string, number>>({});
   const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
@@ -159,6 +161,7 @@ function App() {
         if (data.beerInventory) setBeerInventory(data.beerInventory);
         if (data.wells) setWells(data.wells);
         if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
+        if (data.buttonUsage) setButtonUsage(data.buttonUsage);
       }
     });
 
@@ -318,7 +321,24 @@ function App() {
     return btn.children || [];
   };
 
+  const trackButtonUsage = (btnId: string) => {
+    if (!barId) return;
+    updateDoc(doc(db, 'bars', barId), {
+        [`buttonUsage.${btnId}`]: increment(1)
+    }).catch(e => console.error("Failed to track usage", e));
+  };
+
+  const sortButtons = (btns: ButtonConfig[]) => {
+    return [...btns].sort((a, b) => {
+        const usageA = buttonUsage[a.id] || 0;
+        const usageB = buttonUsage[b.id] || 0;
+        return usageB - usageA;
+    });
+  };
+
   const handleButtonClick = (btn: ButtonConfig) => {
+    trackButtonUsage(btn.id);
+
     if (btn.id === 'add_well') {
       const defaultName = `Well #${wells.length + 1}`;
       setInputDialog({ type: 'well', open: true, searchTerm: defaultName });
@@ -503,9 +523,15 @@ function App() {
   });
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
-  // Filter active buttons (not hidden)
+  // Filter active buttons (not hidden) and sort by usage
   const currentButtonsSource = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
-  const currentButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
+  const activeButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
+  const currentButtons = sortButtons(activeButtons);
+
+  // Sort buttons for Manager view too? Probably better to keep default order or sort there too.
+  // Prompt says "ALL pager buttons... are displayed...".
+  // Let's pass sorted buttons to BarManager too so user finds top ones easily.
+  const sortedAllButtons = sortButtons(buttons);
 
   return (
     <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
@@ -514,7 +540,7 @@ function App() {
         open={showBarManager}
         onClose={() => setShowBarManager(false)}
         barName={barName}
-        allButtons={buttons}
+        allButtons={sortedAllButtons}
         hiddenButtonIds={hiddenButtonIds}
         onHideButton={hideButton}
       />
@@ -648,9 +674,11 @@ function App() {
           </div>
           <div className="grid grid-cols-2 gap-4 mb-auto">
             {currentButtons.map(btn => (
-              <md-filled-tonal-button key={btn.id} onClick={() => handleButtonClick(btn)} style={{ height: '100px', fontSize: '18px' }}>
-                {btn.label}
-              </md-filled-tonal-button>
+              <div key={btn.id} onClick={() => handleButtonClick(btn)} className="cursor-pointer">
+                <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none' }}>
+                  {btn.label}
+                </md-filled-tonal-button>
+              </div>
             ))}
           </div>
           <div className="mt-8">
@@ -662,16 +690,18 @@ function App() {
       )}
 
       <div className="grid grid-cols-2 gap-3 p-4">
-        {buttons.map(btn => {
+        {sortButtons(buttons).filter(btn => !hiddenButtonIds.includes(btn.id)).map(btn => {
           const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
           return (
-            <md-filled-tonal-button key={btn.id} onClick={() => handleButtonClick(btn)} class={isPending ? 'btn-alert' : ''} style={{ height: '120px' }}>
-              <div className="flex flex-col items-center gap-2">
-                <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
-                <span className="text-lg font-bold leading-none">{btn.label}</span>
-                {isPending && <span className="text-xs opacity-80">PENDING</span>}
-              </div>
-            </md-filled-tonal-button>
+            <div key={btn.id} onClick={() => handleButtonClick(btn)} className="cursor-pointer">
+              <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
+                <div className="flex flex-col items-center gap-2">
+                  <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
+                  <span className="text-lg font-bold leading-none">{btn.label}</span>
+                  {isPending && <span className="text-xs opacity-80">PENDING</span>}
+                </div>
+              </md-filled-tonal-button>
+            </div>
           );
         })}
       </div>

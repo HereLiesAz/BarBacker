@@ -7,12 +7,12 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
   {
     id: 'glass', label: 'GLASSWARE', icon: 'wine_bar',
     children: [
+      { id: 'pint', label: 'PINT' },
       { id: 'rocks', label: 'ROCKS' },
       { id: 'collins', label: 'COLLINS' },
-      { id: 'pint', label: 'PINT' },
+      { id: 'wine', label: 'WINE GLASS' },
       { id: 'coupe', label: 'COUPE' },
-      { id: 'shot', label: 'SHOT GLASS' },
-      { id: 'wine', label: 'WINE GLASS' }
+      { id: 'shot', label: 'SHOT GLASS' }
     ]
   },
   {
@@ -21,8 +21,8 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
       { id: 'lime', label: 'LIMES' },
       { id: 'lemon', label: 'LEMONS' },
       { id: 'orange', label: 'ORANGES' },
-      { id: 'cherry', label: 'CHERRIES' },
       { id: 'olive', label: 'OLIVES' },
+      { id: 'cherry', label: 'CHERRIES' },
       { id: 'mint', label: 'MINT' }
     ]
   },
@@ -46,7 +46,6 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
       { id: 'bitters', label: 'BITTERS' }
     ]
   },
-  { id: 'restock_beer', label: 'RESTOCK BEER', icon: 'sports_bar' },
   {
     id: 'restock', label: 'RESTOCK WELL', icon: 'liquor',
     children: [
@@ -59,8 +58,9 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
       { id: 'beer', label: 'BEER' }
     ]
   },
-  { id: 'keg', label: 'KEG KICKED', icon: 'keg' },
+  { id: 'restock_beer', label: 'RESTOCK BEER', icon: 'sports_bar' },
   { id: 'trash', label: 'TRASH / SPILL', icon: 'delete' },
+  { id: 'keg', label: 'KEG KICKED', icon: 'keg' },
   { id: 'security', label: 'SECURITY', icon: 'security' },
   { id: 'manager', label: 'MANAGER', icon: 'manage_accounts' },
 ];

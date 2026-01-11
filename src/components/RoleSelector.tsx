@@ -45,9 +45,21 @@ const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
         })}
       </div>
 
-      <md-filled-button disabled={(!selectedRole || !displayName) || undefined} onClick={() => onSelect(selectedRole, displayName)}>
-        Clock In
-      </md-filled-button>
+      <div
+        onClick={() => {
+          if (selectedRole && displayName) {
+            onSelect(selectedRole, displayName);
+          }
+        }}
+        className="w-full"
+      >
+        <md-filled-button
+          disabled={(!selectedRole || !displayName) || undefined}
+          style={{ pointerEvents: 'none', width: '100%' }}
+        >
+          Clock In
+        </md-filled-button>
+      </div>
     </div>
   );
 };

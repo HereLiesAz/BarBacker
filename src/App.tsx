@@ -72,7 +72,6 @@ function App() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
-  const [notificationPermissionGranted, setNotificationPermissionGranted] = useState<boolean | null>(null);
 
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
   // FIX 1: Use proper return type for browser environment
@@ -82,30 +81,9 @@ function App() {
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
-    const checkPermission = async () => {
-        if (Notification.permission === 'granted') {
-            setNotificationPermissionGranted(true);
-            const token = await requestNotificationPermission(); // Gets token
-            if (token) setFcmToken(token);
-        } else if (Notification.permission === 'denied') {
-            setNotificationPermissionGranted(false);
-        } else {
-            // Default - request it
-            const token = await requestNotificationPermission();
-            if (token) {
-                setNotificationPermissionGranted(true);
-                setFcmToken(token);
-            } else {
-                setNotificationPermissionGranted(false);
-            }
-        }
-    };
-
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (u) {
-          checkPermission();
-      }
+      if (u) requestNotificationPermission().then(t => t && setFcmToken(t));
     });
     onMessageListener().then((payload: any) => {
       // payload usually has { notification: { title, body }, data: { ... } }
@@ -282,22 +260,8 @@ function App() {
            <md-text-button onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? 'Login' : 'Register'}</md-text-button>
            <md-outlined-button onClick={handleGoogle}><md-icon slot="icon">mail</md-icon>Google</md-outlined-button>
         </div>
-        <TestLogin />
       </div>
     );
-  }
-
-  if (notificationPermissionGranted === false) {
-      return (
-          <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black text-center">
-              <md-icon style={{ fontSize: 64, color: '#ef4444' }}>notifications_off</md-icon>
-              <h2 className="text-2xl font-bold text-white">Permission Required</h2>
-              <p className="text-gray-400 max-w-xs">
-                  Notification permissions are necessary for the app to run. Please enable them in your browser settings and reload.
-              </p>
-              <md-filled-button onClick={() => window.location.reload()}>Reload</md-filled-button>
-          </div>
-      );
   }
 
   if (!barId) {

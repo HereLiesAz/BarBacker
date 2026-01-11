@@ -54,12 +54,25 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
     <div className="space-y-4">
         {mode === 'search' ? (
              <div className="space-y-2">
-                <md-filled-text-field
-                    label="Search OpenStreetMap"
-                    value={queryText}
-                    onInput={(e: Event) => setQueryText((e.target as HTMLInputElement).value)}
-                    type="search"
-                />
+                <div className="relative">
+                    <md-filled-text-field
+                        label="Search OpenStreetMap"
+                        value={queryText}
+                        onInput={(e: Event) => setQueryText((e.target as HTMLInputElement).value)}
+                        type="search"
+                        className="w-full"
+                    >
+                        {isSearching && (
+                             <md-circular-progress slot="trailing-icon" indeterminate style={{ width: '24px', height: '24px' }}></md-circular-progress>
+                        )}
+                    </md-filled-text-field>
+                </div>
+
+                {isSearching && (
+                    <div className="flex justify-center p-4">
+                        <md-circular-progress indeterminate></md-circular-progress>
+                    </div>
+                )}
 
                 {isSearching && (
                     <div className="flex justify-center p-4">

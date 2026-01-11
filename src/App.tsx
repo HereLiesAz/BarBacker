@@ -763,6 +763,11 @@ function App() {
                Cancel
             </md-filled-button>
           </div>
+          <div className="mt-8">
+            <md-filled-button class="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
+               Cancel
+            </md-filled-button>
+          </div>
         </div>
       )}
 

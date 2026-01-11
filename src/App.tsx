@@ -96,6 +96,7 @@ function App() {
   const [hiddenButtonIds, setHiddenButtonIds] = useState<string[]>([]);
   const [buttonUsage, setButtonUsage] = useState<Record<string, number>>({});
   const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
+  const [allUsers, setAllUsers] = useState<any[]>([]);
   const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
@@ -189,7 +190,11 @@ function App() {
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
-    return () => { unsubUser(); unsubBar(); unsubReq(); };
+    const unsubAllUsers = onSnapshot(collection(db, `bars/${barId}/users`), (s) => {
+        setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); };
   }, [user, barId, fcmToken, setSearchParams]);
 
   // --- Timer ---
@@ -290,6 +295,16 @@ function App() {
         hiddenButtonIds: arrayUnion(btnId)
     });
     setHiddenButtonIds(prev => [...prev, btnId]);
+  };
+
+  const approveUser = async (uid: string) => {
+    if (!user || !barId) return;
+    await updateDoc(doc(db, `bars/${barId}/users`, uid), { status: 'active' });
+  };
+
+  const removeUser = async (uid: string) => {
+    if (!user || !barId) return;
+    await deleteDoc(doc(db, `bars/${barId}/users`, uid));
   };
 
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
@@ -606,6 +621,21 @@ function App() {
 
   const sortedAllButtons = sortButtons(buttons, 'main');
 
+  // Inject pending approvals for Managers/Owners
+  const pendingUsers = allUsers.filter(u => u.status === 'pending');
+  const showApprovals = (userRole === 'Owner' || userRole === 'Manager') && pendingUsers.length > 0;
+
+  if (userStatus === 'pending') {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black text-center">
+            <md-icon style={{ fontSize: 64 }} className="text-yellow-500">hourglass_empty</md-icon>
+            <h2 className="text-2xl font-bold text-white">Approval Pending</h2>
+            <p className="text-gray-400">A manager must approve your request to join {barName}.</p>
+            <md-text-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}>Cancel</md-text-button>
+        </div>
+      );
+  }
+
   return (
     <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
       
@@ -616,6 +646,10 @@ function App() {
         allButtons={sortedAllButtons}
         hiddenButtonIds={hiddenButtonIds}
         onHideButton={hideButton}
+        users={allUsers}
+        onApproveUser={approveUser}
+        onRemoveUser={removeUser}
+        currentUserRole={userRole || ''}
       />
 
       <NotificationSettings
@@ -763,11 +797,6 @@ function App() {
                Cancel
             </md-filled-button>
           </div>
-          <div className="mt-8">
-            <md-filled-button class="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
-               Cancel
-            </md-filled-button>
-          </div>
         </div>
       )}
 
@@ -793,6 +822,15 @@ function App() {
       </DndContext>
 
       <div className="px-4 mt-4">
+        {showApprovals && (
+            <div onClick={() => setShowBarManager(true)} className="mb-2 p-4 bg-[#2C1A1A] border-l-4 border-yellow-500 rounded-r-lg flex justify-between items-center cursor-pointer active:bg-yellow-900/40 transition-colors">
+                <div className="flex flex-col">
+                  <span className="font-medium text-yellow-100">Staff Approval Needed</span>
+                  <span className="text-xs text-yellow-400">{pendingUsers.length} pending request(s)</span>
+                </div>
+                <md-filled-button style={{ height: '32px', backgroundColor: '#EAB308', color: '#000' }}>VIEW</md-filled-button>
+            </div>
+        )}
         {activeRequests.map(req => (
           <div key={req.id} onClick={() => claimRequest(req.id)} className="mb-2 p-4 bg-[#2C1A1A] border-l-4 border-red-500 rounded-r-lg flex justify-between items-center cursor-pointer active:bg-red-900/40 transition-colors">
             <div className="flex flex-col">

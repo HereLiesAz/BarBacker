@@ -51,6 +51,7 @@ import { Bar, ButtonConfig, Request } from './types';
 import { DEFAULT_BUTTONS } from './constants';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
+import TestLogin from './components/TestLogin';
 
 // --- MAIN APP COMPONENT ---
 function App() {
@@ -251,6 +252,7 @@ function App() {
            <md-text-button onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? 'Login' : 'Register'}</md-text-button>
            <md-outlined-button onClick={handleGoogle}><md-icon slot="icon">mail</md-icon>Google</md-outlined-button>
         </div>
+        <TestLogin />
       </div>
     );
   }

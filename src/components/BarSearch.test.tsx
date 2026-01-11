@@ -31,35 +31,34 @@ beforeEach(() => {
 });
 
 describe('BarSearch', () => {
-  it('renders search mode by default', () => {
-    render(<BarSearch onJoin={() => {}} />);
+  it('renders search input and persistent create option', () => {
+    const { container } = render(<BarSearch onJoin={() => {}} />);
 
-    // Check that "Search" is the filled button (active)
-    // screen.getByText('Search') usually returns the element containing the text.
-    // In this case, it should be the md-filled-button itself.
-    const searchBtn = screen.getByText('Search');
-    expect(searchBtn.tagName.toLowerCase()).toBe('md-filled-button');
+    // md-filled-text-field label is tricky in JSDOM/TestingLibrary as it might not use standard <label>
+    // but the component renders the text.
+    // Try finding by text or display value.
+    // Or just look for the custom element attributes if needed.
+    const input = container.querySelector('md-filled-text-field[label="Search OpenStreetMap"]');
+    expect(input).toBeInTheDocument();
 
-    // "Create Temp" should be outlined (inactive)
-    const createBtn = screen.getByText('Create Temp');
-    expect(createBtn.tagName.toLowerCase()).toBe('md-outlined-button');
+    // Check for the list item specifically
+    const texts = screen.getAllByText('Create Bar Listing');
+    expect(texts.length).toBeGreaterThan(0);
   });
 
-  it('switches to create mode', async () => {
-    render(<BarSearch onJoin={() => {}} />);
-    const createBtn = screen.getByText('Create Temp');
+  it('opens dialog when create option is clicked', async () => {
+    const { container } = render(<BarSearch onJoin={() => {}} />);
+
+    const createBtn = screen.getAllByText('Create Bar Listing').find(el => el.closest('md-list-item'));
+    if (!createBtn) throw new Error("Button not found");
 
     await act(async () => {
       fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        // "Create Bar" submit button should appear
-        expect(screen.getByText('Create Bar')).toBeInTheDocument();
-
-        // Check that "Create Temp" is now filled
-        const activeBtn = screen.getByText('Create Temp');
-        expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
+        const dialog = container.querySelector('md-dialog');
+        expect(dialog).toHaveAttribute('open');
     });
 
     const input = container.querySelector('md-filled-text-field[name="name"]');
@@ -73,15 +72,18 @@ describe('BarSearch', () => {
 
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
-    // Switch to create mode
-    const createBtn = screen.getByText('Create Temp');
+    const createBtn = screen.getAllByText('Create Bar Listing').find(el => el.closest('md-list-item'));
+    if (!createBtn) throw new Error("Button not found");
+
     await act(async () => {
       fireEvent.click(createBtn);
     });
 
-    await waitFor(() => {
-        expect(screen.getByText('Create Bar')).toBeInTheDocument();
-    });
+    const dialog = container.querySelector('md-dialog');
+    await waitFor(() => expect(dialog).toHaveAttribute('open'));
+
+    // Fix FormData mocking
+    const originalFormData = window.FormData;
 
     class MockFormData {
         constructor(form: HTMLFormElement) {}
@@ -92,21 +94,24 @@ describe('BarSearch', () => {
         }
     }
 
-    await act(async () => {
-        (input as any).value = 'My Bar';
-        fireEvent.input(input);
-    });
+    window.FormData = MockFormData as any;
 
-    // Submit
-    const form = container.querySelector('form');
-    if (form) {
-       await act(async () => {
-         fireEvent.submit(form);
-       });
-    } else {
-       // fallback
-       const button = screen.getByText('Create Bar');
-       fireEvent.click(button);
+    try {
+        const submitBtn = screen.getByText('Create');
+        await act(async () => {
+            fireEvent.click(submitBtn);
+        });
+
+        await waitFor(() => {
+            expect(mockAddDoc).toHaveBeenCalled();
+            expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
+                name: 'New Bar',
+                zip: '90210',
+                status: 'temporary'
+            }));
+        });
+    } finally {
+        window.FormData = originalFormData;
     }
   });
 });

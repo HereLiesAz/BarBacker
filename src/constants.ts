@@ -26,6 +26,7 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
       { id: 'mint', label: 'MINT' }
     ]
   },
+  { id: 'restock_beer', label: 'RESTOCK BEER', icon: 'sports_bar' },
   {
     id: 'restock', label: 'RESTOCK WELL', icon: 'liquor',
     children: [

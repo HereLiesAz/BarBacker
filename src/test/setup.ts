@@ -34,7 +34,7 @@ if (typeof Element.prototype.animate === 'undefined') {
       finish: () => {},
       addEventListener: () => {},
       removeEventListener: () => {},
-      // add other methods if needed
+      finished: Promise.resolve(), // Fix for Material Web dialog animation
     } as any;
   };
 }

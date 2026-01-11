@@ -53,6 +53,7 @@ import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS } from './constants';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
+import BarManager from './components/BarManager';
 
 // --- MAIN APP COMPONENT ---
 function App() {
@@ -75,6 +76,7 @@ function App() {
 
   const [beerInventory, setBeerInventory] = useState<Record<string, string[]>>({});
   const [wells, setWells] = useState<string[]>([]);
+  const [hiddenButtonIds, setHiddenButtonIds] = useState<string[]>([]);
   const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
@@ -83,6 +85,7 @@ function App() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [showBarManager, setShowBarManager] = useState(false);
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
@@ -155,6 +158,7 @@ function App() {
         if (data.buttons) setButtons([...DEFAULT_BUTTONS, ...data.buttons]);
         if (data.beerInventory) setBeerInventory(data.beerInventory);
         if (data.wells) setWells(data.wells);
+        if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
       }
     });
 
@@ -258,15 +262,21 @@ function App() {
     setNavStack([]);
   };
 
+  const hideButton = async (btnId: string) => {
+    if (!user || !barId) return;
+    await updateDoc(doc(db, 'bars', barId), {
+        hiddenButtonIds: arrayUnion(btnId)
+    });
+    setHiddenButtonIds(prev => [...prev, btnId]);
+  };
+
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
     if (btn.id === 'ice') {
         const wellButtons: ButtonConfig[] = wells.map(w => ({
             id: `well_${w}`,
             label: w
         }));
-        return [...wellButtons, { id: 'add_well', label: '+ ADD WELL', action: 'add_brand', isCustom: true }];
-        // Reusing 'add_brand' action type logic? No, need distinct logic or reuse carefully.
-        // Let's use a new action type or map it in handleButtonClick.
+        return [...wellButtons, { id: 'add_well', label: '+ ADD WELL', isCustom: true }];
     }
 
     if (btn.id === 'restock_beer') {
@@ -493,11 +503,22 @@ function App() {
   });
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
-  const currentButtons = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
+  // Filter active buttons (not hidden)
+  const currentButtonsSource = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
+  const currentButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
 
   return (
     <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
       
+      <BarManager
+        open={showBarManager}
+        onClose={() => setShowBarManager(false)}
+        barName={barName}
+        allButtons={buttons}
+        hiddenButtonIds={hiddenButtonIds}
+        onHideButton={hideButton}
+      />
+
       <NotificationSettings
         open={showNotificationSettings}
         onClose={() => setShowNotificationSettings(false)}
@@ -601,8 +622,10 @@ function App() {
 
       <div className="flex justify-between items-center p-4 bg-[#121212] sticky top-0 z-10 border-b border-[#333]">
         <div className="flex flex-col">
-          <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
-          <div className="flex items-center gap-2 text-xs text-gray-400">
+          <md-text-button onClick={() => setShowBarManager(true)} style={{ marginLeft: '-12px' }}>
+            <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
+          </md-text-button>
+          <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
             <span className="text-white font-bold">{displayName}</span>
             <span className="bg-gray-800 px-1 rounded">{userRole}</span>
           </div>

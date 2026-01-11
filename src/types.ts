@@ -17,6 +17,7 @@ export interface Bar {
   type?: 'bar' | 'restaurant';
   beerInventory?: Record<string, string[]>;
   wells?: string[];
+  hiddenButtonIds?: string[];
 }
 
 export interface Request {

@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/textfield/filled-text-field.js';
 import '@material/web/radio/radio.js';
-import { Bar } from '../types';
+import '@material/web/list/list.js';
+import '@material/web/list/list-item.js';
+import '@material/web/icon/icon.js';
+import { Bar, OSMResult } from '../types';
 
 interface BarSearchProps {
   onJoin: (bar: Partial<Bar>) => void;
@@ -18,6 +21,28 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
   const [mode, setMode] = useState<'search' | 'create'>('search');
   const [queryText, setQueryText] = useState('');
   const [barType, setBarType] = useState<'bar' | 'restaurant'>('bar');
+  const [results, setResults] = useState<OSMResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (mode === 'search' && queryText.length > 2) {
+      const timer = setTimeout(async () => {
+        setIsSearching(true);
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`);
+          const data = await res.json();
+          setResults(data);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setIsSearching(false);
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      setResults([]);
+    }
+  }, [queryText, mode]);
 
   const handleCreate = (e: React.FormEvent) => {
       e.preventDefault();
@@ -27,12 +52,32 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
   return (
     <div className="space-y-4">
         {mode === 'search' ? (
-             <md-filled-text-field
-                label="Search OpenStreetMap"
-                value={queryText}
-                onInput={(e: Event) => setQueryText((e.target as HTMLInputElement).value)}
-                type="search"
-            />
+             <div className="space-y-2">
+                <md-filled-text-field
+                    label="Search OpenStreetMap"
+                    value={queryText}
+                    onInput={(e: Event) => setQueryText((e.target as HTMLInputElement).value)}
+                    type="search"
+                />
+
+                {results.length > 0 && (
+                    <md-list className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800 max-h-60 overflow-y-auto">
+                        {results.map((r) => (
+                            <md-list-item key={r.place_id} type="button" onClick={() => onJoin({
+                                id: String(r.osm_id),
+                                name: r.name || r.display_name.split(',')[0],
+                                address: r.display_name,
+                                status: 'verified',
+                                osmId: String(r.osm_id)
+                            })}>
+                                <div slot="headline" className="text-white">{r.name || r.display_name.split(',')[0]}</div>
+                                <div slot="supporting-text" className="text-gray-400 text-xs truncate">{r.display_name}</div>
+                                <md-icon slot="start">location_on</md-icon>
+                            </md-list-item>
+                        ))}
+                    </md-list>
+                )}
+             </div>
         ) : (
              <form onSubmit={handleCreate} className="space-y-4">
                 <md-filled-text-field

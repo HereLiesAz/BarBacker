@@ -39,6 +39,20 @@ if (typeof Element.prototype.animate === 'undefined') {
   };
 }
 
+// Polyfill IntersectionObserver
+if (typeof IntersectionObserver === 'undefined') {
+  class IntersectionObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  Object.defineProperty(window, 'IntersectionObserver', {
+    writable: true,
+    configurable: true,
+    value: IntersectionObserver
+  });
+}
+
 
 afterEach(() => {
   cleanup();

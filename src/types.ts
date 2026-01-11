@@ -13,6 +13,7 @@ export interface Bar {
   address?: string;
   osmId?: string;
   status: 'verified' | 'temporary';
+  type?: 'bar' | 'restaurant';
 }
 
 export interface Request {
@@ -22,7 +23,7 @@ export interface Request {
   requesterName?: string;
   requesterRole?: string;
   status: 'pending' | 'claimed';
-  timestamp: any;
+  timestamp: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
   barId: string;
   claimerName?: string;
 }

@@ -3,12 +3,12 @@ importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js')
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyCfkeRu4DVuSBBBa9bc0rrhtu-gCixFqIo",
+  authDomain: "barbacker-6c683",
+  projectId: "869145643734",
+  storageBucket: "1:869145643734:web:d902468d6942df6bc81777",
+  messagingSenderId: "barbacker-6c683.firebasestorage.app",
+  appId: "barbacker-6c683.firebaseapp.com"
 };
 
 firebase.initializeApp(firebaseConfig);

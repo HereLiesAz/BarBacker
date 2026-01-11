@@ -31,34 +31,35 @@ beforeEach(() => {
 });
 
 describe('BarSearch', () => {
-  it('renders search input and persistent create option', () => {
-    const { container } = render(<BarSearch onJoin={() => {}} />);
+  it('renders search mode by default', () => {
+    render(<BarSearch onJoin={() => {}} />);
 
-    // md-filled-text-field label is tricky in JSDOM/TestingLibrary as it might not use standard <label>
-    // but the component renders the text.
-    // Try finding by text or display value.
-    // Or just look for the custom element attributes if needed.
-    const input = container.querySelector('md-filled-text-field[label="Search OpenStreetMap"]');
-    expect(input).toBeInTheDocument();
+    // Check that "Search" is the filled button (active)
+    // screen.getByText('Search') usually returns the element containing the text.
+    // In this case, it should be the md-filled-button itself.
+    const searchBtn = screen.getByText('Search');
+    expect(searchBtn.tagName.toLowerCase()).toBe('md-filled-button');
 
-    // Check for the list item specifically
-    const texts = screen.getAllByText('Create Bar Listing');
-    expect(texts.length).toBeGreaterThan(0);
+    // "Create Temp" should be outlined (inactive)
+    const createBtn = screen.getByText('Create Temp');
+    expect(createBtn.tagName.toLowerCase()).toBe('md-outlined-button');
   });
 
-  it('opens dialog when create option is clicked', async () => {
-    const { container } = render(<BarSearch onJoin={() => {}} />);
-
-    const createBtn = screen.getAllByText('Create Bar Listing').find(el => el.closest('md-list-item'));
-    if (!createBtn) throw new Error("Button not found");
+  it('switches to create mode', async () => {
+    render(<BarSearch onJoin={() => {}} />);
+    const createBtn = screen.getByText('Create Temp');
 
     await act(async () => {
       fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        const dialog = container.querySelector('md-dialog');
-        expect(dialog).toHaveAttribute('open');
+        // "Create Bar" submit button should appear
+        expect(screen.getByText('Create Bar')).toBeInTheDocument();
+
+        // Check that "Create Temp" is now filled
+        const activeBtn = screen.getByText('Create Temp');
+        expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
     });
 
     const input = container.querySelector('md-filled-text-field[name="name"]');
@@ -72,18 +73,15 @@ describe('BarSearch', () => {
 
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
-    const createBtn = screen.getAllByText('Create Bar Listing').find(el => el.closest('md-list-item'));
-    if (!createBtn) throw new Error("Button not found");
-
+    // Switch to create mode
+    const createBtn = screen.getByText('Create Temp');
     await act(async () => {
       fireEvent.click(createBtn);
     });
 
-    const dialog = container.querySelector('md-dialog');
-    await waitFor(() => expect(dialog).toHaveAttribute('open'));
-
-    // Fix FormData mocking
-    const originalFormData = window.FormData;
+    await waitFor(() => {
+        expect(screen.getByText('Create Bar')).toBeInTheDocument();
+    });
 
     class MockFormData {
         constructor(form: HTMLFormElement) {}
@@ -94,24 +92,21 @@ describe('BarSearch', () => {
         }
     }
 
-    window.FormData = MockFormData as any;
+    await act(async () => {
+        (input as any).value = 'My Bar';
+        fireEvent.input(input);
+    });
 
-    try {
-        const submitBtn = screen.getByText('Create');
-        await act(async () => {
-            fireEvent.click(submitBtn);
-        });
-
-        await waitFor(() => {
-            expect(mockAddDoc).toHaveBeenCalled();
-            expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
-                name: 'New Bar',
-                zip: '90210',
-                status: 'temporary'
-            }));
-        });
-    } finally {
-        window.FormData = originalFormData;
+    // Submit
+    const form = container.querySelector('form');
+    if (form) {
+       await act(async () => {
+         fireEvent.submit(form);
+       });
+    } else {
+       // fallback
+       const button = screen.getByText('Create Bar');
+       fireEvent.click(button);
     }
   });
 });

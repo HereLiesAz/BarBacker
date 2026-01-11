@@ -64,7 +64,7 @@ describe('BarSearch', () => {
   });
 
   it('switches to create mode', async () => {
-    render(<BarSearch onJoin={() => {}} />);
+    const { container } = render(<BarSearch onJoin={() => {}} />);
     const createBtn = screen.getByText('Create Temp');
 
     await act(async () => {
@@ -76,10 +76,16 @@ describe('BarSearch', () => {
         const activeBtn = screen.getByText('Create Temp');
         expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
     });
+
+    // Note: The text field in 'create' mode doesn't have name="name" in the component implementation,
+    // it just has label="Bar Name". So we select by tag.
+    const input = container.querySelector('md-filled-text-field');
+    expect(input).toBeInTheDocument();
   });
 
   it('calls onJoin when creating a temp bar', async () => {
     const handleJoin = vi.fn();
+
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
     // Switch to create mode
@@ -92,7 +98,6 @@ describe('BarSearch', () => {
         expect(screen.getByText('Create Bar')).toBeInTheDocument();
     });
 
-    // Fill form
     const input = container.querySelector('md-filled-text-field');
     if (!input) throw new Error('Input not found');
 

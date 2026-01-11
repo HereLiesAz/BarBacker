@@ -21,7 +21,8 @@ import {
   setDoc,
   deleteDoc,
   arrayUnion,
-  increment
+  increment,
+  getDocs
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -82,6 +83,7 @@ function App() {
   
   const [barName, setBarName] = useState('');
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [userStatus, setUserStatus] = useState<string>('active');
   const [displayName, setDisplayName] = useState<string>('');
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
   
@@ -154,6 +156,7 @@ function App() {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setUserRole(data.role);
+        setUserStatus(data.status || 'active');
         setDisplayName(data.displayName || 'Unknown');
 
         // Load notification preferences or set defaults
@@ -440,14 +443,24 @@ function App() {
 
   const confirmRole = async (role: string, name: string) => {
     if (!user || !barId) return;
+
+    let status = 'active';
+    // Check if managers exist
+    if (role !== 'Owner') {
+        const managersQuery = query(collection(db, `bars/${barId}/users`), where('role', 'in', ['Owner', 'Manager']));
+        const snapshot = await getDocs(managersQuery);
+        if (!snapshot.empty) {
+            status = 'pending';
+        }
+    }
+
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
       role: role,
       displayName: name,
       email: user.email,
-      status: 'active',
+      status: status,
       joinedAt: serverTimestamp(),
       lastSeen: serverTimestamp(),
-      // Set defaults on join if not present
       notificationPreferences: ROLE_NOTIFICATION_DEFAULTS[role] || []
     }, { merge: true });
     

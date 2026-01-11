@@ -248,6 +248,7 @@ function App() {
                  name: b.name,
                  address: b.address || '',
                  status: 'temporary',
+                 type: b.type || 'bar',
                  buttons: []
                }, { merge: true });
             }

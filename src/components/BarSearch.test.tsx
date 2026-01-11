@@ -7,70 +7,114 @@ global.fetch = vi.fn();
 
 describe('BarSearch', () => {
   it('renders search mode by default', () => {
-    const { container } = render(<BarSearch onJoin={() => {}} />);
-    const searchChip = container.querySelector('md-filter-chip[label="Search"]');
-    expect(searchChip).toBeInTheDocument();
+    render(<BarSearch onJoin={() => {}} />);
+
+    // Check that "Search" is the filled button (active)
+    const searchBtn = screen.getByText('Search');
+    expect(searchBtn.tagName.toLowerCase()).toBe('md-filled-button');
+
+    // "Create Temp" should be outlined (inactive)
+    const createBtn = screen.getByText('Create Temp');
+    expect(createBtn.tagName.toLowerCase()).toBe('md-outlined-button');
   });
 
   it('switches to create mode', async () => {
-    const { container } = render(<BarSearch onJoin={() => {}} />);
-    const createChip = container.querySelector('md-filter-chip[label="Create Temp"]');
-    if (!createChip) throw new Error('Create chip not found');
+    render(<BarSearch onJoin={() => {}} />);
+    const createBtn = screen.getByText('Create Temp');
 
     await act(async () => {
-      fireEvent.click(createChip);
+      fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        const button = container.querySelector('md-filled-button');
-        expect(button).toBeInTheDocument();
-        expect(button?.textContent).toBe('Create Bar');
+        // "Create Bar" submit button should appear
+        expect(screen.getByText('Create Bar')).toBeInTheDocument();
+
+        // Check that "Create Temp" is now filled
+        const activeBtn = screen.getByText('Create Temp');
+        expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
     });
   });
 
-  it('calls onJoin when creating a temp bar', async () => {
+  it('calls onJoin when creating a temp bar with default type', async () => {
     const handleJoin = vi.fn();
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
     // Switch to create mode
-    const createChip = container.querySelector('md-filter-chip[label="Create Temp"]');
-    if (!createChip) throw new Error('Create chip not found');
-
+    const createBtn = screen.getByText('Create Temp');
     await act(async () => {
-      fireEvent.click(createChip);
+      fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        expect(container.querySelector('md-filled-button')).toBeInTheDocument();
+        expect(screen.getByText('Create Bar')).toBeInTheDocument();
     });
 
     // Fill form
     const input = container.querySelector('md-filled-text-field');
     if (!input) throw new Error('Input not found');
 
-    // Set value
-    Object.defineProperty(input, 'value', { value: 'My Bar', writable: true });
-
     await act(async () => {
-      const event = new Event('input', { bubbles: true, cancelable: true });
-      input.dispatchEvent(event);
+        (input as any).value = 'My Bar';
+        fireEvent.input(input);
     });
 
-    // Submit
+    // Submit form explicitly since custom element button click might not trigger it in JSDOM
     const form = container.querySelector('form');
-    if (form) {
-       await act(async () => {
-         fireEvent.submit(form);
-       });
-    } else {
-       // fallback
-       const button = container.querySelector('md-filled-button');
-       if(button) fireEvent.click(button);
-    }
+    if (!form) throw new Error('Form not found');
+
+    await act(async () => {
+        fireEvent.submit(form);
+    });
 
     expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
       name: 'My Bar',
-      status: 'temporary'
+      status: 'temporary',
+      type: 'bar' // default
+    }));
+  });
+
+  it('calls onJoin when creating a temp restaurant', async () => {
+    const handleJoin = vi.fn();
+    const { container } = render(<BarSearch onJoin={handleJoin} />);
+
+    // Switch to create mode
+    const createBtn = screen.getByText('Create Temp');
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    await waitFor(() => {
+        expect(screen.getByText('Create Bar')).toBeInTheDocument();
+    });
+
+    // Fill form
+    const input = container.querySelector('md-filled-text-field');
+    if (!input) throw new Error('Input not found');
+
+    await act(async () => {
+        (input as any).value = 'My Restaurant';
+        fireEvent.input(input);
+    });
+
+    // Select "Restaurant" radio
+    const restaurantLabel = screen.getByText('Restaurant');
+    await act(async () => {
+        fireEvent.click(restaurantLabel);
+    });
+
+    // Submit form explicitly
+    const form = container.querySelector('form');
+    if (!form) throw new Error('Form not found');
+
+    await act(async () => {
+        fireEvent.submit(form);
+    });
+
+    expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'My Restaurant',
+      status: 'temporary',
+      type: 'restaurant'
     }));
   });
 });

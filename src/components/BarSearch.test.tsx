@@ -48,12 +48,12 @@ describe('BarSearch', () => {
     const input = container.querySelector('md-filled-text-field');
     if (!input) throw new Error('Input not found');
 
-    // Set value
-    Object.defineProperty(input, 'value', { value: 'My Bar', writable: true });
-
+    // Simulate user input on custom element
+    // We set the value directly on the element and then fire the input event
+    // This bypasses issues with userEvent and custom elements in JSDOM
     await act(async () => {
-      const event = new Event('input', { bubbles: true, cancelable: true });
-      input.dispatchEvent(event);
+        (input as any).value = 'My Bar';
+        fireEvent.input(input);
     });
 
     // Submit

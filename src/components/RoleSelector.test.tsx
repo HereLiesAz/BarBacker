@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import RoleSelector from '../components/RoleSelector';
 import { ROLES } from '../constants';
@@ -25,10 +25,10 @@ describe('RoleSelector', () => {
     const input = container.querySelector('md-filled-text-field');
     if (!input) throw new Error('Input not found');
 
-    Object.defineProperty(input, 'value', { value: 'Steve', writable: true });
+    // Simulate user input on custom element
     await act(async () => {
-        const event = new Event('input', { bubbles: true });
-        input.dispatchEvent(event);
+        (input as any).value = 'Steve';
+        fireEvent.input(input);
     });
 
     // Select role
@@ -41,8 +41,10 @@ describe('RoleSelector', () => {
     const button = container.querySelector('md-filled-button');
     if (!button) throw new Error('Button not found');
 
-    // Force enable
-    button.removeAttribute('disabled');
+    // Wait for the button to be enabled after state updates, then assert
+    await waitFor(() => {
+        expect(button).not.toHaveAttribute('disabled');
+    });
 
     await act(async () => {
         fireEvent.click(button);

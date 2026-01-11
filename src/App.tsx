@@ -64,7 +64,9 @@ import {
   MouseSensor,
   useSensor,
   useSensors,
-  DragEndEvent
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -96,6 +98,7 @@ function App() {
   const [hiddenButtonIds, setHiddenButtonIds] = useState<string[]>([]);
   const [buttonUsage, setButtonUsage] = useState<Record<string, number>>({});
   const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
@@ -396,11 +399,17 @@ function App() {
     })
   );
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
   const handleDragEnd = async (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
     const { active, over } = event;
-    if (active.id !== over?.id && barId) {
+    setActiveId(null);
+
+    if (over && active.id !== over.id && barId) {
       const oldIndex = items.findIndex(i => i.id === active.id);
-      const newIndex = items.findIndex(i => i.id === over?.id);
+      const newIndex = items.findIndex(i => i.id === over.id);
 
       const newItems = [...items];
       const [removed] = newItems.splice(oldIndex, 1);
@@ -736,7 +745,12 @@ function App() {
             <md-icon-button onClick={() => setNavStack([])}><md-icon>close</md-icon></md-icon-button>
             <span className="text-xl font-medium text-gray-200">{navStack.map(b => b.label).join(' > ')}</span>
           </div>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, currentContextId, currentButtons)}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={(e) => handleDragEnd(e, currentContextId, currentButtons)}
+          >
             <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-2 gap-4 mb-auto">
                 {currentButtons.map(btn => (
@@ -748,6 +762,13 @@ function App() {
                 ))}
               </div>
             </SortableContext>
+            <DragOverlay>
+              {activeId ? (
+                 <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
+                    {currentButtons.find(b => b.id === activeId)?.label}
+                 </md-filled-tonal-button>
+              ) : null}
+            </DragOverlay>
           </DndContext>
           <div className="mt-8">
             <md-filled-button class="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
@@ -757,7 +778,12 @@ function App() {
         </div>
       )}
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'main', sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)))}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={(e) => handleDragEnd(e, 'main', sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)))}
+      >
         <SortableContext items={sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id))} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-2 gap-3 p-4">
             {sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)).map(btn => {
@@ -776,6 +802,24 @@ function App() {
             })}
           </div>
         </SortableContext>
+        <DragOverlay>
+            {activeId ? (
+                (() => {
+                    const btn = buttons.find(b => b.id === activeId);
+                    if (!btn) return null;
+                    const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
+                    return (
+                        <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
+                            <div className="flex flex-col items-center gap-2">
+                            <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
+                            <span className="text-lg font-bold leading-none">{btn.label}</span>
+                            {isPending && <span className="text-xs opacity-80">PENDING</span>}
+                            </div>
+                        </md-filled-tonal-button>
+                    );
+                })()
+            ) : null}
+        </DragOverlay>
       </DndContext>
 
       <div className="px-4 mt-4">

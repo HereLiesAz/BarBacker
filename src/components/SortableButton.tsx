@@ -22,7 +22,7 @@ export function SortableButton({ id, children, onClick, disabled }: SortableButt
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 10 : 1,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0 : 1,
     touchAction: 'none'
   };
 

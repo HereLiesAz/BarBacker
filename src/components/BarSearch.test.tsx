@@ -8,23 +8,25 @@ global.fetch = vi.fn();
 describe('BarSearch', () => {
   it('renders search mode by default', () => {
     const { container } = render(<BarSearch onJoin={() => {}} />);
-    const searchChip = container.querySelector('md-filter-chip[label="Search"]');
-    expect(searchChip).toBeInTheDocument();
+    // Check for the "Search" button being active (filled)
+    const searchBtn = screen.getByText('Search').closest('md-filled-button');
+    expect(searchBtn).toBeInTheDocument();
   });
 
   it('switches to create mode', async () => {
     const { container } = render(<BarSearch onJoin={() => {}} />);
-    const createChip = container.querySelector('md-filter-chip[label="Create Temp"]');
-    if (!createChip) throw new Error('Create chip not found');
+    // Find "Create Temp" button (initially inactive/outlined)
+    const createBtn = screen.getByText('Create Temp');
+    expect(createBtn).toBeInTheDocument();
 
     await act(async () => {
-      fireEvent.click(createChip);
+      fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        const button = container.querySelector('md-filled-button');
-        expect(button).toBeInTheDocument();
-        expect(button?.textContent).toBe('Create Bar');
+        // "Create Bar" submit button should appear
+        const submitBtn = screen.getByText('Create Bar');
+        expect(submitBtn).toBeInTheDocument();
     });
   });
 
@@ -33,24 +35,19 @@ describe('BarSearch', () => {
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
     // Switch to create mode
-    const createChip = container.querySelector('md-filter-chip[label="Create Temp"]');
-    if (!createChip) throw new Error('Create chip not found');
-
+    const createBtn = screen.getByText('Create Temp');
     await act(async () => {
-      fireEvent.click(createChip);
+      fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        expect(container.querySelector('md-filled-button')).toBeInTheDocument();
+        expect(screen.getByText('Create Bar')).toBeInTheDocument();
     });
 
     // Fill form
     const input = container.querySelector('md-filled-text-field');
     if (!input) throw new Error('Input not found');
 
-    // Simulate user input on custom element
-    // We set the value directly on the element and then fire the input event
-    // This bypasses issues with userEvent and custom elements in JSDOM
     await act(async () => {
         (input as any).value = 'My Bar';
         fireEvent.input(input);
@@ -64,8 +61,8 @@ describe('BarSearch', () => {
        });
     } else {
        // fallback
-       const button = container.querySelector('md-filled-button');
-       if(button) fireEvent.click(button);
+       const button = screen.getByText('Create Bar');
+       fireEvent.click(button);
     }
 
     expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({

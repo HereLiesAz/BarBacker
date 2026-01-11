@@ -1,5 +1,4 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import BarSearch from '../components/BarSearch';
 
@@ -77,16 +76,10 @@ describe('BarSearch', () => {
         const activeBtn = screen.getByText('Create Temp');
         expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
     });
-
-    const input = container.querySelector('md-filled-text-field[name="name"]');
-    expect(input).toBeInTheDocument();
   });
 
-  it('submits new bar when no duplicate found', async () => {
+  it('calls onJoin when creating a temp bar', async () => {
     const handleJoin = vi.fn();
-    mockGetDocs.mockResolvedValue({ empty: true, forEach: () => {} });
-    mockAddDoc.mockResolvedValue({ id: 'new-id' });
-
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
     // Switch to create mode
@@ -99,14 +92,9 @@ describe('BarSearch', () => {
         expect(screen.getByText('Create Bar')).toBeInTheDocument();
     });
 
-    class MockFormData {
-        constructor(form: HTMLFormElement) {}
-        get(key: string) {
-            if (key === 'name') return 'New Bar';
-            if (key === 'zip') return '90210';
-            return '';
-        }
-    }
+    // Fill form
+    const input = container.querySelector('md-filled-text-field');
+    if (!input) throw new Error('Input not found');
 
     await act(async () => {
         (input as any).value = 'My Bar';

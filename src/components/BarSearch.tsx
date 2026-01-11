@@ -6,6 +6,7 @@ import '@material/web/radio/radio.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
 import '@material/web/icon/icon.js';
+import '@material/web/progress/circular-progress.js';
 import { Bar, OSMResult } from '../types';
 
 interface BarSearchProps {
@@ -53,12 +54,19 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
     <div className="space-y-4">
         {mode === 'search' ? (
              <div className="space-y-2">
-                <md-filled-text-field
-                    label="Search OpenStreetMap"
-                    value={queryText}
-                    onInput={(e: Event) => setQueryText((e.target as HTMLInputElement).value)}
-                    type="search"
-                />
+                <div className="relative">
+                    <md-filled-text-field
+                        label="Search OpenStreetMap"
+                        value={queryText}
+                        onInput={(e: Event) => setQueryText((e.target as HTMLInputElement).value)}
+                        type="search"
+                        className="w-full"
+                    >
+                        {isSearching && (
+                             <md-circular-progress slot="trailing-icon" indeterminate style={{ width: '24px', height: '24px' }}></md-circular-progress>
+                        )}
+                    </md-filled-text-field>
+                </div>
 
                 {results.length > 0 && (
                     <md-list className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800 max-h-60 overflow-y-auto">

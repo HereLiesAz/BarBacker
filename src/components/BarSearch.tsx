@@ -80,6 +80,12 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                     </div>
                 )}
 
+                {isSearching && (
+                    <div className="flex justify-center p-4">
+                        <md-circular-progress indeterminate></md-circular-progress>
+                    </div>
+                )}
+
                 {results.length > 0 && (
                     <md-list className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800 max-h-60 overflow-y-auto">
                         {results.map((r) => (

@@ -85,7 +85,7 @@ function App() {
       setUser(u);
       if (u) requestNotificationPermission().then(t => t && setFcmToken(t));
     });
-    onMessageListener().then((payload: any) => {
+    onMessageListener().then(() => {
       // payload usually has { notification: { title, body }, data: { ... } }
       // We need to check if we should alert.
       // Since we don't control the sender here (it's unknown), we can only guess or use local filtering.

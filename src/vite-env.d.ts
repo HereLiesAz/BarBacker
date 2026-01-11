@@ -16,5 +16,6 @@ declare namespace JSX {
     'md-filter-chip': any;
     'md-radio': any;
     'md-dialog': any;
+    'md-switch': any;
   }
 }

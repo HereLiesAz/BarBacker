@@ -19,7 +19,9 @@ import {
   doc,
   serverTimestamp,
   setDoc,
-  deleteDoc
+  deleteDoc,
+  arrayUnion,
+  increment
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -51,8 +53,25 @@ import { Bar, ButtonConfig, Request } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS } from './constants';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
-import TestLogin from './components/TestLogin';
 import NotificationSettings from './components/NotificationSettings';
+import BarManager from './components/BarManager';
+import InputDialog from './components/InputDialog';
+import { SortableButton } from './components/SortableButton';
+import {
+  DndContext,
+  closestCenter,
+  TouchSensor,
+  MouseSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  rectSortingStrategy
+} from '@dnd-kit/sortable';
 
 // --- MAIN APP COMPONENT ---
 function App() {
@@ -66,6 +85,7 @@ function App() {
   
   const [barName, setBarName] = useState('');
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [userStatus, setUserStatus] = useState<string>('active');
   const [displayName, setDisplayName] = useState<string>('');
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
   
@@ -73,11 +93,22 @@ function App() {
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
 
+  const [beerInventory, setBeerInventory] = useState<Record<string, string[]>>({});
+  const [wells, setWells] = useState<string[]>([]);
+  const [hiddenButtonIds, setHiddenButtonIds] = useState<string[]>([]);
+  const [buttonUsage, setButtonUsage] = useState<Record<string, number>>({});
+  const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
+  const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
+
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
   // FIX 1: Use proper return type for browser environment
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [showBarManager, setShowBarManager] = useState(false);
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
@@ -129,6 +160,7 @@ function App() {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setUserRole(data.role);
+        setUserStatus(data.status || 'active');
         setDisplayName(data.displayName || 'Unknown');
 
         // Load notification preferences or set defaults
@@ -148,6 +180,11 @@ function App() {
         const data = d.data() as Bar;
         setBarName(data.name);
         if (data.buttons) setButtons([...DEFAULT_BUTTONS, ...data.buttons]);
+        if (data.beerInventory) setBeerInventory(data.beerInventory);
+        if (data.wells) setWells(data.wells);
+        if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
+        if (data.buttonUsage) setButtonUsage(data.buttonUsage);
+        if (data.customOrders) setCustomOrders(data.customOrders);
       }
     });
 
@@ -156,7 +193,11 @@ function App() {
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
-    return () => { unsubUser(); unsubBar(); unsubReq(); };
+    const unsubAllUsers = onSnapshot(collection(db, `bars/${barId}/users`), (s) => {
+        setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); };
   }, [user, barId, fcmToken, setSearchParams]);
 
   // --- Timer ---
@@ -175,16 +216,274 @@ function App() {
 
   // --- Actions ---
 
+  const saveBrand = async (brandName: string) => {
+    if (!user || !barId) return;
+
+    // Check if it already exists locally
+    if (beerInventory[brandName]) {
+        setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+        // Navigate to existing brand
+        const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
+        setNavStack(prev => [...prev, brandBtn]);
+        return;
+    }
+
+    // Atomic update: merge new brand into map
+    await setDoc(doc(db, 'bars', barId), {
+        beerInventory: { [brandName]: [] }
+    }, { merge: true });
+
+    // Optimistic update
+    setBeerInventory(prev => ({ ...prev, [brandName]: [] }));
+    setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+
+    // Navigate to new brand
+    const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
+    setNavStack(prev => [...prev, brandBtn]);
+  };
+
+  const saveType = async (typeName: string) => {
+    if (!user || !barId || !inputDialog.parentContext) return;
+    const brand = inputDialog.parentContext;
+    const currentTypes = beerInventory[brand] || [];
+
+    // Check duplication locally
+    if (currentTypes.includes(typeName)) {
+        setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+        const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
+        setNavStack(prev => [...prev, typeBtn]);
+        return;
+    }
+
+    // Atomic update: add to array
+    await updateDoc(doc(db, 'bars', barId), {
+        [`beerInventory.${brand}`]: arrayUnion(typeName)
+    });
+
+    // Optimistic update
+    setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), typeName] }));
+    setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+
+    // Navigate to new type
+    const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
+    setNavStack(prev => [...prev, typeBtn]);
+  };
+
+  const saveWell = async (wellName: string) => {
+    if (!user || !barId) return;
+
+    if (wells.includes(wellName)) {
+        setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+        // Just submit request for existing well
+        submitRequest(`ICE: ${wellName}`);
+        setNavStack([]);
+        return;
+    }
+
+    await updateDoc(doc(db, 'bars', barId), {
+        wells: arrayUnion(wellName)
+    });
+
+    setWells(prev => [...prev, wellName]);
+    setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
+
+    // Submit request
+    submitRequest(`ICE: ${wellName}`);
+    setNavStack([]);
+  };
+
+  const hideButton = async (btnId: string) => {
+    if (!user || !barId) return;
+    await updateDoc(doc(db, 'bars', barId), {
+        hiddenButtonIds: arrayUnion(btnId)
+    });
+    setHiddenButtonIds(prev => [...prev, btnId]);
+  };
+
+  const approveUser = async (uid: string) => {
+    if (!user || !barId) return;
+    await updateDoc(doc(db, `bars/${barId}/users`, uid), { status: 'active' });
+  };
+
+  const removeUser = async (uid: string) => {
+    if (!user || !barId) return;
+    await deleteDoc(doc(db, `bars/${barId}/users`, uid));
+  };
+
+  const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
+    if (btn.id === 'ice') {
+        const wellButtons: ButtonConfig[] = wells.map(w => ({
+            id: `well_${w}`,
+            label: w
+        }));
+        return [...wellButtons, { id: 'add_well', label: '+ ADD WELL', isCustom: true }];
+    }
+
+    if (btn.id === 'restock_beer') {
+      const brandButtons: ButtonConfig[] = Object.keys(beerInventory).map(brand => ({
+        id: `brand_${brand}`,
+        label: brand,
+        // Since we are creating these on the fly, we don't have explicit children stored,
+        // but we know logic dictates they have children (types).
+        // We set 'children: []' as a signal that it has children,
+        // but the actual retrieval will be recursive via getDynamicChildren.
+        children: []
+      }));
+      return [...brandButtons, { id: 'add_brand', label: '+ ADD BRAND', action: 'add_brand', isCustom: true }];
+    }
+
+    // Check if button is a Brand
+    if (btn.id.startsWith('brand_')) {
+      const brandName = btn.label;
+      const types = beerInventory[brandName] || [];
+      const typeButtons: ButtonConfig[] = types.map(t => ({
+        id: `type_${brandName}_${t}`,
+        label: t,
+        children: [] // Signal it has children (quantities)
+      }));
+      return [...typeButtons, { id: 'add_type', label: '+ ADD TYPE', action: 'add_type', isCustom: true }];
+    }
+
+    // Check if button is a Type
+    if (btn.id.startsWith('type_')) {
+      // Return quantity options
+      return [
+        { id: 'qty_6', label: '6' },
+        { id: 'qty_12', label: '12' },
+        { id: 'qty_24', label: '24' },
+        { id: 'qty_other', label: 'Other', action: 'custom_qty' }
+      ];
+    }
+
+    return btn.children || [];
+  };
+
+  const trackButtonUsage = (btnId: string) => {
+    if (!barId) return;
+    updateDoc(doc(db, 'bars', barId), {
+        [`buttonUsage.${btnId}`]: increment(1)
+    }).catch(e => console.error("Failed to track usage", e));
+  };
+
+  const sortButtons = (btns: ButtonConfig[], contextId: string) => {
+    const order = customOrders[contextId];
+    if (order) {
+        return [...btns].sort((a, b) => {
+            const indexA = order.indexOf(a.id);
+            const indexB = order.indexOf(b.id);
+            if (indexA === -1 && indexB === -1) return 0;
+            if (indexA === -1) return 1;
+            if (indexB === -1) return -1;
+            return indexA - indexB;
+        });
+    }
+    // Fallback to usage
+    return [...btns].sort((a, b) => {
+        const usageA = buttonUsage[a.id] || 0;
+        const usageB = buttonUsage[b.id] || 0;
+        return usageB - usageA;
+    });
+  };
+
+  const sensors = useSensors(
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 10,
+      },
+    })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (over && active.id !== over.id && barId) {
+      const oldIndex = items.findIndex(i => i.id === active.id);
+      const newIndex = items.findIndex(i => i.id === over.id);
+
+      const newItems = [...items];
+      const [removed] = newItems.splice(oldIndex, 1);
+      newItems.splice(newIndex, 0, removed);
+
+      const newOrder = newItems.map(i => i.id);
+
+      setCustomOrders(prev => ({ ...prev, [contextId]: newOrder }));
+      await updateDoc(doc(db, 'bars', barId), {
+          [`customOrders.${contextId}`]: newOrder
+      });
+    }
+  };
+
+  const handleButtonClick = (btn: ButtonConfig) => {
+    trackButtonUsage(btn.id);
+
+    if (btn.id === 'add_well') {
+      const defaultName = `Well #${wells.length + 1}`;
+      setInputDialog({ type: 'well', open: true, searchTerm: defaultName });
+      return;
+    }
+    if (btn.action === 'add_brand') {
+      setInputDialog({ type: 'brand', open: true, searchTerm: '' });
+      return;
+    }
+    if (btn.action === 'add_type') {
+      // Parent context is the brand name. The navStack has [Restock Beer, BrandName]
+      const brandBtn = navStack[navStack.length - 1];
+      setInputDialog({ type: 'type', open: true, parentContext: brandBtn.label, searchTerm: '' });
+      return;
+    }
+    if (btn.action === 'custom_qty') {
+      // We want context "RESTOCK BEER: Corona: Bottle"
+      setQuantityPicker({
+        open: true,
+        currentQty: 1,
+        context: navStack.map(b => b.label).join(': ')
+      });
+      return;
+    }
+
+    // Standard navigation
+    // We check if it SHOULD have children.
+    // getDynamicChildren will return children if it's dynamic.
+    const children = getDynamicChildren(btn);
+    if (children && children.length > 0) {
+      setNavStack([...navStack, btn]);
+    } else {
+      // Leaf node
+      submitRequest([...navStack, btn].map(b => b.label).join(': '));
+      setNavStack([]);
+    }
+  };
+
   const confirmRole = async (role: string, name: string) => {
     if (!user || !barId) return;
+
+    let status = 'active';
+    // Check if managers exist using local state to avoid extra reads
+    if (role !== 'Owner') {
+        const hasManager = allUsers.some(u => u.role === 'Owner' || u.role === 'Manager');
+        if (hasManager) {
+            status = 'pending';
+        }
+    }
+
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
       role: role,
       displayName: name,
       email: user.email,
-      status: 'active',
+      status: status,
       joinedAt: serverTimestamp(),
       lastSeen: serverTimestamp(),
-      // Set defaults on join if not present
       notificationPreferences: ROLE_NOTIFICATION_DEFAULTS[role] || []
     }, { merge: true });
     
@@ -321,11 +620,46 @@ function App() {
   });
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
-  const currentButtons = navStack.length > 0 ? navStack[navStack.length - 1].children || [] : buttons;
+
+  // Context management
+  const currentContextId = navStack.length > 0 ? navStack[navStack.length - 1].id : 'main';
+  const currentButtonsSource = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
+  const activeButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
+  const currentButtons = sortButtons(activeButtons, currentContextId);
+
+  const sortedAllButtons = sortButtons(buttons, 'main');
+
+  // Inject pending approvals for Managers/Owners
+  const pendingUsers = allUsers.filter(u => u.status === 'pending');
+  const showApprovals = (userRole === 'Owner' || userRole === 'Manager') && pendingUsers.length > 0;
+
+  if (userStatus === 'pending') {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black text-center">
+            <md-icon style={{ fontSize: 64 }} className="text-yellow-500">hourglass_empty</md-icon>
+            <h2 className="text-2xl font-bold text-white">Approval Pending</h2>
+            <p className="text-gray-400">A manager must approve your request to join {barName}.</p>
+            <md-text-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}>Cancel</md-text-button>
+        </div>
+      );
+  }
 
   return (
     <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
       
+      <BarManager
+        open={showBarManager}
+        onClose={() => setShowBarManager(false)}
+        barName={barName}
+        allButtons={sortedAllButtons}
+        hiddenButtonIds={hiddenButtonIds}
+        onHideButton={hideButton}
+        users={allUsers}
+        onApproveUser={approveUser}
+        onRemoveUser={removeUser}
+        currentUserRole={userRole || ''}
+      />
+
       <NotificationSettings
         open={showNotificationSettings}
         onClose={() => setShowNotificationSettings(false)}
@@ -335,7 +669,46 @@ function App() {
         allButtons={buttons}
       />
 
-      <md-dialog open={showOffClockDialog} onClose={() => setShowOffClockDialog(false)}>
+      <InputDialog
+        open={inputDialog.open}
+        mode={inputDialog.type}
+        searchTerm={inputDialog.searchTerm}
+        onSearchChange={(val) => setInputDialog(prev => ({ ...prev, searchTerm: val }))}
+        onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}
+        onSelect={(val) => {
+            if (inputDialog.type === 'brand') saveBrand(val);
+            else if (inputDialog.type === 'type') saveType(val);
+            else saveWell(val);
+        }}
+        suggestions={(() => {
+            if (inputDialog.type === 'brand') return Object.keys(beerInventory);
+            if (inputDialog.type === 'type') return Array.from(new Set(Object.values(beerInventory).flat()));
+            return [];
+        })()}
+      />
+
+      <md-dialog open={quantityPicker.open || undefined} onClose={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>
+        <div slot="headline">Select Quantity</div>
+        <div slot="content" className="flex items-center justify-center gap-6 py-6">
+           <md-filled-tonal-button onClick={() => setQuantityPicker(prev => ({ ...prev, currentQty: Math.max(1, prev.currentQty - 1) }))}>
+             <md-icon>remove</md-icon>
+           </md-filled-tonal-button>
+           <span className="text-4xl font-bold text-white">{quantityPicker.currentQty}</span>
+           <md-filled-tonal-button onClick={() => setQuantityPicker(prev => ({ ...prev, currentQty: prev.currentQty + 1 }))}>
+             <md-icon>add</md-icon>
+           </md-filled-tonal-button>
+        </div>
+        <div slot="actions">
+          <md-text-button onClick={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>Cancel</md-text-button>
+          <md-filled-button onClick={() => {
+             submitRequest(`${quantityPicker.context}: ${quantityPicker.currentQty}`);
+             setQuantityPicker(prev => ({ ...prev, open: false }));
+             setNavStack([]);
+          }}>Send</md-filled-button>
+        </div>
+      </md-dialog>
+
+      <md-dialog open={showOffClockDialog || undefined} onClose={() => setShowOffClockDialog(false)}>
         <div slot="headline">Abandon Ship?</div>
         <div slot="content">
           Going off clock stops all notifications. The bar will be unprotected. Are you sure?
@@ -348,8 +721,10 @@ function App() {
 
       <div className="flex justify-between items-center p-4 bg-[#121212] sticky top-0 z-10 border-b border-[#333]">
         <div className="flex flex-col">
-          <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
-          <div className="flex items-center gap-2 text-xs text-gray-400">
+          <md-text-button onClick={() => setShowBarManager(true)} style={{ marginLeft: '-12px' }}>
+            <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
+          </md-text-button>
+          <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
             <span className="text-white font-bold">{displayName}</span>
             <span className="bg-gray-800 px-1 rounded">{userRole}</span>
           </div>
@@ -370,32 +745,93 @@ function App() {
             <md-icon-button onClick={() => setNavStack([])}><md-icon>close</md-icon></md-icon-button>
             <span className="text-xl font-medium text-gray-200">{navStack.map(b => b.label).join(' > ')}</span>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            {currentButtons.map(btn => (
-              <md-filled-tonal-button key={btn.id} onClick={() => { if(btn.children) setNavStack([...navStack, btn]); else { submitRequest([...navStack, btn].map(b=>b.label).join(': ')); setNavStack([]); }}} style={{ height: '100px', fontSize: '18px' }}>
-                {btn.label}
-              </md-filled-tonal-button>
-            ))}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={(e) => handleDragEnd(e, currentContextId, currentButtons)}
+          >
+            <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-2 gap-4 mb-auto">
+                {currentButtons.map(btn => (
+                  <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
+                    <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none' }}>
+                      {btn.label}
+                    </md-filled-tonal-button>
+                  </SortableButton>
+                ))}
+              </div>
+            </SortableContext>
+            <DragOverlay>
+              {activeId ? (
+                 <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
+                    {currentButtons.find(b => b.id === activeId)?.label}
+                 </md-filled-tonal-button>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+          <div className="mt-8">
+            <md-filled-button class="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
+               Cancel
+            </md-filled-button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 p-4">
-        {buttons.map(btn => {
-          const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
-          return (
-            <md-filled-tonal-button key={btn.id} onClick={() => { if(btn.children) setNavStack([...navStack, btn]); else submitRequest(btn.label); }} class={isPending ? 'btn-alert' : ''} style={{ height: '120px' }}>
-              <div className="flex flex-col items-center gap-2">
-                <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
-                <span className="text-lg font-bold leading-none">{btn.label}</span>
-                {isPending && <span className="text-xs opacity-80">PENDING</span>}
-              </div>
-            </md-filled-tonal-button>
-          );
-        })}
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={(e) => handleDragEnd(e, 'main', sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)))}
+      >
+        <SortableContext items={sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id))} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-2 gap-3 p-4">
+            {sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)).map(btn => {
+              const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
+              return (
+                <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
+                  <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
+                    <div className="flex flex-col items-center gap-2">
+                      <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
+                      <span className="text-lg font-bold leading-none">{btn.label}</span>
+                      {isPending && <span className="text-xs opacity-80">PENDING</span>}
+                    </div>
+                  </md-filled-tonal-button>
+                </SortableButton>
+              );
+            })}
+          </div>
+        </SortableContext>
+        <DragOverlay>
+            {activeId ? (
+                (() => {
+                    const btn = buttons.find(b => b.id === activeId);
+                    if (!btn) return null;
+                    const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
+                    return (
+                        <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
+                            <div className="flex flex-col items-center gap-2">
+                            <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
+                            <span className="text-lg font-bold leading-none">{btn.label}</span>
+                            {isPending && <span className="text-xs opacity-80">PENDING</span>}
+                            </div>
+                        </md-filled-tonal-button>
+                    );
+                })()
+            ) : null}
+        </DragOverlay>
+      </DndContext>
 
       <div className="px-4 mt-4">
+        {showApprovals && (
+            <div onClick={() => setShowBarManager(true)} className="mb-2 p-4 bg-[#2C1A1A] border-l-4 border-yellow-500 rounded-r-lg flex justify-between items-center cursor-pointer active:bg-yellow-900/40 transition-colors">
+                <div className="flex flex-col">
+                  <span className="font-medium text-yellow-100">Staff Approval Needed</span>
+                  <span className="text-xs text-yellow-400">{pendingUsers.length} pending request(s)</span>
+                </div>
+                <md-filled-button style={{ height: '32px', backgroundColor: '#EAB308', color: '#000' }}>VIEW</md-filled-button>
+            </div>
+        )}
         {activeRequests.map(req => (
           <div key={req.id} onClick={() => claimRequest(req.id)} className="mb-2 p-4 bg-[#2C1A1A] border-l-4 border-red-500 rounded-r-lg flex justify-between items-center cursor-pointer active:bg-red-900/40 transition-colors">
             <div className="flex flex-col">

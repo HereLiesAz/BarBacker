@@ -65,7 +65,7 @@ describe('BarSearch', () => {
   });
 
   it('switches to create mode', async () => {
-    render(<BarSearch onJoin={() => {}} />);
+    const { container } = render(<BarSearch onJoin={() => {}} />);
     const createBtn = screen.getByText('Create Temp');
 
     await act(async () => {
@@ -78,14 +78,14 @@ describe('BarSearch', () => {
         expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
     });
 
-    const input = container.querySelector('md-filled-text-field[name="name"]');
+    // Note: The text field in 'create' mode doesn't have name="name" in the component implementation,
+    // it just has label="Bar Name". So we select by tag.
+    const input = container.querySelector('md-filled-text-field');
     expect(input).toBeInTheDocument();
   });
 
   it('submits new bar when no duplicate found', async () => {
     const handleJoin = vi.fn();
-    mockGetDocs.mockResolvedValue({ empty: true, forEach: () => {} });
-    mockAddDoc.mockResolvedValue({ id: 'new-id' });
 
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
@@ -99,14 +99,8 @@ describe('BarSearch', () => {
         expect(screen.getByText('Create Bar')).toBeInTheDocument();
     });
 
-    class MockFormData {
-        constructor(form: HTMLFormElement) {}
-        get(key: string) {
-            if (key === 'name') return 'New Bar';
-            if (key === 'zip') return '90210';
-            return '';
-        }
-    }
+    const input = container.querySelector('md-filled-text-field');
+    if (!input) throw new Error('Input not found');
 
     await act(async () => {
         (input as any).value = 'My Bar';

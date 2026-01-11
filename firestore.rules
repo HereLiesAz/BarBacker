@@ -1,0 +1,32 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Bars: Allow read/write for authenticated users
+    // In a real app, you might restrict write to Owners or specific roles
+    match /bars/{barId} {
+      allow read, write: if isAuthenticated();
+
+      // Users subcollection: Allow read/write for authenticated users
+      match /users/{userId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      // Tokens subcollection: Allow read/write for authenticated users
+      match /tokens/{userId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Requests: Allow read/write for authenticated users
+    match /requests/{requestId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

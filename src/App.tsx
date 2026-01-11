@@ -179,7 +179,14 @@ function App() {
       if (d.exists()) {
         const data = d.data() as Bar;
         setBarName(data.name);
-        if (data.buttons) setButtons([...DEFAULT_BUTTONS, ...data.buttons]);
+        if (data.buttons) {
+            // Deduplicate buttons by ID, preferring custom (data.buttons) over default
+            const customMap = new Map(data.buttons.map(b => [b.id, b]));
+            const combined = [...DEFAULT_BUTTONS.filter(b => !customMap.has(b.id)), ...data.buttons];
+            setButtons(combined);
+        } else {
+            setButtons(DEFAULT_BUTTONS);
+        }
         if (data.beerInventory) setBeerInventory(data.beerInventory);
         if (data.wells) setWells(data.wells);
         if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
@@ -628,6 +635,8 @@ function App() {
   const currentButtons = sortButtons(activeButtons, currentContextId);
 
   const sortedAllButtons = sortButtons(buttons, 'main');
+  // Stable list for Main Screen
+  const mainScreenButtons = sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id));
 
   // Inject pending approvals for Managers/Owners
   const pendingUsers = allUsers.filter(u => u.status === 'pending');
@@ -635,7 +644,7 @@ function App() {
 
   if (userStatus === 'pending') {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black text-center">
+        <div className="h-[100dvh] w-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black text-center overflow-hidden">
             <md-icon style={{ fontSize: 64 }} className="text-yellow-500">hourglass_empty</md-icon>
             <h2 className="text-2xl font-bold text-white">Approval Pending</h2>
             <p className="text-gray-400">A manager must approve your request to join {barName}.</p>
@@ -645,7 +654,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen pb-24 bg-black relative overflow-x-hidden">
+    <div className="h-[100dvh] w-screen flex flex-col bg-black overflow-hidden">
       
       <BarManager
         open={showBarManager}
@@ -719,7 +728,7 @@ function App() {
         </div>
       </md-dialog>
 
-      <div className="flex justify-between items-center p-4 bg-[#121212] sticky top-0 z-10 border-b border-[#333]">
+      <div className="flex-none flex justify-between items-center p-4 bg-[#121212] border-b border-[#333] z-10">
         <div className="flex flex-col">
           <md-text-button onClick={() => setShowBarManager(true)} style={{ marginLeft: '-12px' }}>
             <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
@@ -739,9 +748,10 @@ function App() {
         </div>
       </div>
 
+      <div className="flex-1 overflow-y-auto overflow-x-hidden w-full relative">
       {navStack.length > 0 && (
-        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col p-6 animate-in fade-in duration-300 overflow-y-auto">
-          <div className="flex items-center gap-4 mb-8">
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col p-6 animate-in fade-in duration-300 overflow-y-auto pb-32">
+          <div className="flex items-center gap-4 mb-8 flex-none">
             <md-icon-button onClick={() => setNavStack([])}><md-icon>close</md-icon></md-icon-button>
             <span className="text-xl font-medium text-gray-200">{navStack.map(b => b.label).join(' > ')}</span>
           </div>
@@ -782,11 +792,11 @@ function App() {
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
-        onDragEnd={(e) => handleDragEnd(e, 'main', sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)))}
+        onDragEnd={(e) => handleDragEnd(e, 'main', mainScreenButtons)}
       >
-        <SortableContext items={sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id))} strategy={rectSortingStrategy}>
+        <SortableContext items={mainScreenButtons} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-2 gap-3 p-4">
-            {sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)).map(btn => {
+            {mainScreenButtons.map(btn => {
               const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
               return (
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
@@ -843,7 +853,7 @@ function App() {
         ))}
       </div>
 
-      <div className="px-4 mt-8 pb-10">
+      <div className="px-4 mt-8 pb-32">
         <div className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-widest">Shift Log</div>
         <md-list className="bg-transparent">
           {logRequests.map(req => (
@@ -856,6 +866,7 @@ function App() {
             </md-list-item>
           ))}
         </md-list>
+      </div>
       </div>
     </div>
   );

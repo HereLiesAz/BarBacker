@@ -32,6 +32,8 @@ if (typeof Element.prototype.animate === 'undefined') {
       play: () => {},
       cancel: () => {},
       finish: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
       // add other methods if needed
     } as any;
   };

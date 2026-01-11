@@ -22,7 +22,7 @@ export interface Request {
   requesterName?: string;
   requesterRole?: string;
   status: 'pending' | 'claimed';
-  timestamp: any;
+  timestamp: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
   barId: string;
   claimerName?: string;
 }

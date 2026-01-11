@@ -55,6 +55,20 @@ import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
 import BarManager from './components/BarManager';
+import { SortableButton } from './components/SortableButton';
+import {
+  DndContext,
+  closestCenter,
+  TouchSensor,
+  MouseSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  rectSortingStrategy
+} from '@dnd-kit/sortable';
 
 // --- MAIN APP COMPONENT ---
 function App() {
@@ -79,6 +93,7 @@ function App() {
   const [wells, setWells] = useState<string[]>([]);
   const [hiddenButtonIds, setHiddenButtonIds] = useState<string[]>([]);
   const [buttonUsage, setButtonUsage] = useState<Record<string, number>>({});
+  const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
   const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
@@ -162,6 +177,7 @@ function App() {
         if (data.wells) setWells(data.wells);
         if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
         if (data.buttonUsage) setButtonUsage(data.buttonUsage);
+        if (data.customOrders) setCustomOrders(data.customOrders);
       }
     });
 
@@ -328,12 +344,57 @@ function App() {
     }).catch(e => console.error("Failed to track usage", e));
   };
 
-  const sortButtons = (btns: ButtonConfig[]) => {
+  const sortButtons = (btns: ButtonConfig[], contextId: string) => {
+    const order = customOrders[contextId];
+    if (order) {
+        return [...btns].sort((a, b) => {
+            const indexA = order.indexOf(a.id);
+            const indexB = order.indexOf(b.id);
+            if (indexA === -1 && indexB === -1) return 0;
+            if (indexA === -1) return 1;
+            if (indexB === -1) return -1;
+            return indexA - indexB;
+        });
+    }
+    // Fallback to usage
     return [...btns].sort((a, b) => {
         const usageA = buttonUsage[a.id] || 0;
         const usageB = buttonUsage[b.id] || 0;
         return usageB - usageA;
     });
+  };
+
+  const sensors = useSensors(
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 10,
+      },
+    })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
+    const { active, over } = event;
+    if (active.id !== over?.id && barId) {
+      const oldIndex = items.findIndex(i => i.id === active.id);
+      const newIndex = items.findIndex(i => i.id === over?.id);
+
+      const newItems = [...items];
+      const [removed] = newItems.splice(oldIndex, 1);
+      newItems.splice(newIndex, 0, removed);
+
+      const newOrder = newItems.map(i => i.id);
+
+      setCustomOrders(prev => ({ ...prev, [contextId]: newOrder }));
+      await updateDoc(doc(db, 'bars', barId), {
+          [`customOrders.${contextId}`]: newOrder
+      });
+    }
   };
 
   const handleButtonClick = (btn: ButtonConfig) => {
@@ -523,15 +584,14 @@ function App() {
   });
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
-  // Filter active buttons (not hidden) and sort by usage
+
+  // Context management
+  const currentContextId = navStack.length > 0 ? navStack[navStack.length - 1].id : 'main';
   const currentButtonsSource = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
   const activeButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
-  const currentButtons = sortButtons(activeButtons);
+  const currentButtons = sortButtons(activeButtons, currentContextId);
 
-  // Sort buttons for Manager view too? Probably better to keep default order or sort there too.
-  // Prompt says "ALL pager buttons... are displayed...".
-  // Let's pass sorted buttons to BarManager too so user finds top ones easily.
-  const sortedAllButtons = sortButtons(buttons);
+  const sortedAllButtons = sortButtons(buttons, 'main');
 
   return (
     <div className="min-h-screen pb-24 bg-black relative overflow-hidden">
@@ -672,15 +732,19 @@ function App() {
             <md-icon-button onClick={() => setNavStack([])}><md-icon>close</md-icon></md-icon-button>
             <span className="text-xl font-medium text-gray-200">{navStack.map(b => b.label).join(' > ')}</span>
           </div>
-          <div className="grid grid-cols-2 gap-4 mb-auto">
-            {currentButtons.map(btn => (
-              <div key={btn.id} onClick={() => handleButtonClick(btn)} className="cursor-pointer">
-                <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none' }}>
-                  {btn.label}
-                </md-filled-tonal-button>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, currentContextId, currentButtons)}>
+            <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-2 gap-4 mb-auto">
+                {currentButtons.map(btn => (
+                  <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
+                    <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none' }}>
+                      {btn.label}
+                    </md-filled-tonal-button>
+                  </SortableButton>
+                ))}
               </div>
-            ))}
-          </div>
+            </SortableContext>
+          </DndContext>
           <div className="mt-8">
             <md-filled-button class="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
                Cancel
@@ -689,22 +753,26 @@ function App() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 p-4">
-        {sortButtons(buttons).filter(btn => !hiddenButtonIds.includes(btn.id)).map(btn => {
-          const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
-          return (
-            <div key={btn.id} onClick={() => handleButtonClick(btn)} className="cursor-pointer">
-              <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
-                <div className="flex flex-col items-center gap-2">
-                  <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
-                  <span className="text-lg font-bold leading-none">{btn.label}</span>
-                  {isPending && <span className="text-xs opacity-80">PENDING</span>}
-                </div>
-              </md-filled-tonal-button>
-            </div>
-          );
-        })}
-      </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 'main', sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)))}>
+        <SortableContext items={sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id))} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-2 gap-3 p-4">
+            {sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id)).map(btn => {
+              const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
+              return (
+                <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
+                  <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
+                    <div className="flex flex-col items-center gap-2">
+                      <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
+                      <span className="text-lg font-bold leading-none">{btn.label}</span>
+                      {isPending && <span className="text-xs opacity-80">PENDING</span>}
+                    </div>
+                  </md-filled-tonal-button>
+                </SortableButton>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
 
       <div className="px-4 mt-4">
         {activeRequests.map(req => (

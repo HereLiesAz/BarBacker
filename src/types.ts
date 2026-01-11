@@ -19,6 +19,7 @@ export interface Bar {
   wells?: string[];
   hiddenButtonIds?: string[];
   buttonUsage?: Record<string, number>;
+  customOrders?: Record<string, string[]>;
 }
 
 export interface Request {

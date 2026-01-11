@@ -9,6 +9,8 @@ describe('RoleSelector', () => {
     ROLES.forEach(role => {
       expect(screen.getByText(role)).toBeInTheDocument();
     });
+    // Explicitly check for "Owner" since it was added
+    expect(screen.getByText('Owner')).toBeInTheDocument();
   });
 
   it('disables clock in button initially', () => {

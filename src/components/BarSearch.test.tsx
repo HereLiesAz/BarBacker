@@ -1,64 +1,81 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi } from 'vitest';
 import BarSearch from '../components/BarSearch';
 
-// Mock dependencies
-vi.mock('../firebase', () => ({
-  db: {}
-}));
-
-const mockAddDoc = vi.fn();
-const mockGetDocs = vi.fn();
-
-vi.mock('firebase/firestore', () => ({
-  collection: vi.fn(),
-  query: vi.fn(),
-  where: vi.fn(),
-  getDocs: (q: any) => mockGetDocs(q),
-  addDoc: (c: any, d: any) => mockAddDoc(c, d)
-}));
-
-global.fetch = vi.fn();
-global.confirm = vi.fn(() => true);
-global.alert = vi.fn();
-
-// Mock HTMLDialogElement
-beforeEach(() => {
-    // Basic mock to prevent crashes
-    HTMLDialogElement.prototype.show = vi.fn();
-    HTMLDialogElement.prototype.showModal = vi.fn();
-    HTMLDialogElement.prototype.close = vi.fn();
-});
+// Mock fetch
+const fetchMock = vi.fn();
+global.fetch = fetchMock;
 
 describe('BarSearch', () => {
-  it('renders search input and persistent create option', () => {
-    const { container } = render(<BarSearch onJoin={() => {}} />);
+  it('renders search mode by default', () => {
+    render(<BarSearch onJoin={() => {}} />);
 
-    // md-filled-text-field label is tricky in JSDOM/TestingLibrary as it might not use standard <label>
-    // but the component renders the text.
-    // Try finding by text or display value.
-    // Or just look for the custom element attributes if needed.
-    const input = container.querySelector('md-filled-text-field[label="Search OpenStreetMap"]');
-    expect(input).toBeInTheDocument();
+    // Check that "Search" is the filled button (active)
+    const searchBtn = screen.getByText('Search');
+    expect(searchBtn.tagName.toLowerCase()).toBe('md-filled-button');
 
-    // Check for the list item specifically
-    const texts = screen.getAllByText('Create Bar Listing');
-    expect(texts.length).toBeGreaterThan(0);
+    // "Create Temp" should be outlined (inactive)
+    const createBtn = screen.getByText('Create Temp');
+    expect(createBtn.tagName.toLowerCase()).toBe('md-outlined-button');
   });
 
-  it('opens dialog when create option is clicked', async () => {
-    const { container } = render(<BarSearch onJoin={() => {}} />);
+  it('searches OpenStreetMap and displays results', async () => {
+    fetchMock.mockResolvedValueOnce({
+      json: async () => ([
+        { place_id: 1, osm_id: 123, name: 'Test Bar', display_name: 'Test Bar, Main St', lat: '0', lon: '0' }
+      ])
+    });
 
-    const createBtn = screen.getAllByText('Create Bar Listing').find(el => el.closest('md-list-item'));
-    if (!createBtn) throw new Error("Button not found");
+    const handleJoin = vi.fn();
+    const { container } = render(<BarSearch onJoin={handleJoin} />);
+
+    const input = container.querySelector('md-filled-text-field');
+    if (!input) throw new Error('Input not found');
+
+    // Use fireEvent for custom element input as userEvent has known issues in JSDOM with shadow DOM
+    await act(async () => {
+        (input as any).value = 'Tes';
+        fireEvent.input(input);
+    });
+
+    // Wait for debounce (500ms) + fetch
+    await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled();
+    }, { timeout: 1000 });
+
+    // Check result rendering
+    await waitFor(() => {
+        expect(screen.getByText('Test Bar')).toBeInTheDocument();
+    });
+
+    // Click result
+    const resultItem = screen.getByText('Test Bar').closest('md-list-item');
+    if (!resultItem) throw new Error('Result item not found');
 
     await act(async () => {
-      fireEvent.click(createBtn);
+        fireEvent.click(resultItem);
+    });
+
+    expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
+        id: '123',
+        name: 'Test Bar',
+        status: 'verified'
+    }));
+  });
+
+  it('switches to create mode', async () => {
+    render(<BarSearch onJoin={() => {}} />);
+    const createBtn = screen.getByText('Create Temp');
+
+    await act(async () => {
+        fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        const dialog = container.querySelector('md-dialog');
-        expect(dialog).toHaveAttribute('open');
+        expect(screen.getByText('Create Bar')).toBeInTheDocument();
+        const activeBtn = screen.getByText('Create Temp');
+        expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
     });
 
     const input = container.querySelector('md-filled-text-field[name="name"]');
@@ -72,18 +89,15 @@ describe('BarSearch', () => {
 
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
-    const createBtn = screen.getAllByText('Create Bar Listing').find(el => el.closest('md-list-item'));
-    if (!createBtn) throw new Error("Button not found");
-
+    // Switch to create mode
+    const createBtn = screen.getByText('Create Temp');
     await act(async () => {
-      fireEvent.click(createBtn);
+        fireEvent.click(createBtn);
     });
 
-    const dialog = container.querySelector('md-dialog');
-    await waitFor(() => expect(dialog).toHaveAttribute('open'));
-
-    // Fix FormData mocking
-    const originalFormData = window.FormData;
+    await waitFor(() => {
+        expect(screen.getByText('Create Bar')).toBeInTheDocument();
+    });
 
     class MockFormData {
         constructor(form: HTMLFormElement) {}
@@ -94,24 +108,23 @@ describe('BarSearch', () => {
         }
     }
 
-    window.FormData = MockFormData as any;
+    await act(async () => {
+        (input as any).value = 'My Bar';
+        fireEvent.input(input);
+    });
 
-    try {
-        const submitBtn = screen.getByText('Create');
-        await act(async () => {
-            fireEvent.click(submitBtn);
-        });
+    // Submit
+    const form = container.querySelector('form');
+    if (!form) throw new Error('Form not found');
 
-        await waitFor(() => {
-            expect(mockAddDoc).toHaveBeenCalled();
-            expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
-                name: 'New Bar',
-                zip: '90210',
-                status: 'temporary'
-            }));
-        });
-    } finally {
-        window.FormData = originalFormData;
-    }
+    await act(async () => {
+        fireEvent.submit(form);
+    });
+
+    expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'My Bar',
+      status: 'temporary',
+      type: 'bar'
+    }));
   });
 });

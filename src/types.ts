@@ -13,10 +13,7 @@ export interface Bar {
   address?: string;
   osmId?: string;
   status: 'verified' | 'temporary';
-  phone?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
+  type?: 'bar' | 'restaurant';
 }
 
 export interface Request {

@@ -4,6 +4,7 @@ export interface ButtonConfig {
   icon?: string;
   isCustom?: boolean;
   children?: ButtonConfig[];
+  action?: 'add_brand' | 'add_type' | 'custom_qty';
 }
 
 export interface Bar {
@@ -14,6 +15,9 @@ export interface Bar {
   osmId?: string;
   status: 'verified' | 'temporary';
   type?: 'bar' | 'restaurant';
+  beerInventory?: Record<string, string[]>;
+  wells?: string[];
+  hiddenButtonIds?: string[];
 }
 
 export interface Request {

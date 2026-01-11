@@ -27,6 +27,27 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
     ]
   },
   {
+    id: 'mixers', label: 'MIXERS', icon: 'local_bar',
+    children: [
+      { id: 'soda', label: 'SODA' },
+      { id: 'tonic', label: 'TONIC' },
+      { id: 'coke', label: 'COKE' },
+      { id: 'diet', label: 'DIET COKE' },
+      { id: 'sprite', label: 'SPRITE' },
+      { id: 'ginger_ale', label: 'GINGER ALE' },
+      { id: 'ginger_beer', label: 'GINGER BEER' },
+      { id: 'cranberry', label: 'CRANBERRY' },
+      { id: 'oj', label: 'OJ' },
+      { id: 'pineapple', label: 'PINEAPPLE' },
+      { id: 'grapefruit', label: 'GRAPEFRUIT' },
+      { id: 'sour', label: 'SOUR MIX' },
+      { id: 'simple', label: 'SIMPLE SYRUP' },
+      { id: 'grenadine', label: 'GRENADINE' },
+      { id: 'bitters', label: 'BITTERS' }
+    ]
+  },
+  { id: 'restock_beer', label: 'RESTOCK BEER', icon: 'sports_bar' },
+  {
     id: 'restock', label: 'RESTOCK WELL', icon: 'liquor',
     children: [
       { id: 'vodka', label: 'VODKA' },
@@ -46,11 +67,11 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
 
 // Map of Role -> Array of Button IDs that are enabled by default
 export const ROLE_NOTIFICATION_DEFAULTS: Record<string, string[]> = {
-  'Owner': ['manager', 'security', 'keg', 'trash', 'ice', 'glass', 'fruit', 'restock'], // Owner gets everything
-  'Manager': ['manager', 'security', 'keg', 'trash', 'restock'],
-  'Bartender': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash'],
-  'Barback': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash'],
-  'Server': [], // Servers usually send, not receive? Or maybe "Table Ready"? For now, empty.
-  'Runner': ['ice', 'glass', 'restock'],
-  'Security': ['security', 'fight', 'manager'] // "fight" isn't in default buttons but might be custom? defaulting 'security'
+  'Owner': ['manager', 'security', 'keg', 'trash', 'ice', 'glass', 'fruit', 'restock', 'mixers', 'restock_beer'],
+  'Manager': ['manager', 'security', 'keg', 'trash', 'restock', 'mixers', 'restock_beer'],
+  'Bartender': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer'],
+  'Barback': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer'],
+  'Server': [],
+  'Runner': ['ice', 'glass', 'restock', 'mixers', 'restock_beer'],
+  'Security': ['security', 'fight', 'manager']
 };

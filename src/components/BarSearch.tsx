@@ -17,6 +17,11 @@ interface BarSearchProps {
   onJoin: (bar: Partial<Bar>) => void;
 }
 
+const MODES = [
+    { id: 'search', label: 'Search' },
+    { id: 'create', label: 'Create Temp' }
+] as const;
+
 const BarSearch = ({ onJoin }: BarSearchProps) => {
   const [queryText, setQueryText] = useState('');
   const [results, setResults] = useState<OSMResult[]>([]);

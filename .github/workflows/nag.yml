@@ -6,6 +6,9 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch: # Allows you to manually trigger it for testing
 
+permissions:
+  contents: read
+
 jobs:
   harass_users:
     runs-on: ubuntu-latest

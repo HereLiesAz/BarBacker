@@ -14,7 +14,7 @@ const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
   const [displayName, setDisplayName] = useState('');
 
   return (
-    <div className="w-full max-w-sm space-y-6 animate-in fade-in slide-in-from-bottom-4">
+    <div className="w-[300px] space-y-6 animate-in fade-in slide-in-from-bottom-4">
       <div className="text-center space-y-2">
         <h2 className="text-2xl font-bold text-white">Identification</h2>
         <p className="text-gray-500">Name and Rank, soldier.</p>

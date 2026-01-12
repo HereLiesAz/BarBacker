@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'The Well',
-        short_name: 'TheWell',
+        name: 'BarBacker',
+        short_name: 'BarBacker',
         description: 'Bartender Paging System',
         theme_color: '#000000',
         background_color: '#000000',

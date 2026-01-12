@@ -23,7 +23,8 @@ export function SortableButton({ id, children, onClick, disabled }: SortableButt
     transition,
     zIndex: isDragging ? 10 : 1,
     opacity: isDragging ? 0 : 1,
-    touchAction: 'none'
+    visibility: (isDragging ? 'hidden' : 'visible') as 'hidden' | 'visible',
+    touchAction: 'manipulation'
   };
 
   return (

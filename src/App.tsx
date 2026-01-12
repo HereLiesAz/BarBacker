@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
+  deleteUser,
   User 
 } from 'firebase/auth';
 import { 
@@ -21,7 +22,7 @@ import {
   setDoc,
   deleteDoc,
   arrayUnion,
-  increment
+  increment,
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -70,7 +71,8 @@ import {
 } from '@dnd-kit/core';
 import {
   SortableContext,
-  rectSortingStrategy
+  rectSortingStrategy,
+  arrayMove
 } from '@dnd-kit/sortable';
 
 // --- MAIN APP COMPONENT ---
@@ -106,9 +108,12 @@ function App() {
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
   // FIX 1: Use proper return type for browser environment
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDraggingRef = useRef(false);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [showBarManager, setShowBarManager] = useState(false);
+  const [showAccountDialog, setShowAccountDialog] = useState(false);
+  const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
@@ -117,15 +122,6 @@ function App() {
       if (u) requestNotificationPermission().then(t => t && setFcmToken(t));
     });
     onMessageListener().then(() => {
-      // payload usually has { notification: { title, body }, data: { ... } }
-      // We need to check if we should alert.
-      // Since we don't control the sender here (it's unknown), we can only guess or use local filtering.
-      // Assuming payload.data.label exists or we just rely on local updates?
-      // For now, let's keep the sound but ideally we'd filter it.
-      // IF the prompt implies we should filter EVERYTHING, we should check here.
-      // But without payload structure knowledge, it's risky.
-      // However, the `activeRequests` list is what visualizes it.
-
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
       new Audio('/alert.mp3').play().catch(() => {});
     });
@@ -212,7 +208,6 @@ function App() {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (navStack.length > 0) {
       timerRef.current = setTimeout(() => {
-        // FIX 2: Removed unused 'lastItem'
         const trail = navStack.map(b => b.label).join(': ');
         submitRequest(`${trail} (Ask Me)`);
         setNavStack([]);
@@ -226,25 +221,20 @@ function App() {
   const saveBrand = async (brandName: string) => {
     if (!user || !barId) return;
 
-    // Check if it already exists locally
     if (beerInventory[brandName]) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
-        // Navigate to existing brand
         const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
         setNavStack(prev => [...prev, brandBtn]);
         return;
     }
 
-    // Atomic update: merge new brand into map
     await setDoc(doc(db, 'bars', barId), {
         beerInventory: { [brandName]: [] }
     }, { merge: true });
 
-    // Optimistic update
     setBeerInventory(prev => ({ ...prev, [brandName]: [] }));
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
-    // Navigate to new brand
     const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
     setNavStack(prev => [...prev, brandBtn]);
   };
@@ -254,7 +244,6 @@ function App() {
     const brand = inputDialog.parentContext;
     const currentTypes = beerInventory[brand] || [];
 
-    // Check duplication locally
     if (currentTypes.includes(typeName)) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
         const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
@@ -262,16 +251,13 @@ function App() {
         return;
     }
 
-    // Atomic update: add to array
     await updateDoc(doc(db, 'bars', barId), {
         [`beerInventory.${brand}`]: arrayUnion(typeName)
     });
 
-    // Optimistic update
     setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), typeName] }));
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
-    // Navigate to new type
     const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
     setNavStack(prev => [...prev, typeBtn]);
   };
@@ -281,7 +267,6 @@ function App() {
 
     if (wells.includes(wellName)) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
-        // Just submit request for existing well
         submitRequest(`ICE: ${wellName}`);
         setNavStack([]);
         return;
@@ -294,7 +279,6 @@ function App() {
     setWells(prev => [...prev, wellName]);
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
-    // Submit request
     submitRequest(`ICE: ${wellName}`);
     setNavStack([]);
   };
@@ -330,30 +314,23 @@ function App() {
       const brandButtons: ButtonConfig[] = Object.keys(beerInventory).map(brand => ({
         id: `brand_${brand}`,
         label: brand,
-        // Since we are creating these on the fly, we don't have explicit children stored,
-        // but we know logic dictates they have children (types).
-        // We set 'children: []' as a signal that it has children,
-        // but the actual retrieval will be recursive via getDynamicChildren.
         children: []
       }));
       return [...brandButtons, { id: 'add_brand', label: '+ ADD BRAND', action: 'add_brand', isCustom: true }];
     }
 
-    // Check if button is a Brand
     if (btn.id.startsWith('brand_')) {
       const brandName = btn.label;
       const types = beerInventory[brandName] || [];
       const typeButtons: ButtonConfig[] = types.map(t => ({
         id: `type_${brandName}_${t}`,
         label: t,
-        children: [] // Signal it has children (quantities)
+        children: []
       }));
       return [...typeButtons, { id: 'add_type', label: '+ ADD TYPE', action: 'add_type', isCustom: true }];
     }
 
-    // Check if button is a Type
     if (btn.id.startsWith('type_')) {
-      // Return quantity options
       return [
         { id: 'qty_6', label: '6' },
         { id: 'qty_12', label: '12' },
@@ -384,7 +361,6 @@ function App() {
             return indexA - indexB;
         });
     }
-    // Fallback to usage
     return [...btns].sort((a, b) => {
         const usageA = buttonUsage[a.id] || 0;
         const usageB = buttonUsage[b.id] || 0;
@@ -408,26 +384,28 @@ function App() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
+    isDraggingRef.current = true;
   };
 
-  const handleDragEnd = async (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
+  const handleDragOver = (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
     const { active, over } = event;
-    setActiveId(null);
-
-    if (over && active.id !== over.id && barId) {
+    if (over && active.id !== over.id) {
       const oldIndex = items.findIndex(i => i.id === active.id);
       const newIndex = items.findIndex(i => i.id === over.id);
 
-      const newItems = [...items];
-      const [removed] = newItems.splice(oldIndex, 1);
-      newItems.splice(newIndex, 0, removed);
-
-      const newOrder = newItems.map(i => i.id);
-
+      const newOrder = arrayMove(items, oldIndex, newIndex).map(i => i.id);
       setCustomOrders(prev => ({ ...prev, [contextId]: newOrder }));
-      await updateDoc(doc(db, 'bars', barId), {
-          [`customOrders.${contextId}`]: newOrder
-      });
+    }
+  };
+
+  const handleDragEnd = async (_event: DragEndEvent, contextId: string) => {
+    setActiveId(null);
+    isDraggingRef.current = false;
+
+    if (barId && customOrders[contextId]) {
+       await updateDoc(doc(db, 'bars', barId), {
+          [`customOrders.${contextId}`]: customOrders[contextId]
+       });
     }
   };
 
@@ -444,13 +422,11 @@ function App() {
       return;
     }
     if (btn.action === 'add_type') {
-      // Parent context is the brand name. The navStack has [Restock Beer, BrandName]
       const brandBtn = navStack[navStack.length - 1];
       setInputDialog({ type: 'type', open: true, parentContext: brandBtn.label, searchTerm: '' });
       return;
     }
     if (btn.action === 'custom_qty') {
-      // We want context "RESTOCK BEER: Corona: Bottle"
       setQuantityPicker({
         open: true,
         currentQty: 1,
@@ -459,14 +435,10 @@ function App() {
       return;
     }
 
-    // Standard navigation
-    // We check if it SHOULD have children.
-    // getDynamicChildren will return children if it's dynamic.
     const children = getDynamicChildren(btn);
     if (children && children.length > 0) {
       setNavStack([...navStack, btn]);
     } else {
-      // Leaf node
       submitRequest([...navStack, btn].map(b => b.label).join(': '));
       setNavStack([]);
     }
@@ -476,7 +448,6 @@ function App() {
     if (!user || !barId) return;
 
     let status = 'active';
-    // Check if managers exist using local state to avoid extra reads
     if (role !== 'Owner') {
         const hasManager = allUsers.some(u => u.role === 'Owner' || u.role === 'Manager');
         if (hasManager) {
@@ -538,10 +509,38 @@ function App() {
 
   const saveNotificationPreferences = async (prefs: string[]) => {
     if (!user || !barId) return;
-    setNotificationPreferences(prefs); // Optimistic update
+    setNotificationPreferences(prefs);
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
         notificationPreferences: prefs
     }, { merge: true });
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setShowAccountDialog(false);
+  };
+
+  const handleLeaveBar = async () => {
+    if (!user || !barId) return;
+    if (!confirm('Are you sure you want to leave this bar? You will need to join again.')) return;
+    await deleteDoc(doc(db, `bars/${barId}/users`, user.uid));
+    setBarId(null);
+    localStorage.removeItem('barId');
+    setShowAccountDialog(false);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user || !barId) return;
+    if (!confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
+
+    try {
+      await deleteDoc(doc(db, `bars/${barId}/users`, user.uid));
+      await deleteUser(user);
+      setShowAccountDialog(false);
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      alert('Failed to delete account. You may need to re-login recently.');
+    }
   };
 
   const handleEmailAuth = async (e: any) => {
@@ -557,7 +556,7 @@ function App() {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-8 bg-black">
         <h1 className="text-4xl font-bold tracking-widest text-white">BARBACKER</h1>
         {authError && <div className="text-red-400 p-2 border border-red-800 rounded">{authError}</div>}
-        <form onSubmit={handleEmailAuth} className="w-full max-w-sm space-y-4">
+        <form onSubmit={handleEmailAuth} className="w-[300px] space-y-4">
           <md-filled-text-field label="Email" name="email" type="email" required />
           <md-filled-text-field label="Password" name="password" type="password" required />
           <md-filled-button type="submit">{isRegistering ? 'Create Account' : 'Clock In'}</md-filled-button>
@@ -605,14 +604,13 @@ function App() {
     );
   }
 
-  // Helper: Find button ID for a given label.
   const getButtonIdForLabel = (label: string): string | undefined => {
     for (const btn of buttons) {
         if (label === btn.label) return btn.id;
-        if (label.startsWith(btn.label)) return btn.id; // "ICE: CUBES" ?
+        if (label.startsWith(btn.label)) return btn.id;
         if (btn.children) {
             for (const child of btn.children) {
-                if (label === child.label) return btn.id; // Map child to parent ID
+                if (label === child.label) return btn.id;
             }
         }
     }
@@ -622,23 +620,26 @@ function App() {
   const activeRequests = requests.filter(r => {
       if (r.status !== 'pending') return false;
       const btnId = getButtonIdForLabel(r.label);
-      if (!btnId) return true; // Show unknown/custom types
+      if (!btnId) return true;
       return notificationPreferences.includes(btnId);
+  }).sort((a, b) => {
+      const aIgnored = ignoredIds.includes(a.id);
+      const bIgnored = ignoredIds.includes(b.id);
+      if (aIgnored === bIgnored) {
+          return 0;
+      }
+      return aIgnored ? 1 : -1;
   });
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 
-  // Context management
   const currentContextId = navStack.length > 0 ? navStack[navStack.length - 1].id : 'main';
   const currentButtonsSource = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
   const activeButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
   const currentButtons = sortButtons(activeButtons, currentContextId);
 
-  const sortedAllButtons = sortButtons(buttons, 'main');
-  // Stable list for Main Screen
   const mainScreenButtons = sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id));
 
-  // Inject pending approvals for Managers/Owners
   const pendingUsers = allUsers.filter(u => u.status === 'pending');
   const showApprovals = (userRole === 'Owner' || userRole === 'Manager') && pendingUsers.length > 0;
 
@@ -724,31 +725,55 @@ function App() {
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setShowOffClockDialog(false)}>Stay</md-text-button>
-          <md-filled-button onClick={goOffClock} class="btn-alert">Leave</md-filled-button>
+          <md-filled-button onClick={goOffClock} className="btn-alert">Leave</md-filled-button>
         </div>
       </md-dialog>
 
       <div className="flex-none flex justify-between items-center p-4 bg-[#121212] border-b border-[#333] z-10">
-        <div className="flex flex-col">
-          <md-text-button onClick={() => setShowBarManager(true)} style={{ marginLeft: '-12px' }}>
-            <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
-          </md-text-button>
-          <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
-            <span className="text-white font-bold">{displayName}</span>
-            <span className="bg-gray-800 px-1 rounded">{userRole}</span>
-          </div>
+        <div
+            className="flex items-center gap-6 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
+            onClick={() => setShowAccountDialog(true)}
+        >
+            <span className="text-white font-bold text-lg">{displayName}</span>
+            <span className="bg-gray-800 px-3 py-1 rounded text-sm text-gray-300">{userRole}</span>
         </div>
-        <div className="flex gap-2">
-           <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings">
-             <md-icon className="text-gray-400">settings</md-icon>
-           </md-icon-button>
-           <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock">
-             <PowerOff className="text-gray-500 hover:text-red-500" />
-           </md-icon-button>
+        <div className="flex items-center gap-4">
+           <span className="font-bold text-lg text-white tracking-wide hidden sm:block">{barName}</span>
+           <md-text-button onClick={() => setShowBarManager(true)} className="sm:hidden">
+             <span className="font-bold text-white tracking-wide">{barName}</span>
+           </md-text-button>
+
+           <div className="flex gap-2">
+                <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings">
+                    <md-icon className="text-gray-400">settings</md-icon>
+                </md-icon-button>
+                <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock">
+                    <PowerOff className="text-gray-500 hover:text-red-500" />
+                </md-icon-button>
+           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden w-full relative">
+      <md-dialog open={showAccountDialog || undefined} onClose={() => setShowAccountDialog(false)}>
+        <div slot="headline">Account Options</div>
+        <div slot="content" className="flex flex-col gap-4 pt-4">
+            <p className="text-gray-300">Manage your account for <strong>{barName}</strong>.</p>
+        </div>
+        <div slot="actions">
+            <div className="flex flex-col gap-2 w-full items-end">
+                <div className="flex gap-2">
+                    <md-text-button onClick={handleLeaveBar}>Leave Bar</md-text-button>
+                    <md-text-button onClick={handleLogout}>Log Out</md-text-button>
+                </div>
+                <div className="flex gap-2">
+                    <md-text-button onClick={handleDeleteAccount} className="text-red-500">Delete Account</md-text-button>
+                    <md-filled-button onClick={() => setShowAccountDialog(false)}>Close</md-filled-button>
+                </div>
+            </div>
+        </div>
+      </md-dialog>
+
+      <div className="flex-1 overflow-y-auto overflow-x-hidden w-full relative pb-[35vh]">
       {navStack.length > 0 && (
         <div className="fixed inset-0 bg-black/95 z-50 flex flex-col p-6 animate-in fade-in duration-300 overflow-y-auto pb-32">
           <div className="flex items-center gap-4 mb-8 flex-none">
@@ -759,7 +784,8 @@ function App() {
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragStart={handleDragStart}
-            onDragEnd={(e) => handleDragEnd(e, currentContextId, currentButtons)}
+            onDragOver={(e) => handleDragOver(e, currentContextId, currentButtons)}
+            onDragEnd={(e) => handleDragEnd(e, currentContextId)}
           >
             <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-2 gap-4 mb-auto">
@@ -781,7 +807,7 @@ function App() {
             </DragOverlay>
           </DndContext>
           <div className="mt-8">
-            <md-filled-button class="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
+            <md-filled-button className="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
                Cancel
             </md-filled-button>
           </div>
@@ -792,15 +818,16 @@ function App() {
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
-        onDragEnd={(e) => handleDragEnd(e, 'main', mainScreenButtons)}
+        onDragOver={(e) => handleDragOver(e, 'main', mainScreenButtons)}
+        onDragEnd={(e) => handleDragEnd(e, 'main')}
       >
         <SortableContext items={mainScreenButtons} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-2 gap-3 p-4">
+          <div className="grid grid-cols-2 gap-6 p-6">
             {mainScreenButtons.map(btn => {
               const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
               return (
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
-                  <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
+                  <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
                     <div className="flex flex-col items-center gap-2">
                       <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
                       <span className="text-lg font-bold leading-none">{btn.label}</span>
@@ -819,7 +846,7 @@ function App() {
                     if (!btn) return null;
                     const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
                     return (
-                        <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
+                        <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
                             <div className="flex flex-col items-center gap-2">
                             <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
                             <span className="text-lg font-bold leading-none">{btn.label}</span>
@@ -832,25 +859,58 @@ function App() {
         </DragOverlay>
       </DndContext>
 
-      <div className="px-4 mt-4">
-        {showApprovals && (
-            <div onClick={() => setShowBarManager(true)} className="mb-2 p-4 bg-[#2C1A1A] border-l-4 border-yellow-500 rounded-r-lg flex justify-between items-center cursor-pointer active:bg-yellow-900/40 transition-colors">
-                <div className="flex flex-col">
-                  <span className="font-medium text-yellow-100">Staff Approval Needed</span>
-                  <span className="text-xs text-yellow-400">{pendingUsers.length} pending request(s)</span>
+      <div className="fixed bottom-0 left-0 w-full max-h-[33vh] h-auto bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300">
+        <div className="flex-none p-2 bg-[#252525] border-b border-[#333] flex justify-between items-center px-4">
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notifications ({activeRequests.length})</span>
+            {showApprovals && (
+                <md-filled-button
+                    onClick={() => setShowBarManager(true)}
+                    style={{ height: '24px', fontSize: '12px', ...{ '--md-filled-button-container-color': '#EAB308', '--md-filled-button-label-text-color': '#000' } as React.CSSProperties }}
+                >
+                    {pendingUsers.length} Approvals
+                </md-filled-button>
+            )}
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {activeRequests.map(req => {
+                const isIgnored = ignoredIds.includes(req.id);
+                return (
+                    <div
+                        key={req.id}
+                        className={`p-3 rounded-lg flex flex-col gap-2 transition-colors border-l-4 ${isIgnored ? 'bg-[#1a1a1a] border-gray-600 opacity-60' : 'bg-[#2C1A1A] border-red-500'}`}
+                    >
+                        <div className="flex justify-between items-start">
+                            <div className="flex flex-col">
+                                <span className={`font-medium ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
+                                <span className="text-xs text-gray-500">{req.requesterName} ({req.requesterRole})</span>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 w-full">
+                            <md-filled-button
+                                onClick={() => claimRequest(req.id)}
+                                className={`flex-1 ${isIgnored ? '' : 'btn-alert'}`}
+                                style={{ height: '32px' }}
+                            >
+                                CLAIM
+                            </md-filled-button>
+                            {!isIgnored && (
+                                <md-outlined-button
+                                    onClick={(e: any) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
+                                    style={{ height: '32px' }}
+                                >
+                                    Ignore
+                                </md-outlined-button>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+            {activeRequests.length === 0 && (
+                <div className="h-full flex items-center justify-center text-gray-600 italic">
+                    No active requests
                 </div>
-                <md-filled-button style={{ height: '32px', backgroundColor: '#EAB308', color: '#000' }}>VIEW</md-filled-button>
-            </div>
-        )}
-        {activeRequests.map(req => (
-          <div key={req.id} onClick={() => claimRequest(req.id)} className="mb-2 p-4 bg-[#2C1A1A] border-l-4 border-red-500 rounded-r-lg flex justify-between items-center cursor-pointer active:bg-red-900/40 transition-colors">
-            <div className="flex flex-col">
-              <span className="font-medium text-red-100">{req.label}</span>
-              <span className="text-xs text-red-400">{req.requesterName} ({req.requesterRole})</span>
-            </div>
-            <md-filled-button class="btn-alert" style={{ height: '32px' }}>CLAIM</md-filled-button>
-          </div>
-        ))}
+            )}
+        </div>
       </div>
 
       <div className="px-4 mt-8 pb-32">

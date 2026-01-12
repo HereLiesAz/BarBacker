@@ -56,14 +56,14 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="w-[300px] space-y-4">
         {mode === 'search' ? (
              <div className="space-y-2">
                 <div className="relative">
                     <md-filled-text-field
                         label="Search OpenStreetMap"
                         value={queryText}
-                        onInput={(e: Event) => setQueryText((e.target as HTMLInputElement).value)}
+                        onInput={(e: any) => setQueryText(e.target.value)}
                         type="search"
                         className="w-full"
                     >
@@ -114,7 +114,7 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                 <md-filled-text-field
                     label="Bar Name"
                     value={queryText}
-                    onInput={(e: Event) => setQueryText((e.target as HTMLInputElement).value)}
+                    onInput={(e: any) => setQueryText(e.target.value)}
                 />
 
                 <div className="flex gap-6 justify-center">
@@ -147,7 +147,7 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
         <div className="flex justify-center gap-4 pt-2">
             {MODES.map((btn) => {
                 const isActive = mode === btn.id;
-                const Tag = isActive ? 'md-filled-button' : 'md-outlined-button';
+                const Tag = (isActive ? 'md-filled-button' : 'md-outlined-button') as any;
                 return (
                     <Tag
                         key={btn.id}

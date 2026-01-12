@@ -20,6 +20,7 @@ import {
   doc,
   serverTimestamp,
   setDoc,
+  getDoc,
   deleteDoc,
   arrayUnion,
   increment,
@@ -579,15 +580,24 @@ function App() {
         <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
         <BarSearch onJoin={async (b) => {
           if(b.id) {
-            if (b.status === 'temporary') {
-               await setDoc(doc(db, 'bars', b.id), {
-                 name: b.name,
-                 address: b.address || '',
-                 status: 'temporary',
-                 type: b.type || 'bar',
-                 buttons: []
-               }, { merge: true });
+            const barRef = doc(db, 'bars', b.id);
+            const existingSnap = await getDoc(barRef);
+
+            // Only create if it doesn't exist to prevent overwriting custom data
+            if (!existingSnap.exists()) {
+                await setDoc(barRef, {
+                  name: b.name,
+                  address: b.address || '',
+                  city: b.city || '',
+                  state: b.state || '',
+                  zip: b.zip || '',
+                  phone: b.phone || '',
+                  status: b.status || 'verified',
+                  type: b.type || 'bar',
+                  buttons: []
+                });
             }
+
             setBarId(b.id);
           }
         }} />
@@ -732,7 +742,7 @@ function App() {
 
       <div className="flex-none flex justify-between items-center p-4 bg-[#121212] border-b border-[#333] z-10">
         <div
-            className="flex items-center gap-6 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
+            className="flex items-center gap-12 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
             onClick={() => setShowAccountDialog(true)}
         >
             <span className="text-white font-bold text-lg">{displayName}</span>
@@ -823,7 +833,7 @@ function App() {
         onDragEnd={(e) => handleDragEnd(e, 'main')}
       >
         <SortableContext items={mainScreenButtons} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-2 gap-6 p-6">
+          <div className="grid grid-cols-2 gap-8 p-6">
             {mainScreenButtons.map(btn => {
               const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
               return (
@@ -860,8 +870,8 @@ function App() {
         </DragOverlay>
       </DndContext>
 
-      <div className="fixed bottom-0 left-0 w-full max-h-[33vh] h-auto bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300">
-        <div className="flex-none p-2 bg-[#252525] border-b border-[#333] flex justify-between items-center px-4">
+      <div className="fixed bottom-0 left-0 right-0 max-h-[33vh] bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300 overflow-y-auto">
+        <div className="flex-none p-2 bg-[#252525] border-b border-[#333] flex justify-between items-center px-4 sticky top-0 z-30">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notifications ({activeRequests.length})</span>
             {showApprovals && (
                 <md-filled-button

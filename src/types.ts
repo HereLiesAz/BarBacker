@@ -12,6 +12,10 @@ export interface Bar {
   name: string;
   buttons: ButtonConfig[];
   address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  phone?: string;
   osmId?: string;
   status: 'verified' | 'temporary';
   type?: 'bar' | 'restaurant';

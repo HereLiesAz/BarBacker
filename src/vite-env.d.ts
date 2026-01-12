@@ -6,26 +6,26 @@ declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
       'md-filled-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean;
+        disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
         value?: string;
       };
       'md-outlined-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean;
+        disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
       };
       'md-text-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean;
+        disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
         href?: string;
         target?: string;
       };
       'md-filled-tonal-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean;
+        disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
       };
       'md-elevated-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean;
+        disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
       };
       'md-dialog': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
@@ -38,7 +38,7 @@ declare module 'react' {
         type?: string;
         placeholder?: string;
         required?: boolean;
-        disabled?: boolean;
+        disabled?: boolean | null;
         error?: boolean;
         errorText?: string;
         supportingText?: string;
@@ -50,20 +50,20 @@ declare module 'react' {
       };
       'md-checkbox': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         checked?: boolean;
-        disabled?: boolean;
+        disabled?: boolean | null;
         indeterminate?: boolean;
         onChange?: (e: Event) => void;
       };
       'md-switch': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         selected?: boolean;
-        disabled?: boolean;
+        disabled?: boolean | null;
         onChange?: (e: Event) => void;
       };
       'md-list': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
       'md-list-item': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         type?: 'button' | 'link' | 'text';
         href?: string;
-        disabled?: boolean;
+        disabled?: boolean | null;
         active?: boolean;
         selected?: boolean;
       };
@@ -71,14 +71,14 @@ declare module 'react' {
         slot?: string;
       };
       'md-icon-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean;
+        disabled?: boolean | null;
         href?: string;
         target?: string;
         onClick?: (e: Event) => void;
       };
       'md-radio': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         checked?: boolean;
-        disabled?: boolean;
+        disabled?: boolean | null;
         value?: string;
         name?: string;
         onChange?: (e: Event) => void;
@@ -93,7 +93,7 @@ declare module 'react' {
       'md-filter-chip': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         label?: string;
         selected?: boolean;
-        disabled?: boolean;
+        disabled?: boolean | null;
         onClick?: (e: Event) => void;
       };
     }

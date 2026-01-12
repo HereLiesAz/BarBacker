@@ -122,15 +122,6 @@ function App() {
       if (u) requestNotificationPermission().then(t => t && setFcmToken(t));
     });
     onMessageListener().then(() => {
-      // payload usually has { notification: { title, body }, data: { ... } }
-      // We need to check if we should alert.
-      // Since we don't control the sender here (it's unknown), we can only guess or use local filtering.
-      // Assuming payload.data.label exists or we just rely on local updates?
-      // For now, let's keep the sound but ideally we'd filter it.
-      // IF the prompt implies we should filter EVERYTHING, we should check here.
-      // But without payload structure knowledge, it's risky.
-      // However, the `activeRequests` list is what visualizes it.
-
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
       new Audio('/alert.mp3').play().catch(() => {});
     });
@@ -217,7 +208,6 @@ function App() {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (navStack.length > 0) {
       timerRef.current = setTimeout(() => {
-        // FIX 2: Removed unused 'lastItem'
         const trail = navStack.map(b => b.label).join(': ');
         submitRequest(`${trail} (Ask Me)`);
         setNavStack([]);
@@ -231,25 +221,20 @@ function App() {
   const saveBrand = async (brandName: string) => {
     if (!user || !barId) return;
 
-    // Check if it already exists locally
     if (beerInventory[brandName]) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
-        // Navigate to existing brand
         const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
         setNavStack(prev => [...prev, brandBtn]);
         return;
     }
 
-    // Atomic update: merge new brand into map
     await setDoc(doc(db, 'bars', barId), {
         beerInventory: { [brandName]: [] }
     }, { merge: true });
 
-    // Optimistic update
     setBeerInventory(prev => ({ ...prev, [brandName]: [] }));
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
-    // Navigate to new brand
     const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
     setNavStack(prev => [...prev, brandBtn]);
   };
@@ -259,7 +244,6 @@ function App() {
     const brand = inputDialog.parentContext;
     const currentTypes = beerInventory[brand] || [];
 
-    // Check duplication locally
     if (currentTypes.includes(typeName)) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
         const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
@@ -267,16 +251,13 @@ function App() {
         return;
     }
 
-    // Atomic update: add to array
     await updateDoc(doc(db, 'bars', barId), {
         [`beerInventory.${brand}`]: arrayUnion(typeName)
     });
 
-    // Optimistic update
     setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), typeName] }));
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
-    // Navigate to new type
     const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
     setNavStack(prev => [...prev, typeBtn]);
   };
@@ -286,7 +267,6 @@ function App() {
 
     if (wells.includes(wellName)) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
-        // Just submit request for existing well
         submitRequest(`ICE: ${wellName}`);
         setNavStack([]);
         return;
@@ -299,7 +279,6 @@ function App() {
     setWells(prev => [...prev, wellName]);
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
-    // Submit request
     submitRequest(`ICE: ${wellName}`);
     setNavStack([]);
   };
@@ -335,30 +314,23 @@ function App() {
       const brandButtons: ButtonConfig[] = Object.keys(beerInventory).map(brand => ({
         id: `brand_${brand}`,
         label: brand,
-        // Since we are creating these on the fly, we don't have explicit children stored,
-        // but we know logic dictates they have children (types).
-        // We set 'children: []' as a signal that it has children,
-        // but the actual retrieval will be recursive via getDynamicChildren.
         children: []
       }));
       return [...brandButtons, { id: 'add_brand', label: '+ ADD BRAND', action: 'add_brand', isCustom: true }];
     }
 
-    // Check if button is a Brand
     if (btn.id.startsWith('brand_')) {
       const brandName = btn.label;
       const types = beerInventory[brandName] || [];
       const typeButtons: ButtonConfig[] = types.map(t => ({
         id: `type_${brandName}_${t}`,
         label: t,
-        children: [] // Signal it has children (quantities)
+        children: []
       }));
       return [...typeButtons, { id: 'add_type', label: '+ ADD TYPE', action: 'add_type', isCustom: true }];
     }
 
-    // Check if button is a Type
     if (btn.id.startsWith('type_')) {
-      // Return quantity options
       return [
         { id: 'qty_6', label: '6' },
         { id: 'qty_12', label: '12' },
@@ -389,7 +361,6 @@ function App() {
             return indexA - indexB;
         });
     }
-    // Fallback to usage
     return [...btns].sort((a, b) => {
         const usageA = buttonUsage[a.id] || 0;
         const usageB = buttonUsage[b.id] || 0;
@@ -431,7 +402,6 @@ function App() {
     setActiveId(null);
     isDraggingRef.current = false;
 
-    // Save current order to Firestore
     if (barId && customOrders[contextId]) {
        await updateDoc(doc(db, 'bars', barId), {
           [`customOrders.${contextId}`]: customOrders[contextId]
@@ -452,13 +422,11 @@ function App() {
       return;
     }
     if (btn.action === 'add_type') {
-      // Parent context is the brand name. The navStack has [Restock Beer, BrandName]
       const brandBtn = navStack[navStack.length - 1];
       setInputDialog({ type: 'type', open: true, parentContext: brandBtn.label, searchTerm: '' });
       return;
     }
     if (btn.action === 'custom_qty') {
-      // We want context "RESTOCK BEER: Corona: Bottle"
       setQuantityPicker({
         open: true,
         currentQty: 1,
@@ -467,14 +435,10 @@ function App() {
       return;
     }
 
-    // Standard navigation
-    // We check if it SHOULD have children.
-    // getDynamicChildren will return children if it's dynamic.
     const children = getDynamicChildren(btn);
     if (children && children.length > 0) {
       setNavStack([...navStack, btn]);
     } else {
-      // Leaf node
       submitRequest([...navStack, btn].map(b => b.label).join(': '));
       setNavStack([]);
     }
@@ -484,7 +448,6 @@ function App() {
     if (!user || !barId) return;
 
     let status = 'active';
-    // Check if managers exist using local state to avoid extra reads
     if (role !== 'Owner') {
         const hasManager = allUsers.some(u => u.role === 'Owner' || u.role === 'Manager');
         if (hasManager) {
@@ -546,7 +509,7 @@ function App() {
 
   const saveNotificationPreferences = async (prefs: string[]) => {
     if (!user || !barId) return;
-    setNotificationPreferences(prefs); // Optimistic update
+    setNotificationPreferences(prefs);
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
         notificationPreferences: prefs
     }, { merge: true });
@@ -571,9 +534,7 @@ function App() {
     if (!confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
 
     try {
-      // Remove from bar users
       await deleteDoc(doc(db, `bars/${barId}/users`, user.uid));
-      // Delete auth account
       await deleteUser(user);
       setShowAccountDialog(false);
     } catch (error: any) {
@@ -643,14 +604,13 @@ function App() {
     );
   }
 
-  // Helper: Find button ID for a given label.
   const getButtonIdForLabel = (label: string): string | undefined => {
     for (const btn of buttons) {
         if (label === btn.label) return btn.id;
-        if (label.startsWith(btn.label)) return btn.id; // "ICE: CUBES" ?
+        if (label.startsWith(btn.label)) return btn.id;
         if (btn.children) {
             for (const child of btn.children) {
-                if (label === child.label) return btn.id; // Map child to parent ID
+                if (label === child.label) return btn.id;
             }
         }
     }
@@ -660,33 +620,26 @@ function App() {
   const activeRequests = requests.filter(r => {
       if (r.status !== 'pending') return false;
       const btnId = getButtonIdForLabel(r.label);
-      if (!btnId) return true; // Show unknown/custom types
+      if (!btnId) return true;
       return notificationPreferences.includes(btnId);
   }).sort((a, b) => {
       const aIgnored = ignoredIds.includes(a.id);
       const bIgnored = ignoredIds.includes(b.id);
       if (aIgnored === bIgnored) {
-          // Default sort by timestamp (already sorted from query?)
-          // Query is orderBy('timestamp', 'desc').
           return 0;
       }
-      // Ignored (true) goes to bottom
       return aIgnored ? 1 : -1;
   });
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 
-  // Context management
   const currentContextId = navStack.length > 0 ? navStack[navStack.length - 1].id : 'main';
   const currentButtonsSource = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
   const activeButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
   const currentButtons = sortButtons(activeButtons, currentContextId);
 
-  const sortedAllButtons = sortButtons(buttons, 'main');
-  // Stable list for Main Screen
   const mainScreenButtons = sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id));
 
-  // Inject pending approvals for Managers/Owners
   const pendingUsers = allUsers.filter(u => u.status === 'pending');
   const showApprovals = (userRole === 'Owner' || userRole === 'Manager') && pendingUsers.length > 0;
 
@@ -778,10 +731,10 @@ function App() {
 
       <div className="flex-none flex justify-between items-center p-4 bg-[#121212] border-b border-[#333] z-10">
         <div
-            className="flex items-center gap-8 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
+            className="flex items-center gap-6 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
             onClick={() => setShowAccountDialog(true)}
         >
-            <span className="text-white font-bold text-lg mr-8">{displayName}</span>
+            <span className="text-white font-bold text-lg">{displayName}</span>
             <span className="bg-gray-800 px-3 py-1 rounded text-sm text-gray-300">{userRole}</span>
         </div>
         <div className="flex items-center gap-4">
@@ -906,7 +859,7 @@ function App() {
         </DragOverlay>
       </DndContext>
 
-      <div className="fixed bottom-0 left-0 right-0 max-h-[33vh] h-auto bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300">
+      <div className="fixed bottom-0 left-0 w-full max-h-[33vh] h-auto bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300">
         <div className="flex-none p-2 bg-[#252525] border-b border-[#333] flex justify-between items-center px-4">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notifications ({activeRequests.length})</span>
             {showApprovals && (

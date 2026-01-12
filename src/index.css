@@ -55,8 +55,20 @@ md-outlined-text-field {
   width: 100%;
 }
 
-md-filled-button, md-outlined-button, md-elevated-button {
+md-filled-button, md-outlined-button, md-elevated-button, md-filled-tonal-button {
   width: 100%;
+  --md-filled-button-container-shape: 16px;
+  --md-outlined-button-container-shape: 16px;
+  --md-elevated-button-container-shape: 16px;
+  --md-filled-tonal-button-container-shape: 16px;
+}
+
+/* Fix Dialog Transparency and Styling */
+md-dialog {
+  --md-dialog-container-color: #1E1E1E;
+  --md-sys-color-surface-container-high: #1E1E1E; /* Fallback for some versions */
+  max-width: 90vw;
+  max-height: 90vh;
 }
 
 /* Fix Dialog Transparency and Styling */

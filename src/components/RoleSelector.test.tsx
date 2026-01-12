@@ -16,7 +16,7 @@ describe('RoleSelector', () => {
   it('disables clock in button initially', () => {
     const { container } = render(<RoleSelector onSelect={() => {}} />);
     const button = container.querySelector('md-filled-button');
-    expect(button).toHaveAttribute('disabled');
+    expect(button).toHaveProperty('disabled', true);
   });
 
   it('enables clock in button when role and name are selected', async () => {

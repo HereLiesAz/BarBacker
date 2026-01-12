@@ -149,7 +149,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setConfirmDeleteId(null)}>Cancel</md-text-button>
-          <md-filled-button onClick={confirmDelete} class="btn-alert">Remove</md-filled-button>
+          <md-filled-button onClick={confirmDelete} className="btn-alert">Remove</md-filled-button>
         </div>
       </md-dialog>
 
@@ -160,7 +160,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setConfirmUserId(null)}>Cancel</md-text-button>
-          <md-filled-button onClick={confirmRemoveUser} class="btn-alert">Remove User</md-filled-button>
+          <md-filled-button onClick={confirmRemoveUser} className="btn-alert">Remove User</md-filled-button>
         </div>
       </md-dialog>
     </>

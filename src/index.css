@@ -59,6 +59,14 @@ md-filled-button, md-outlined-button, md-elevated-button {
   width: 100%;
 }
 
+/* Fix Dialog Transparency and Styling */
+md-dialog {
+  --md-dialog-container-color: #1E1E1E;
+  --md-sys-color-surface-container-high: #1E1E1E; /* Fallback for some versions */
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
 /* The Pulsing Red Alert for Material Buttons */
 .btn-alert {
   --md-filled-button-container-color: var(--md-sys-color-error);

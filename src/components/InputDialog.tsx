@@ -32,7 +32,7 @@ const InputDialog = ({ open, mode, searchTerm, onSearchChange, onClose, onSelect
          <md-filled-text-field
            label={mode === 'well' ? 'Well Name' : 'Search...'}
            value={searchTerm}
-           onInput={(e: Event) => onSearchChange((e.target as HTMLInputElement).value)}
+           onInput={(e: any) => onSearchChange(e.target.value)}
            style={{ width: '100%' }}
          />
          {mode !== 'well' ? (

@@ -638,7 +638,8 @@ function App() {
   const activeButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
   const currentButtons = sortButtons(activeButtons, currentContextId);
 
-  const mainScreenButtons = sortButtons(buttons, 'main').filter(btn => !hiddenButtonIds.includes(btn.id));
+  const sortedAllButtons = sortButtons(buttons, 'main');
+  const mainScreenButtons = sortedAllButtons.filter(btn => !hiddenButtonIds.includes(btn.id));
 
   const pendingUsers = allUsers.filter(u => u.status === 'pending');
   const showApprovals = (userRole === 'Owner' || userRole === 'Manager') && pendingUsers.length > 0;

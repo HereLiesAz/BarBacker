@@ -21,7 +21,7 @@ In a busy bar, bartenders often need itemsâ€”ice, glassware, fruit, restockingâ€
 3.  **Select Your Role**:
     *   **Bartender**: You will see a grid of buttons. Tap to request items.
     *   **Barback**: You will see a list of incoming requests. Tap a request to claim it.
-4.  **Stay synced**: The app keeps everyone on the same page, preventing duplicate work and ensuring the well never runs dry.
+4.  **Stay synced**: The app keeps everyone on the same page, preventing duplicate work and ensuring the bar never runs dry.
 
 ## Development
 

@@ -22,7 +22,7 @@ import {
   setDoc,
   deleteDoc,
   arrayUnion,
-  increment
+  increment,
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -71,7 +71,8 @@ import {
 } from '@dnd-kit/core';
 import {
   SortableContext,
-  rectSortingStrategy
+  rectSortingStrategy,
+  arrayMove
 } from '@dnd-kit/sortable';
 
 // --- MAIN APP COMPONENT ---
@@ -107,6 +108,7 @@ function App() {
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
   // FIX 1: Use proper return type for browser environment
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDraggingRef = useRef(false);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [showBarManager, setShowBarManager] = useState(false);
@@ -411,26 +413,29 @@ function App() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
+    isDraggingRef.current = true;
   };
 
-  const handleDragEnd = async (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
+  const handleDragOver = (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
     const { active, over } = event;
-    setActiveId(null);
-
-    if (over && active.id !== over.id && barId) {
+    if (over && active.id !== over.id) {
       const oldIndex = items.findIndex(i => i.id === active.id);
       const newIndex = items.findIndex(i => i.id === over.id);
 
-      const newItems = [...items];
-      const [removed] = newItems.splice(oldIndex, 1);
-      newItems.splice(newIndex, 0, removed);
-
-      const newOrder = newItems.map(i => i.id);
-
+      const newOrder = arrayMove(items, oldIndex, newIndex).map(i => i.id);
       setCustomOrders(prev => ({ ...prev, [contextId]: newOrder }));
-      await updateDoc(doc(db, 'bars', barId), {
-          [`customOrders.${contextId}`]: newOrder
-      });
+    }
+  };
+
+  const handleDragEnd = async (_event: DragEndEvent, contextId: string) => {
+    setActiveId(null);
+    isDraggingRef.current = false;
+
+    // Save current order to Firestore
+    if (barId && customOrders[contextId]) {
+       await updateDoc(doc(db, 'bars', barId), {
+          [`customOrders.${contextId}`]: customOrders[contextId]
+       });
     }
   };
 
@@ -552,6 +557,15 @@ function App() {
     setShowAccountDialog(false);
   };
 
+  const handleLeaveBar = async () => {
+    if (!user || !barId) return;
+    if (!confirm('Are you sure you want to leave this bar? You will need to join again.')) return;
+    await deleteDoc(doc(db, `bars/${barId}/users`, user.uid));
+    setBarId(null);
+    localStorage.removeItem('barId');
+    setShowAccountDialog(false);
+  };
+
   const handleDeleteAccount = async () => {
     if (!user || !barId) return;
     if (!confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
@@ -581,7 +595,7 @@ function App() {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-8 bg-black">
         <h1 className="text-4xl font-bold tracking-widest text-white">BARBACKER</h1>
         {authError && <div className="text-red-400 p-2 border border-red-800 rounded">{authError}</div>}
-        <form onSubmit={handleEmailAuth} className="w-full max-w-sm space-y-4">
+        <form onSubmit={handleEmailAuth} className="w-[300px] space-y-4">
           <md-filled-text-field label="Email" name="email" type="email" required />
           <md-filled-text-field label="Password" name="password" type="password" required />
           <md-filled-button type="submit">{isRegistering ? 'Create Account' : 'Clock In'}</md-filled-button>
@@ -764,10 +778,10 @@ function App() {
 
       <div className="flex-none flex justify-between items-center p-4 bg-[#121212] border-b border-[#333] z-10">
         <div
-            className="flex items-center gap-6 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
+            className="flex items-center gap-8 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
             onClick={() => setShowAccountDialog(true)}
         >
-            <span className="text-white font-bold text-lg">{displayName}</span>
+            <span className="text-white font-bold text-lg mr-8">{displayName}</span>
             <span className="bg-gray-800 px-3 py-1 rounded text-sm text-gray-300">{userRole}</span>
         </div>
         <div className="flex items-center gap-4">
@@ -793,9 +807,16 @@ function App() {
             <p className="text-gray-300">Manage your account for <strong>{barName}</strong>.</p>
         </div>
         <div slot="actions">
-            <md-text-button onClick={handleLogout}>Log Out</md-text-button>
-            <md-text-button onClick={handleDeleteAccount} className="text-red-500">Delete Account</md-text-button>
-            <md-filled-button onClick={() => setShowAccountDialog(false)}>Close</md-filled-button>
+            <div className="flex flex-col gap-2 w-full items-end">
+                <div className="flex gap-2">
+                    <md-text-button onClick={handleLeaveBar}>Leave Bar</md-text-button>
+                    <md-text-button onClick={handleLogout}>Log Out</md-text-button>
+                </div>
+                <div className="flex gap-2">
+                    <md-text-button onClick={handleDeleteAccount} className="text-red-500">Delete Account</md-text-button>
+                    <md-filled-button onClick={() => setShowAccountDialog(false)}>Close</md-filled-button>
+                </div>
+            </div>
         </div>
       </md-dialog>
 
@@ -810,7 +831,8 @@ function App() {
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragStart={handleDragStart}
-            onDragEnd={(e) => handleDragEnd(e, currentContextId, currentButtons)}
+            onDragOver={(e) => handleDragOver(e, currentContextId, currentButtons)}
+            onDragEnd={(e) => handleDragEnd(e, currentContextId)}
           >
             <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-2 gap-4 mb-auto">
@@ -843,7 +865,8 @@ function App() {
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
-        onDragEnd={(e) => handleDragEnd(e, 'main', mainScreenButtons)}
+        onDragOver={(e) => handleDragOver(e, 'main', mainScreenButtons)}
+        onDragEnd={(e) => handleDragEnd(e, 'main')}
       >
         <SortableContext items={mainScreenButtons} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-2 gap-6 p-6">
@@ -883,7 +906,7 @@ function App() {
         </DragOverlay>
       </DndContext>
 
-      <div className="fixed bottom-0 left-0 right-0 h-[33vh] bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl">
+      <div className="fixed bottom-0 left-0 right-0 max-h-[33vh] h-auto bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300">
         <div className="flex-none p-2 bg-[#252525] border-b border-[#333] flex justify-between items-center px-4">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notifications ({activeRequests.length})</span>
             {showApprovals && (
@@ -901,13 +924,22 @@ function App() {
                 return (
                     <div
                         key={req.id}
-                        className={`p-3 rounded-lg flex justify-between items-center transition-colors border-l-4 ${isIgnored ? 'bg-[#1a1a1a] border-gray-600 opacity-60' : 'bg-[#2C1A1A] border-red-500'}`}
+                        className={`p-3 rounded-lg flex flex-col gap-2 transition-colors border-l-4 ${isIgnored ? 'bg-[#1a1a1a] border-gray-600 opacity-60' : 'bg-[#2C1A1A] border-red-500'}`}
                     >
-                        <div className="flex flex-col">
-                            <span className={`font-medium ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
-                            <span className="text-xs text-gray-500">{req.requesterName} ({req.requesterRole})</span>
+                        <div className="flex justify-between items-start">
+                            <div className="flex flex-col">
+                                <span className={`font-medium ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
+                                <span className="text-xs text-gray-500">{req.requesterName} ({req.requesterRole})</span>
+                            </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 w-full">
+                            <md-filled-button
+                                onClick={() => claimRequest(req.id)}
+                                className={`flex-1 ${isIgnored ? '' : 'btn-alert'}`}
+                                style={{ height: '32px' }}
+                            >
+                                CLAIM
+                            </md-filled-button>
                             {!isIgnored && (
                                 <md-outlined-button
                                     onClick={(e: any) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
@@ -916,13 +948,6 @@ function App() {
                                     Ignore
                                 </md-outlined-button>
                             )}
-                            <md-filled-button
-                                onClick={() => claimRequest(req.id)}
-                                className={isIgnored ? '' : 'btn-alert'}
-                                style={{ height: '32px' }}
-                            >
-                                CLAIM
-                            </md-filled-button>
                         </div>
                     </div>
                 );

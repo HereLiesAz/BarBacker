@@ -56,7 +56,7 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="w-[300px] space-y-4">
         {mode === 'search' ? (
              <div className="space-y-2">
                 <div className="relative">

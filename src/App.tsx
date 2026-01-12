@@ -724,7 +724,7 @@ function App() {
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setShowOffClockDialog(false)}>Stay</md-text-button>
-          <md-filled-button onClick={goOffClock} class="btn-alert">Leave</md-filled-button>
+          <md-filled-button onClick={goOffClock} className="btn-alert">Leave</md-filled-button>
         </div>
       </md-dialog>
 
@@ -781,7 +781,7 @@ function App() {
             </DragOverlay>
           </DndContext>
           <div className="mt-8">
-            <md-filled-button class="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
+            <md-filled-button className="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
                Cancel
             </md-filled-button>
           </div>
@@ -800,7 +800,7 @@ function App() {
               const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
               return (
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
-                  <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
+                  <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
                     <div className="flex flex-col items-center gap-2">
                       <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
                       <span className="text-lg font-bold leading-none">{btn.label}</span>
@@ -819,7 +819,7 @@ function App() {
                     if (!btn) return null;
                     const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
                     return (
-                        <md-filled-tonal-button class={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
+                        <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
                             <div className="flex flex-col items-center gap-2">
                             <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
                             <span className="text-lg font-bold leading-none">{btn.label}</span>
@@ -848,7 +848,7 @@ function App() {
               <span className="font-medium text-red-100">{req.label}</span>
               <span className="text-xs text-red-400">{req.requesterName} ({req.requesterRole})</span>
             </div>
-            <md-filled-button class="btn-alert" style={{ height: '32px' }}>CLAIM</md-filled-button>
+            <md-filled-button className="btn-alert" style={{ height: '32px' }}>CLAIM</md-filled-button>
           </div>
         ))}
       </div>

@@ -23,7 +23,7 @@ const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
       <md-filled-text-field
         label="Display Name (e.g. 'Angry Steve')"
         value={displayName}
-        onInput={(e: Event) => setDisplayName((e.target as HTMLInputElement).value)}
+        onInput={(e: any) => setDisplayName(e.target.value)}
         required
       />
 

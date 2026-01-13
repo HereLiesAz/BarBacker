@@ -827,7 +827,7 @@ function App() {
               <div className="grid grid-cols-2 gap-4 mb-auto">
                 {currentButtons.map(btn => (
                   <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
-                    <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none' }}>
+                    <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', border: '8px solid #000000', boxSizing: 'border-box' }}>
                       {btn.label}
                     </md-filled-tonal-button>
                   </SortableButton>
@@ -863,15 +863,13 @@ function App() {
               const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
               return (
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
-                  <div className="p-3 w-full h-full">
-                    <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
-                        <div className="flex flex-col items-center gap-2">
-                        <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
-                        <span className="text-lg font-bold leading-none">{btn.label}</span>
-                        {isPending && <span className="text-xs opacity-80">PENDING</span>}
-                        </div>
-                    </md-filled-tonal-button>
-                  </div>
+                  <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', border: isPending ? '8px solid #EF4444' : '8px solid #000000', boxSizing: 'border-box' }}>
+                      <div className="flex flex-col items-center gap-2">
+                      <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
+                      <span className="text-lg font-bold leading-none">{btn.label}</span>
+                      {isPending && <span className="text-xs opacity-80">PENDING</span>}
+                      </div>
+                  </md-filled-tonal-button>
                 </SortableButton>
               );
             })}

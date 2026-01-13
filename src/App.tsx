@@ -119,6 +119,62 @@ function App() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
 
+  const getButtonIdForLabel = (label: string): string | undefined => {
+    for (const btn of buttons) {
+        if (label === btn.label) return btn.id;
+        if (label.startsWith(btn.label)) return btn.id;
+        if (btn.children) {
+            for (const child of btn.children) {
+                if (label === child.label) return btn.id;
+            }
+        }
+    }
+    return undefined;
+  };
+
+  const activeRequests = requests.filter(r => {
+      if (r.status !== 'pending') return false;
+      const btnId = getButtonIdForLabel(r.label);
+
+      // Special logic for BREAK
+      if (btnId === 'break' || r.label.includes('BREAK')) {
+         if (userRole === 'Manager' || userRole === 'Owner') return true;
+         // Allow users with same role to see it
+         if (r.requesterRole === userRole) return true;
+      }
+
+      if (!btnId) return true;
+      return notificationPreferences.includes(btnId);
+  }).sort((a, b) => {
+      const aIgnored = ignoredIds.includes(a.id);
+      const bIgnored = ignoredIds.includes(b.id);
+      if (aIgnored === bIgnored) {
+          return 0;
+      }
+      return aIgnored ? 1 : -1;
+  });
+
+  // Reference to active requests for the nag timer
+  const activeRequestsRef = useRef<Request[]>([]);
+
+  // Keep ref updated for the interval
+  useEffect(() => {
+    activeRequestsRef.current = activeRequests;
+  }, [activeRequests]);
+
+  // Nag Script: Play sound every 5 minutes if there are pending requests
+  useEffect(() => {
+    const interval = setInterval(() => {
+       const pending = activeRequestsRef.current.filter(r => !ignoredIds.includes(r.id));
+       if (pending.length > 0) {
+           const audio = new Audio('/alert.mp3');
+           audio.play().catch(e => console.log('Audio play failed', e));
+           if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+       }
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [ignoredIds]);
+
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -665,62 +721,6 @@ function App() {
       </div>
     );
   }
-
-  const getButtonIdForLabel = (label: string): string | undefined => {
-    for (const btn of buttons) {
-        if (label === btn.label) return btn.id;
-        if (label.startsWith(btn.label)) return btn.id;
-        if (btn.children) {
-            for (const child of btn.children) {
-                if (label === child.label) return btn.id;
-            }
-        }
-    }
-    return undefined;
-  };
-
-  const activeRequests = requests.filter(r => {
-      if (r.status !== 'pending') return false;
-      const btnId = getButtonIdForLabel(r.label);
-
-      // Special logic for BREAK
-      if (btnId === 'break' || r.label.includes('BREAK')) {
-         if (userRole === 'Manager' || userRole === 'Owner') return true;
-         // Allow users with same role to see it
-         if (r.requesterRole === userRole) return true;
-      }
-
-      if (!btnId) return true;
-      return notificationPreferences.includes(btnId);
-  }).sort((a, b) => {
-      const aIgnored = ignoredIds.includes(a.id);
-      const bIgnored = ignoredIds.includes(b.id);
-      if (aIgnored === bIgnored) {
-          return 0;
-      }
-      return aIgnored ? 1 : -1;
-  });
-
-  // Reference to active requests for the nag timer
-  const activeRequestsRef = useRef<Request[]>([]);
-
-  // Keep ref updated for the interval
-  useEffect(() => {
-    activeRequestsRef.current = activeRequests;
-  }, [activeRequests]);
-
-  // Nag Script: Play sound every 5 minutes if there are pending requests
-  useEffect(() => {
-    const interval = setInterval(() => {
-       const pending = activeRequestsRef.current.filter(r => !ignoredIds.includes(r.id));
-       if (pending.length > 0) {
-           const audio = new Audio('/alert.mp3');
-           audio.play().catch(e => console.log('Audio play failed', e));
-           if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-       }
-    }, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [ignoredIds]);
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 

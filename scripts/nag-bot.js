@@ -4,7 +4,21 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 
 // This secrets needs to be in your GitHub Repo Secrets as FIREBASE_SERVICE_ACCOUNT
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+let serviceAccount;
+try {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is missing");
+
+    // Debug logging (safe)
+    const firstChar = raw.trim().charAt(0);
+    console.log(`Service Account starts with: '${firstChar}'`);
+
+    serviceAccount = JSON.parse(raw);
+} catch (error) {
+    console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT. Ensure it is valid JSON.");
+    console.error("Error:", error.message);
+    process.exit(1);
+}
 
 initializeApp({
   credential: cert(serviceAccount)

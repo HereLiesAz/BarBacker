@@ -119,9 +119,6 @@ function App() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
 
-  // Reference to active requests for the nag timer
-  const activeRequestsRef = useRef<Request[]>([]);
-
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -703,6 +700,9 @@ function App() {
       }
       return aIgnored ? 1 : -1;
   });
+
+  // Reference to active requests for the nag timer
+  const activeRequestsRef = useRef<Request[]>([]);
 
   // Keep ref updated for the interval
   useEffect(() => {

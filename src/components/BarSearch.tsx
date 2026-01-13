@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { collection, query, getDocs, limit, orderBy, startAt, endAt } from 'firebase/firestore';
+import { db } from '../firebase';
 import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/textfield/filled-text-field.js';
@@ -40,9 +42,36 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
       const timer = setTimeout(async () => {
         setIsSearching(true);
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`);
-          const data = await res.json();
-          setResults(data);
+          // Parallel Search: OSM and Firebase
+          const osmPromise = fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`)
+            .then(res => res.json())
+            .catch(() => []);
+
+          const fbQuery = query(
+             collection(db, 'bars'),
+             orderBy('name'),
+             startAt(queryText),
+             endAt(queryText + '\uf8ff'),
+             limit(5)
+          );
+          const fbPromise = getDocs(fbQuery)
+            .then(snap => snap.docs.map(d => {
+                const data = d.data() as Bar;
+                return {
+                    place_id: d.id,
+                    osm_id: d.id,
+                    display_name: `${data.name}, ${data.city || ''} ${data.state || ''}`,
+                    name: data.name,
+                    isFirebase: true
+                } as any;
+            }))
+            .catch(() => []);
+
+          const [osmData, fbData] = await Promise.all([osmPromise, fbPromise]);
+
+          // Merge: Firebase first, then OSM
+          setResults([...fbData, ...osmData]);
+
         } catch (e) {
           console.error(e);
         } finally {

@@ -124,7 +124,17 @@ function App() {
     });
     onMessageListener().then(() => {
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-      new Audio('/alert.mp3').play().catch(() => {});
+
+      const audio = new Audio('/alert.mp3');
+      let plays = 0;
+      audio.onended = () => {
+          plays++;
+          if (plays < 8) {
+              audio.currentTime = 0;
+              audio.play().catch(() => {});
+          }
+      };
+      audio.play().catch(() => {});
     });
     return () => unsubscribe();
   }, []);

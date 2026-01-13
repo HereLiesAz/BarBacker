@@ -12,6 +12,10 @@ export interface Bar {
   name: string;
   buttons: ButtonConfig[];
   address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  phone?: string;
   osmId?: string;
   status: 'verified' | 'temporary';
   type?: 'bar' | 'restaurant';
@@ -30,8 +34,10 @@ export interface Request {
   requesterRole?: string;
   status: 'pending' | 'claimed';
   timestamp: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  claimedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
   barId: string;
   claimerName?: string;
+  lastNotification?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
 
 export interface OSMResult {

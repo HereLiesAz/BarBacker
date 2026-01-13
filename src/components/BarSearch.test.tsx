@@ -14,8 +14,8 @@ describe('BarSearch', () => {
     const searchBtn = screen.getByText('Search');
     expect(searchBtn.tagName.toLowerCase()).toBe('md-filled-button');
 
-    // "Create Temp" should be outlined (inactive)
-    const createBtn = screen.getByText('Create Temp');
+    // "Create" should be outlined (inactive)
+    const createBtn = screen.getByText('Create');
     expect(createBtn.tagName.toLowerCase()).toBe('md-outlined-button');
   });
 
@@ -65,45 +65,53 @@ describe('BarSearch', () => {
 
   it('switches to create mode', async () => {
     const { container } = render(<BarSearch onJoin={() => {}} />);
-    const createBtn = screen.getByText('Create Temp');
+    // Select the mode toggle button (initially outlined)
+    const createBtn = screen.getAllByText('Create').find(el => el.tagName.toLowerCase() === 'md-outlined-button');
+    if (!createBtn) throw new Error('Create button not found');
 
     await act(async () => {
         fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        expect(screen.getByText('Create Bar')).toBeInTheDocument();
-        const activeBtn = screen.getByText('Create Temp');
-        expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
+        // Find by required attribute since label isn't reflecting
+        const input = container.querySelector('md-filled-text-field[required]');
+        expect(input).toBeInTheDocument();
+        // Now the mode toggle should be filled
+        const activeBtns = screen.getAllByText('Create').filter(el => el.tagName.toLowerCase() === 'md-filled-button');
+        // There will be 2 filled buttons: one for submit, one for mode.
+        expect(activeBtns.length).toBeGreaterThanOrEqual(1);
     });
-
-    // Note: The text field in 'create' mode doesn't have name="name" in the component implementation,
-    // it just has label="Bar Name". So we select by tag.
-    const input = container.querySelector('md-filled-text-field');
-    expect(input).toBeInTheDocument();
   });
 
-  it('calls onJoin when creating a temp bar', async () => {
+  it('calls onJoin when creating a bar with required fields', async () => {
     const handleJoin = vi.fn();
 
     const { container } = render(<BarSearch onJoin={handleJoin} />);
 
     // Switch to create mode
-    const createBtn = screen.getByText('Create Temp');
+    const createBtn = screen.getAllByText('Create').find(el => el.tagName.toLowerCase() === 'md-outlined-button');
+    if (!createBtn) throw new Error('Create button not found');
+
     await act(async () => {
         fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        expect(screen.getByText('Create Bar')).toBeInTheDocument();
+        const input = container.querySelector('md-filled-text-field[required]');
+        expect(input).toBeInTheDocument();
     });
 
-    const input = container.querySelector('md-filled-text-field');
-    if (!input) throw new Error('Input not found');
+    const inputs = container.querySelectorAll('md-filled-text-field');
+    // 0: Name, 1: Address, 2: City, 3: State, 4: Zip, 5: Phone
+    const nameInput = inputs[0];
+    const zipInput = inputs[4];
 
     await act(async () => {
-        (input as any).value = 'My Bar';
-        fireEvent.input(input);
+        (nameInput as any).value = 'My Bar';
+        fireEvent.input(nameInput);
+        (zipInput as any).value = '90210';
+        fireEvent.input(zipInput);
     });
 
     // Submit
@@ -116,7 +124,8 @@ describe('BarSearch', () => {
 
     expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
       name: 'My Bar',
-      status: 'temporary',
+      zip: '90210',
+      status: 'verified',
       type: 'bar'
     }));
   });

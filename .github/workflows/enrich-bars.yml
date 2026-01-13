@@ -1,32 +1,33 @@
-name: The Nag Bot
+name: Enrich Bar Data
 permissions:
   contents: read
-  pull-requests: write
-  issues: write # Required to create issues
+  issues: write
 on:
   schedule:
-    # Runs every 5 minutes
-    - cron: '*/5 * * * *'
-  workflow_dispatch: # Allows you to manually trigger it for testing
+    # Runs every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
-  harass_users:
+  enrich:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          
+          node-version: '20'
+
       - name: Install Dependencies
-        run: npm install firebase-admin
-        
-      - name: Run Nag Script
+        run: |
+          npm install firebase-admin playwright
+          npx playwright install chromium --with-deps
+
+      - name: Run Enrichment Script
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: node scripts/nag-bot.js
+        run: node scripts/enrich-bars.js
 
       - name: Report Failure
         if: failure()

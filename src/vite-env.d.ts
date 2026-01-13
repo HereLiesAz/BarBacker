@@ -9,24 +9,29 @@ declare module 'react' {
         disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
         value?: string;
+        form?: string;
       };
       'md-outlined-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
+        form?: string;
       };
       'md-text-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
         href?: string;
         target?: string;
+        form?: string;
       };
       'md-filled-tonal-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
+        form?: string;
       };
       'md-elevated-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         disabled?: boolean | null;
         type?: 'button' | 'submit' | 'reset';
+        form?: string;
       };
       'md-dialog': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         open?: boolean;

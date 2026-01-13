@@ -71,14 +71,6 @@ md-dialog {
   max-height: 90vh;
 }
 
-/* Fix Dialog Transparency and Styling */
-md-dialog {
-  --md-dialog-container-color: #1E1E1E;
-  --md-sys-color-surface-container-high: #1E1E1E; /* Fallback for some versions */
-  max-width: 90vw;
-  max-height: 90vh;
-}
-
 /* The Pulsing Red Alert for Material Buttons */
 .btn-alert {
   --md-filled-button-container-color: var(--md-sys-color-error);
@@ -104,4 +96,17 @@ md-dialog {
 /* Material Icon Sizing */
 md-icon {
   font-size: 24px;
+}
+
+/* Bulletin Board Animation */
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 20s linear infinite;
+  padding-left: 100%;
 }

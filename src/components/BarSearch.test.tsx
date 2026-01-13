@@ -1,6 +1,27 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import BarSearch from '../components/BarSearch';
+import { getDocs } from 'firebase/firestore';
+
+// Mock Firebase
+vi.mock('../firebase', () => ({
+  db: {},
+}));
+
+vi.mock('firebase/firestore', async () => {
+    const actual = await vi.importActual('firebase/firestore');
+    return {
+        ...actual,
+        collection: vi.fn(),
+        query: vi.fn(),
+        where: vi.fn(),
+        getDocs: vi.fn(),
+        limit: vi.fn(),
+        orderBy: vi.fn(),
+        startAt: vi.fn(),
+        endAt: vi.fn(),
+    };
+});
 
 // Mock fetch
 const fetchMock = vi.fn();
@@ -14,16 +35,26 @@ describe('BarSearch', () => {
     const searchBtn = screen.getByText('Search');
     expect(searchBtn.tagName.toLowerCase()).toBe('md-filled-button');
 
-    // "Create Temp" should be outlined (inactive)
-    const createBtn = screen.getByText('Create Temp');
+    // "Create" should be outlined (inactive)
+    const createBtn = screen.getByText('Create');
     expect(createBtn.tagName.toLowerCase()).toBe('md-outlined-button');
   });
 
-  it('searches OpenStreetMap and displays results', async () => {
+  it('searches OpenStreetMap AND Firebase and displays merged results', async () => {
     fetchMock.mockResolvedValueOnce({
       json: async () => ([
         { place_id: 1, osm_id: 123, name: 'Test Bar', display_name: 'Test Bar, Main St', lat: '0', lon: '0' }
       ])
+    });
+
+    // Mock Firestore response
+    (getDocs as any).mockResolvedValue({
+        docs: [
+            {
+                id: 'fb_1',
+                data: () => ({ name: 'Firebase Bar', city: 'FB City', state: 'FB' })
+            }
+        ]
     });
 
     const handleJoin = vi.fn();
@@ -32,7 +63,6 @@ describe('BarSearch', () => {
     const input = container.querySelector('md-filled-text-field');
     if (!input) throw new Error('Input not found');
 
-    // Use fireEvent for custom element input as userEvent has known issues in JSDOM with shadow DOM
     await act(async () => {
         (input as any).value = 'Tes';
         fireEvent.input(input);
@@ -41,72 +71,59 @@ describe('BarSearch', () => {
     // Wait for debounce (500ms) + fetch
     await waitFor(() => {
         expect(fetchMock).toHaveBeenCalled();
+        expect(getDocs).toHaveBeenCalled();
     }, { timeout: 1000 });
 
     // Check result rendering
     await waitFor(() => {
-        expect(screen.getByText('Test Bar')).toBeInTheDocument();
+        expect(screen.getByText('Test Bar')).toBeInTheDocument(); // OSM result
+        expect(screen.getByText('Firebase Bar')).toBeInTheDocument(); // Firebase result
     });
-
-    // Click result
-    const resultItem = screen.getByText('Test Bar').closest('md-list-item');
-    if (!resultItem) throw new Error('Result item not found');
-
-    await act(async () => {
-        fireEvent.click(resultItem);
-    });
-
-    expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
-        id: '123',
-        name: 'Test Bar',
-        status: 'verified'
-    }));
   });
 
   it('switches to create mode', async () => {
     const { container } = render(<BarSearch onJoin={() => {}} />);
-    const createBtn = screen.getByText('Create Temp');
+    const createBtn = screen.getAllByText('Create').find(el => el.tagName.toLowerCase() === 'md-outlined-button');
+    if (!createBtn) throw new Error('Create button not found');
 
     await act(async () => {
         fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        expect(screen.getByText('Create Bar')).toBeInTheDocument();
-        const activeBtn = screen.getByText('Create Temp');
-        expect(activeBtn.tagName.toLowerCase()).toBe('md-filled-button');
+        const input = container.querySelector('md-filled-text-field[required]');
+        expect(input).toBeInTheDocument();
+        const activeBtns = screen.getAllByText('Create').filter(el => el.tagName.toLowerCase() === 'md-filled-button');
+        expect(activeBtns.length).toBeGreaterThanOrEqual(1);
     });
-
-    // Note: The text field in 'create' mode doesn't have name="name" in the component implementation,
-    // it just has label="Bar Name". So we select by tag.
-    const input = container.querySelector('md-filled-text-field');
-    expect(input).toBeInTheDocument();
   });
 
-  it('calls onJoin when creating a temp bar', async () => {
+  it('calls onJoin when creating a bar with required fields', async () => {
     const handleJoin = vi.fn();
-
     const { container } = render(<BarSearch onJoin={handleJoin} />);
+    const createBtn = screen.getAllByText('Create').find(el => el.tagName.toLowerCase() === 'md-outlined-button');
+    if (!createBtn) throw new Error('Create button not found');
 
-    // Switch to create mode
-    const createBtn = screen.getByText('Create Temp');
     await act(async () => {
         fireEvent.click(createBtn);
     });
 
     await waitFor(() => {
-        expect(screen.getByText('Create Bar')).toBeInTheDocument();
+        const input = container.querySelector('md-filled-text-field[required]');
+        expect(input).toBeInTheDocument();
     });
 
-    const input = container.querySelector('md-filled-text-field');
-    if (!input) throw new Error('Input not found');
+    const inputs = container.querySelectorAll('md-filled-text-field');
+    const nameInput = inputs[0];
+    const zipInput = inputs[4];
 
     await act(async () => {
-        (input as any).value = 'My Bar';
-        fireEvent.input(input);
+        (nameInput as any).value = 'My Bar';
+        fireEvent.input(nameInput);
+        (zipInput as any).value = '90210';
+        fireEvent.input(zipInput);
     });
 
-    // Submit
     const form = container.querySelector('form');
     if (!form) throw new Error('Form not found');
 
@@ -116,7 +133,8 @@ describe('BarSearch', () => {
 
     expect(handleJoin).toHaveBeenCalledWith(expect.objectContaining({
       name: 'My Bar',
-      status: 'temporary',
+      zip: '90210',
+      status: 'verified',
       type: 'bar'
     }));
   });

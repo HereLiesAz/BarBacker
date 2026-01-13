@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { collection, query, getDocs, limit, orderBy, startAt, endAt } from 'firebase/firestore';
+import { db } from '../firebase';
 import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/textfield/filled-text-field.js';
@@ -15,24 +17,61 @@ interface BarSearchProps {
 
 const MODES = [
     { id: 'search', label: 'Search' },
-    { id: 'create', label: 'Create Temp' }
+    { id: 'create', label: 'Create' }
 ] as const;
 
 const BarSearch = ({ onJoin }: BarSearchProps) => {
   const [mode, setMode] = useState<'search' | 'create'>('search');
+
+  // Search State
   const [queryText, setQueryText] = useState('');
-  const [barType, setBarType] = useState<'bar' | 'restaurant'>('bar');
   const [results, setResults] = useState<OSMResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+
+  // Create State
+  const [createName, setCreateName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [zip, setZip] = useState('');
+  const [barType, setBarType] = useState<'bar' | 'restaurant'>('bar');
 
   useEffect(() => {
     if (mode === 'search' && queryText.length > 2) {
       const timer = setTimeout(async () => {
         setIsSearching(true);
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`);
-          const data = await res.json();
-          setResults(data);
+          // Parallel Search: OSM and Firebase
+          const osmPromise = fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`)
+            .then(res => res.json())
+            .catch(() => []);
+
+          const fbQuery = query(
+             collection(db, 'bars'),
+             orderBy('name'),
+             startAt(queryText),
+             endAt(queryText + '\uf8ff'),
+             limit(5)
+          );
+          const fbPromise = getDocs(fbQuery)
+            .then(snap => snap.docs.map(d => {
+                const data = d.data() as Bar;
+                return {
+                    place_id: d.id,
+                    osm_id: d.id,
+                    display_name: `${data.name}, ${data.city || ''} ${data.state || ''}`,
+                    name: data.name,
+                    isFirebase: true
+                } as any;
+            }))
+            .catch(() => []);
+
+          const [osmData, fbData] = await Promise.all([osmPromise, fbPromise]);
+
+          // Merge: Firebase first, then OSM
+          setResults([...fbData, ...osmData]);
+
         } catch (e) {
           console.error(e);
         } finally {
@@ -47,10 +86,24 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
 
   const handleCreate = (e: React.FormEvent) => {
       e.preventDefault();
+
+      // Validation: Name required. Either Zip OR (City AND State) required.
+      const hasLocation = (city && state) || zip;
+
+      if (!createName || !hasLocation) {
+          alert("Please enter a Business Name and either City/State or Zip Code.");
+          return;
+      }
+
       onJoin({
-          id: `temp_${Date.now()}`,
-          name: queryText,
-          status: 'temporary',
+          id: `bar_${Date.now()}`, // Permanent ID format
+          name: createName,
+          address: address,
+          city: city,
+          state: state,
+          zip: zip,
+          phone: phone,
+          status: 'verified', // Publicly available
           type: barType
       });
   };
@@ -110,14 +163,50 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                 )}
              </div>
         ) : (
-             <form onSubmit={handleCreate} className="space-y-4">
+             <form onSubmit={handleCreate} className="space-y-4 max-h-[60vh] overflow-y-auto px-1">
                 <md-filled-text-field
-                    label="Bar Name"
-                    value={queryText}
-                    onInput={(e: any) => setQueryText(e.target.value)}
+                    label="Business Name *"
+                    value={createName}
+                    onInput={(e: any) => setCreateName(e.target.value)}
+                    required
                 />
 
-                <div className="flex gap-6 justify-center">
+                <md-filled-text-field
+                    label="Address"
+                    value={address}
+                    onInput={(e: any) => setAddress(e.target.value)}
+                />
+
+                <div className="flex gap-2">
+                    <md-filled-text-field
+                        label="City"
+                        value={city}
+                        onInput={(e: any) => setCity(e.target.value)}
+                        className="flex-1"
+                    />
+                    <md-filled-text-field
+                        label="State"
+                        value={state}
+                        onInput={(e: any) => setState(e.target.value)}
+                        className="w-20"
+                    />
+                </div>
+
+                <md-filled-text-field
+                    label="Zip Code"
+                    value={zip}
+                    onInput={(e: any) => setZip(e.target.value)}
+                    type="number"
+                />
+
+                <md-filled-text-field
+                    label="Phone"
+                    value={phone}
+                    onInput={(e: any) => setPhone(e.target.value)}
+                    type="tel"
+                />
+
+                <div className="flex gap-6 justify-center my-2">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setBarType('bar')}>
                         <md-radio
                             name="barType"
@@ -138,9 +227,6 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                     </div>
                 </div>
 
-                <div className="flex justify-center">
-                    <md-filled-button type="submit">Create Bar</md-filled-button>
-                </div>
              </form>
         )}
 
@@ -148,10 +234,19 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
             {MODES.map((btn) => {
                 const isActive = mode === btn.id;
                 const Tag = (isActive ? 'md-filled-button' : 'md-outlined-button') as any;
+
+                const handleClick = (e: React.MouseEvent) => {
+                    if (isActive && btn.id === 'create') {
+                         handleCreate(e);
+                    } else if (!isActive) {
+                        setMode(btn.id);
+                    }
+                };
+
                 return (
                     <Tag
                         key={btn.id}
-                        onClick={() => !isActive && setMode(btn.id)}
+                        onClick={handleClick}
                     >
                         {btn.label}
                     </Tag>

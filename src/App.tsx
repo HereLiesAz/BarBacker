@@ -51,8 +51,8 @@ import '@material/web/iconbutton/icon-button.js';
 
 import { PowerOff } from 'lucide-react';
 
-import { Bar, ButtonConfig, Request } from './types';
-import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS } from './constants';
+import { Bar, ButtonConfig, Request, Notice } from './types';
+import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
@@ -115,6 +115,12 @@ function App() {
   const [showBarManager, setShowBarManager] = useState(false);
   const [showAccountDialog, setShowAccountDialog] = useState(false);
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
+
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [isAddingNotice, setIsAddingNotice] = useState(false);
+
+  // Reference to active requests for the nag timer
+  const activeRequestsRef = useRef<Request[]>([]);
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
@@ -211,7 +217,23 @@ function App() {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); };
+    // Notices Subscription
+    const unsubNotices = onSnapshot(
+      query(collection(db, `bars/${barId}/notices`), orderBy('timestamp', 'desc')),
+      (s) => {
+        const now = Date.now();
+        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+        const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice))
+            .filter(n => {
+                // Filter locally for 3 days expiration if simpler than composite index query
+                const ts = n.timestamp && (n.timestamp as any).toMillis ? (n.timestamp as any).toMillis() : Date.now();
+                return (now - ts) < threeDaysMs;
+            });
+        setNotices(validNotices);
+      }
+    );
+
+    return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
   }, [user, barId, fcmToken, setSearchParams]);
 
   // --- Timer ---
@@ -310,6 +332,24 @@ function App() {
   const removeUser = async (uid: string) => {
     if (!user || !barId) return;
     await deleteDoc(doc(db, `bars/${barId}/users`, uid));
+  };
+
+  const saveNotice = async (text: string) => {
+    if (!user || !barId || !text.trim()) return;
+    await addDoc(collection(db, `bars/${barId}/notices`), {
+        text,
+        authorId: user.uid,
+        authorName: displayName,
+        timestamp: serverTimestamp()
+    });
+    setIsAddingNotice(false);
+  };
+
+  const deleteNotice = async (noticeId: string) => {
+    if (!user || !barId) return;
+    if (confirm("Delete this notice?")) {
+        await deleteDoc(doc(db, `bars/${barId}/notices`, noticeId));
+    }
   };
 
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
@@ -645,6 +685,14 @@ function App() {
   const activeRequests = requests.filter(r => {
       if (r.status !== 'pending') return false;
       const btnId = getButtonIdForLabel(r.label);
+
+      // Special logic for BREAK
+      if (btnId === 'break' || r.label.includes('BREAK')) {
+         if (userRole === 'Manager' || userRole === 'Owner') return true;
+         // Allow users with same role to see it
+         if (r.requesterRole === userRole) return true;
+      }
+
       if (!btnId) return true;
       return notificationPreferences.includes(btnId);
   }).sort((a, b) => {
@@ -655,6 +703,24 @@ function App() {
       }
       return aIgnored ? 1 : -1;
   });
+
+  // Keep ref updated for the interval
+  useEffect(() => {
+    activeRequestsRef.current = activeRequests;
+  }, [activeRequests]);
+
+  // Nag Script: Play sound every 5 minutes if there are pending requests
+  useEffect(() => {
+    const interval = setInterval(() => {
+       const pending = activeRequestsRef.current.filter(r => !ignoredIds.includes(r.id));
+       if (pending.length > 0) {
+           const audio = new Audio('/alert.mp3');
+           audio.play().catch(e => console.log('Audio play failed', e));
+           if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+       }
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [ignoredIds]);
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 
@@ -718,6 +784,13 @@ function App() {
         onSearchChange={(val) => setInputDialog(prev => ({ ...prev, searchTerm: val }))}
         onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}
         onSelect={(val) => {
+            // Deduplication Check
+            const existingLabels = currentButtonsSource.map(b => b.label.toLowerCase());
+            if (existingLabels.includes(val.toLowerCase())) {
+                alert('This button already exists!');
+                return;
+            }
+
             if (inputDialog.type === 'brand') saveBrand(val);
             else if (inputDialog.type === 'type') saveType(val);
             else if (inputDialog.type === 'well') saveWell(val);
@@ -727,7 +800,7 @@ function App() {
             }
         }}
         suggestions={(() => {
-            if (inputDialog.type === 'brand') return Object.keys(beerInventory);
+            if (inputDialog.type === 'brand') return [...DEFAULT_BEERS, ...Object.keys(beerInventory)];
             if (inputDialog.type === 'type') return Array.from(new Set(Object.values(beerInventory).flat()));
             return [];
         })()}
@@ -751,6 +824,21 @@ function App() {
              setQuantityPicker(prev => ({ ...prev, open: false }));
              setNavStack([]);
           }}>Send</md-filled-button>
+        </div>
+      </md-dialog>
+
+      <md-dialog open={isAddingNotice || undefined} onClose={() => setIsAddingNotice(false)}>
+        <div slot="headline">Add Notice</div>
+        <form slot="content" id="notice-form" method="dialog" onSubmit={(e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target as HTMLFormElement);
+            saveNotice(fd.get('notice') as string);
+        }}>
+            <md-filled-text-field label="Notice Message" name="notice" required type="text" />
+        </form>
+        <div slot="actions">
+            <md-text-button onClick={() => setIsAddingNotice(false)}>Cancel</md-text-button>
+            <md-filled-button form="notice-form" type="submit">Post</md-filled-button>
         </div>
       </md-dialog>
 
@@ -780,6 +868,9 @@ function App() {
            </md-text-button>
 
            <div className="flex gap-2">
+                <md-icon-button onClick={() => setIsAddingNotice(true)} title="Add Notice">
+                    <md-icon className="text-gray-400">campaign</md-icon>
+                </md-icon-button>
                 <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings">
                     <md-icon className="text-gray-400">settings</md-icon>
                 </md-icon-button>
@@ -788,6 +879,30 @@ function App() {
                 </md-icon-button>
            </div>
         </div>
+      </div>
+
+      {/* Bulletin Board */}
+      <div className="bg-yellow-900/20 border-b border-yellow-900/50 overflow-hidden relative h-8 flex items-center">
+          {notices.length > 0 ? (
+              <div className="animate-marquee whitespace-nowrap flex gap-12 text-yellow-500 text-sm font-medium items-center">
+                  {notices.map(notice => (
+                      <span key={notice.id} className="inline-flex items-center gap-2 cursor-pointer" onClick={() => deleteNotice(notice.id)}>
+                         <span>📢 {notice.text} <span className="text-yellow-700 text-xs">({notice.authorName})</span></span>
+                         <md-icon style={{ fontSize: 14 }} className="text-yellow-700 hover:text-red-500">close</md-icon>
+                      </span>
+                  ))}
+                  {/* Duplicate for infinite loop effect if few items */}
+                   {notices.map(notice => (
+                      <span key={`dup-${notice.id}`} className="inline-flex items-center gap-2">
+                         <span>📢 {notice.text} <span className="text-yellow-700 text-xs">({notice.authorName})</span></span>
+                      </span>
+                  ))}
+              </div>
+          ) : (
+              <div className="w-full text-center text-xs text-gray-600 italic cursor-pointer" onClick={() => setIsAddingNotice(true)}>
+                  No active notices. Click megaphone to add one.
+              </div>
+          )}
       </div>
 
       <md-dialog open={showAccountDialog || undefined} onClose={() => setShowAccountDialog(false)}>

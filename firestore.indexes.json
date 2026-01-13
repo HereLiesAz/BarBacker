@@ -7,6 +7,14 @@
         { "fieldPath": "barId", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "lastNotification", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

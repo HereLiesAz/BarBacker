@@ -1,6 +1,7 @@
 name: Deduplicate Data
 permissions:
   contents: read
+  issues: write
 on:
   schedule:
     # Runs daily at 2 AM
@@ -25,3 +26,16 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node scripts/deduplicate.js
+
+      - name: Report Failure
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Workflow Failed: ${context.workflow}`,
+              body: `The workflow failed. See logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              assignees: ['Jules']
+            })

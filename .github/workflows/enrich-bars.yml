@@ -1,6 +1,7 @@
 name: Enrich Bar Data
 permissions:
   contents: read
+  issues: write
 on:
   schedule:
     # Runs every 6 hours
@@ -27,3 +28,16 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node scripts/enrich-bars.js
+
+      - name: Report Failure
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Workflow Failed: ${context.workflow}`,
+              body: `The workflow failed. See logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              assignees: ['Jules']
+            })

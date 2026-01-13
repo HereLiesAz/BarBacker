@@ -40,6 +40,14 @@ export interface Request {
   lastNotification?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
 
+export interface Notice {
+  id: string;
+  text: string;
+  authorId: string;
+  authorName: string;
+  timestamp: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}
+
 export interface OSMResult {
   place_id: number;
   osm_id: number;

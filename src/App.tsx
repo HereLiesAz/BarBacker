@@ -103,7 +103,7 @@ function App() {
   const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
+  const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well' | 'custom', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
@@ -124,7 +124,17 @@ function App() {
     });
     onMessageListener().then(() => {
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-      new Audio('/alert.mp3').play().catch(() => {});
+
+      const audio = new Audio('/alert.mp3');
+      let plays = 0;
+      audio.onended = () => {
+          plays++;
+          if (plays < 8) {
+              audio.currentTime = 0;
+              audio.play().catch(() => {});
+          }
+      };
+      audio.play().catch(() => {});
     });
     return () => unsubscribe();
   }, []);
@@ -435,6 +445,10 @@ function App() {
       });
       return;
     }
+    if (btn.id === 'custom_req_btn') {
+      setInputDialog({ type: 'custom', open: true, searchTerm: '' });
+      return;
+    }
 
     const children = getDynamicChildren(btn);
     if (children && children.length > 0) {
@@ -504,7 +518,8 @@ function App() {
     await updateDoc(doc(db, 'requests', reqId), {
       status: 'claimed',
       claimedBy: user?.uid,
-      claimerName: displayName
+      claimerName: displayName,
+      claimedAt: serverTimestamp()
     });
   };
 
@@ -643,6 +658,12 @@ function App() {
 
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 
+  const formatTime = (ts: any) => {
+    if (!ts) return '';
+    const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
+
   const currentContextId = navStack.length > 0 ? navStack[navStack.length - 1].id : 'main';
   const currentButtonsSource = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
   const activeButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
@@ -692,14 +713,18 @@ function App() {
 
       <InputDialog
         open={inputDialog.open}
-        mode={inputDialog.type}
+        mode={inputDialog.type as 'brand' | 'type' | 'well'}
         searchTerm={inputDialog.searchTerm}
         onSearchChange={(val) => setInputDialog(prev => ({ ...prev, searchTerm: val }))}
         onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}
         onSelect={(val) => {
             if (inputDialog.type === 'brand') saveBrand(val);
             else if (inputDialog.type === 'type') saveType(val);
-            else saveWell(val);
+            else if (inputDialog.type === 'well') saveWell(val);
+            else if (inputDialog.type === 'custom') {
+                submitRequest(val);
+                setInputDialog(prev => ({ ...prev, open: false }));
+            }
         }}
         suggestions={(() => {
             if (inputDialog.type === 'brand') return Object.keys(beerInventory);
@@ -742,11 +767,11 @@ function App() {
 
       <div className="flex-none flex justify-between items-center p-4 bg-[#121212] border-b border-[#333] z-10">
         <div
-            className="flex items-center gap-12 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
+            className="flex items-center justify-between min-w-[200px] gap-8 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto"
             onClick={() => setShowAccountDialog(true)}
         >
-            <span className="text-white font-bold text-lg">{displayName}</span>
-            <span className="bg-gray-800 px-3 py-1 rounded text-sm text-gray-300">{userRole}</span>
+            <span className="text-white font-bold text-lg truncate mr-4">{displayName}</span>
+            <span className="bg-gray-800 px-3 py-1 rounded text-sm text-gray-300 whitespace-nowrap ml-auto">{userRole}</span>
         </div>
         <div className="flex items-center gap-4">
            <span className="font-bold text-lg text-white tracking-wide hidden sm:block">{barName}</span>
@@ -834,17 +859,19 @@ function App() {
       >
         <SortableContext items={mainScreenButtons} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-2 gap-8 p-6">
-            {mainScreenButtons.map(btn => {
+            {[...mainScreenButtons, { id: 'custom_req_btn', label: 'CUSTOM', icon: 'add', isCustom: true }].map(btn => {
               const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
               return (
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
-                  <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
-                    <div className="flex flex-col items-center gap-2">
-                      <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
-                      <span className="text-lg font-bold leading-none">{btn.label}</span>
-                      {isPending && <span className="text-xs opacity-80">PENDING</span>}
-                    </div>
-                  </md-filled-tonal-button>
+                  <div className="p-3 w-full h-full">
+                    <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none' }}>
+                        <div className="flex flex-col items-center gap-2">
+                        <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
+                        <span className="text-lg font-bold leading-none">{btn.label}</span>
+                        {isPending && <span className="text-xs opacity-80">PENDING</span>}
+                        </div>
+                    </md-filled-tonal-button>
+                  </div>
                 </SortableButton>
               );
             })}
@@ -870,7 +897,7 @@ function App() {
         </DragOverlay>
       </DndContext>
 
-      <div className="fixed bottom-0 left-0 right-0 max-h-[33vh] bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300 overflow-y-auto">
+      <div className="fixed bottom-0 left-0 right-0 max-h-[33vh] bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300">
         <div className="flex-none p-2 bg-[#252525] border-b border-[#333] flex justify-between items-center px-4 sticky top-0 z-30">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notifications ({activeRequests.length})</span>
             {showApprovals && (
@@ -882,21 +909,22 @@ function App() {
                 </md-filled-button>
             )}
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="flex-1 overflow-y-auto w-full">
             {activeRequests.map(req => {
                 const isIgnored = ignoredIds.includes(req.id);
                 return (
                     <div
                         key={req.id}
-                        className={`p-3 rounded-lg flex flex-col gap-2 transition-colors border-l-4 ${isIgnored ? 'bg-[#1a1a1a] border-gray-600 opacity-60' : 'bg-[#2C1A1A] border-red-500'}`}
+                        className={`p-3 w-full flex flex-col gap-2 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
                     >
                         <div className="flex justify-between items-start">
                             <div className="flex flex-col">
                                 <span className={`font-medium ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
                                 <span className="text-xs text-gray-500">{req.requesterName} ({req.requesterRole})</span>
                             </div>
+                            <span className="text-xs text-gray-400">{formatTime(req.timestamp)}</span>
                         </div>
-                        <div className="flex gap-2 w-full">
+                        <div className="flex gap-2 w-full mt-1">
                             <md-filled-button
                                 onClick={() => claimRequest(req.id)}
                                 className={`flex-1 ${isIgnored ? '' : 'btn-alert'}`}
@@ -917,7 +945,7 @@ function App() {
                 );
             })}
             {activeRequests.length === 0 && (
-                <div className="h-full flex items-center justify-center text-gray-600 italic">
+                <div className="p-8 text-center text-gray-600 italic">
                     No active requests
                 </div>
             )}
@@ -931,7 +959,7 @@ function App() {
             <md-list-item key={req.id}>
               <div slot="headline" className="text-gray-400">{req.label}</div>
               <div slot="supporting-text" className="text-xs text-gray-600">
-                 Asked by {req.requesterName} • Claimed by {req.claimerName || 'Someone'}
+                 {req.claimerName || 'Someone'} claimed {req.claimedAt ? formatTime(req.claimedAt) : ''} • Asked {formatTime(req.timestamp)}
               </div>
               <md-icon slot="start" className="text-green-800">check_circle</md-icon>
             </md-list-item>

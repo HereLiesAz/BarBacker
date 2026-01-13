@@ -34,8 +34,10 @@ export interface Request {
   requesterRole?: string;
   status: 'pending' | 'claimed';
   timestamp: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  claimedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
   barId: string;
   claimerName?: string;
+  lastNotification?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
 
 export interface OSMResult {

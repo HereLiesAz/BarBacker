@@ -24,6 +24,7 @@ jobs:
       - uses: google-labs-code/jules-invoke@v1
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
+          github_token: ${{ secrets.GH_TOKEN }}
           prompt: |
             You are Jules, a skilled software engineer and autonomous branch manager.
 

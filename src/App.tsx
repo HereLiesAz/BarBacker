@@ -876,7 +876,7 @@ function App() {
         </div>
       </md-dialog>
 
-      <div className="flex-none flex justify-between items-center p-6 bg-[#121212] border-b border-[#333] z-10">
+      <div className="flex-none flex justify-between items-center py-8 px-6 bg-[#121212] border-b border-[#333] z-10">
         <div
             className="flex items-center justify-between min-w-[200px] gap-8 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto"
             onClick={() => setShowAccountDialog(true)}
@@ -893,17 +893,17 @@ function App() {
            <div className="flex gap-4">
                 {installPrompt && (
                   <md-icon-button onClick={handleInstall} title="Install App">
-                    <md-icon className="text-blue-400" style={{ fontSize: '28px' }}>download</md-icon>
+                    <md-icon className="text-blue-400" style={{ fontSize: '36px' }}>download</md-icon>
                   </md-icon-button>
                 )}
                 <md-icon-button onClick={() => setIsAddingNotice(true)} title="Add Notice">
-                    <md-icon className="text-gray-400" style={{ fontSize: '28px' }}>campaign</md-icon>
+                    <md-icon className="text-white" style={{ fontSize: '36px' }}>campaign</md-icon>
                 </md-icon-button>
                 <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings">
-                    <md-icon className="text-gray-400" style={{ fontSize: '28px' }}>settings</md-icon>
+                    <md-icon className="text-white" style={{ fontSize: '36px' }}>settings</md-icon>
                 </md-icon-button>
                 <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock">
-                    <PowerOff className="text-gray-500 hover:text-red-500 w-7 h-7" />
+                    <PowerOff className="text-white hover:text-red-500 w-9 h-9" />
                 </md-icon-button>
            </div>
         </div>
@@ -974,7 +974,7 @@ function App() {
                   {currentButtons.map(btn => (
                     <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
                       <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', border: '8px solid #000000', boxSizing: 'border-box' }}>
-                        {btn.label}
+                        <span className="text-red-100 font-bold">{btn.label}</span>
                       </md-filled-tonal-button>
                     </SortableButton>
                   ))}
@@ -1012,9 +1012,9 @@ function App() {
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
                   <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', border: isPending ? '8px solid #EF4444' : '8px solid #000000', boxSizing: 'border-box' }}>
                       <div className="flex flex-col items-center gap-2">
-                      <md-icon style={{ fontSize: 32 }}>{btn.icon || 'circle'}</md-icon>
-                      <span className="text-lg font-bold leading-none">{btn.label}</span>
-                      {isPending && <span className="text-xs opacity-80">PENDING</span>}
+                      <md-icon style={{ fontSize: 32 }} className="text-red-100">{btn.icon || 'circle'}</md-icon>
+                      <span className="text-lg font-bold leading-none text-red-100">{btn.label}</span>
+                      {isPending && <span className="text-xs opacity-80 text-red-100">PENDING</span>}
                       </div>
                   </md-filled-tonal-button>
                 </SortableButton>

@@ -10,6 +10,12 @@ This document provides guidelines for AI agents working on the BarBacker codebas
 *   **State**: Use local state for UI, Firestore for shared data.
 *   **Imports**: Do not minify imports. Keep them readable. If an import statement has multiple named imports (more than 3-4), break them into multiple lines. Preserve existing import structures.
 
+## Debugging
+
+*   **Automatic Diagnostics**: The application `ErrorBoundary` (`src/components/ErrorBoundary.tsx`) includes an automatic diagnostic tool (`src/utils/debug.ts`).
+*   **Usage**: If users report runtime errors, ask them to copy the debug info using the button on the error screen.
+*   **Extension**: When adding new critical infrastructure (e.g., new env vars, storage requirements), update `src/utils/debug.ts` to include them in the report.
+
 ## Project Structure
 
 *   **`src/components/`**: Place new reusable components here.

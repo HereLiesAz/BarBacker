@@ -119,6 +119,7 @@ function App() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
   const [noticeText, setNoticeText] = useState('');
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   const sensors = useSensors(
     useSensor(TouchSensor, {
@@ -189,6 +190,15 @@ function App() {
     }, 1 * 60 * 1000);
     return () => clearInterval(interval);
   }, [ignoredIds]);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
@@ -660,6 +670,15 @@ function App() {
   };
   const handleGoogle = async () => { try { await signInWithPopup(auth, googleProvider); } catch (e: any) { setAuthError(e.message); } };
 
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
+
   // --- Views ---
 
   if (!user) {
@@ -872,6 +891,11 @@ function App() {
            </md-text-button>
 
            <div className="flex gap-4">
+                {installPrompt && (
+                  <md-icon-button onClick={handleInstall} title="Install App">
+                    <md-icon className="text-blue-400" style={{ fontSize: '28px' }}>download</md-icon>
+                  </md-icon-button>
+                )}
                 <md-icon-button onClick={() => setIsAddingNotice(true)} title="Add Notice">
                     <md-icon className="text-gray-400" style={{ fontSize: '28px' }}>campaign</md-icon>
                 </md-icon-button>
@@ -930,11 +954,13 @@ function App() {
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden w-full relative pb-[35vh]">
       {navStack.length > 0 && (
-        <div className="fixed inset-0 top-[90px] z-40 bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-black w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6 rounded-xl border border-gray-800 shadow-2xl flex flex-col relative animate-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-4 mb-6 flex-none border-b border-gray-800 pb-4">
-              <md-icon-button onClick={() => setNavStack([])}><md-icon>close</md-icon></md-icon-button>
-              <span className="text-xl font-medium text-gray-200 truncate">{navStack.map(b => b.label).join(' > ')}</span>
+        <div className="fixed inset-0 top-[88px] z-50 bg-black/95 flex items-start justify-center p-4 pt-10 animate-in fade-in duration-200 backdrop-blur-sm">
+          <div className="bg-[#121212] w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 rounded-2xl border border-gray-800 shadow-2xl flex flex-col relative animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4 flex-none border-b border-gray-800 pb-4">
+              <md-icon-button onClick={() => setNavStack([])}><md-icon>arrow_back</md-icon></md-icon-button>
+              <span className="text-lg font-bold text-white uppercase tracking-wide truncate flex-1">
+                {navStack.map(b => b.label).join(' > ')}
+              </span>
             </div>
             <DndContext
               sensors={sensors}
@@ -963,9 +989,9 @@ function App() {
               </DragOverlay>
             </DndContext>
             <div className="mt-6 flex-none">
-              <md-filled-button className="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
+              <md-outlined-button className="w-full" onClick={() => setNavStack([])} style={{ height: '56px' }}>
                  Cancel
-              </md-filled-button>
+              </md-outlined-button>
             </div>
           </div>
         </div>
@@ -1036,9 +1062,9 @@ function App() {
                 return (
                     <div
                         key={req.id}
-                        className={`w-full grid grid-cols-[33vw_1fr_auto] items-center gap-3 p-4 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
+                        className={`w-full grid grid-cols-[33vw_1fr_auto] items-center gap-2 p-3 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
                     >
-                        <div className="flex flex-col overflow-hidden">
+                        <div className="flex flex-col overflow-hidden mr-2">
                             <span className={`font-bold text-lg leading-tight truncate ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
                             <div className="flex flex-wrap gap-1 text-xs text-gray-400 mt-1 truncate">
                                 <span>{req.requesterName}</span>
@@ -1050,7 +1076,7 @@ function App() {
                         <md-filled-button
                             onClick={() => claimRequest(req.id)}
                             className={`w-full ${isIgnored ? '' : 'btn-alert'}`}
-                            style={{ height: '48px' }}
+                            style={{ height: '48px', minWidth: '100px' }}
                         >
                             CLAIM
                         </md-filled-button>
@@ -1063,7 +1089,7 @@ function App() {
                                         await deleteDoc(doc(db, 'requests', req.id));
                                     }
                                 }}
-                                style={{ height: '48px', '--md-outlined-button-label-text-color': '#EF4444', '--md-sys-color-outline': '#EF4444' } as React.CSSProperties}
+                                style={{ height: '48px', minWidth: '100px', '--md-outlined-button-label-text-color': '#EF4444', '--md-sys-color-outline': '#EF4444' } as React.CSSProperties}
                             >
                                 CANCEL
                             </md-outlined-button>
@@ -1071,7 +1097,7 @@ function App() {
                             !isIgnored && (
                                 <md-outlined-button
                                     onClick={(e: any) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
-                                    style={{ height: '48px' }}
+                                    style={{ height: '48px', minWidth: '100px' }}
                                 >
                                     Ignore
                                 </md-outlined-button>

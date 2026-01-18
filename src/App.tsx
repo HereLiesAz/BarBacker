@@ -838,7 +838,7 @@ function App() {
         </form>
         <div slot="actions">
             <md-text-button onClick={() => setIsAddingNotice(false)}>Cancel</md-text-button>
-            <md-filled-button form="notice-form" type="submit">Post</md-filled-button>
+            <md-filled-button onClick={() => (document.getElementById('notice-form') as HTMLFormElement)?.requestSubmit()}>Post</md-filled-button>
         </div>
       </md-dialog>
 

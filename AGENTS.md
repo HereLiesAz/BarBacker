@@ -8,6 +8,7 @@ This document provides guidelines for AI agents working on the BarBacker codebas
 *   **Components**: Functional components with hooks.
 *   **Styling**: Tailwind CSS for layout and utilities. Material Web for core UI components.
 *   **State**: Use local state for UI, Firestore for shared data.
+*   **Imports**: Do not minify imports. Keep them readable. If an import statement has multiple named imports (more than 3-4), break them into multiple lines. Preserve existing import structures.
 
 ## Project Structure
 

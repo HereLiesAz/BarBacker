@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Clear caches
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "Fetching list of cache keys..."
           cacheKeysForPR=$(gh cache list --ref $GITHUB_REF --limit 100 --json id --jq '.[].id')

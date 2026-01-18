@@ -119,6 +119,7 @@ function App() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
   const [noticeText, setNoticeText] = useState('');
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   const sensors = useSensors(
     useSensor(TouchSensor, {
@@ -189,6 +190,15 @@ function App() {
     }, 1 * 60 * 1000);
     return () => clearInterval(interval);
   }, [ignoredIds]);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
@@ -660,6 +670,15 @@ function App() {
   };
   const handleGoogle = async () => { try { await signInWithPopup(auth, googleProvider); } catch (e: any) { setAuthError(e.message); } };
 
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
+
   // --- Views ---
 
   if (!user) {
@@ -872,6 +891,11 @@ function App() {
            </md-text-button>
 
            <div className="flex gap-4">
+                {installPrompt && (
+                  <md-icon-button onClick={handleInstall} title="Install App">
+                    <md-icon className="text-blue-400" style={{ fontSize: '28px' }}>download</md-icon>
+                  </md-icon-button>
+                )}
                 <md-icon-button onClick={() => setIsAddingNotice(true)} title="Add Notice">
                     <md-icon className="text-gray-400" style={{ fontSize: '28px' }}>campaign</md-icon>
                 </md-icon-button>
@@ -1038,7 +1062,7 @@ function App() {
                 return (
                     <div
                         key={req.id}
-                        className={`w-full grid grid-cols-[1fr_auto_auto] items-center gap-2 p-3 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
+                        className={`w-full grid grid-cols-[33vw_1fr_auto] items-center gap-2 p-3 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
                     >
                         <div className="flex flex-col overflow-hidden mr-2">
                             <span className={`font-bold text-lg leading-tight truncate ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
@@ -1051,7 +1075,7 @@ function App() {
 
                         <md-filled-button
                             onClick={() => claimRequest(req.id)}
-                            className={`${isIgnored ? '' : 'btn-alert'}`}
+                            className={`w-full ${isIgnored ? '' : 'btn-alert'}`}
                             style={{ height: '48px', minWidth: '100px' }}
                         >
                             CLAIM

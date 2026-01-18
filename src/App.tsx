@@ -119,6 +119,20 @@ function App() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
 
+  const sensors = useSensors(
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 10,
+      },
+    })
+  );
+
   const getButtonIdForLabel = (label: string): string | undefined => {
     for (const btn of buttons) {
         if (label === btn.label) return btn.id;
@@ -472,20 +486,6 @@ function App() {
     });
   };
 
-  const sensors = useSensors(
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    }),
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 10,
-      },
-    })
-  );
-
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
     isDraggingRef.current = true;
@@ -838,7 +838,7 @@ function App() {
         </form>
         <div slot="actions">
             <md-text-button onClick={() => setIsAddingNotice(false)}>Cancel</md-text-button>
-            <md-filled-button form="notice-form" type="submit">Post</md-filled-button>
+            <md-filled-button onClick={() => (document.getElementById('notice-form') as HTMLFormElement)?.requestSubmit()}>Post</md-filled-button>
         </div>
       </md-dialog>
 

@@ -119,6 +119,20 @@ function App() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
 
+  const sensors = useSensors(
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 10,
+      },
+    })
+  );
+
   const getButtonIdForLabel = (label: string): string | undefined => {
     for (const btn of buttons) {
         if (label === btn.label) return btn.id;
@@ -471,20 +485,6 @@ function App() {
         return usageB - usageA;
     });
   };
-
-  const sensors = useSensors(
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    }),
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 10,
-      },
-    })
-  );
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);

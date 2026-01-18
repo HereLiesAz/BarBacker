@@ -55,6 +55,15 @@ class ErrorBoundary extends Component<Props, State> {
             </div>
           )}
 
+          <div className="bg-yellow-900/20 border border-yellow-900/50 p-4 rounded text-yellow-200 text-sm">
+            <p className="font-bold mb-1">Stuck in a crash loop?</p>
+            <p>Try clearing your local data:</p>
+            <ul className="list-disc list-inside mt-1 opacity-80">
+                <li><strong>Android App:</strong> Long press App Icon → App Info → Storage → Clear Data</li>
+                <li><strong>Browser:</strong> Settings → Site Settings → Clear Data</li>
+            </ul>
+          </div>
+
           <div className="flex gap-4 mt-4">
             <button
               onClick={() => window.location.reload()}

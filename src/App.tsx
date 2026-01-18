@@ -118,6 +118,21 @@ function App() {
 
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
+  const [noticeText, setNoticeText] = useState('');
+
+  const sensors = useSensors(
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 10,
+      },
+    })
+  );
 
   const getButtonIdForLabel = (label: string): string | undefined => {
     for (const btn of buttons) {
@@ -171,7 +186,7 @@ function App() {
            audio.play().catch(e => console.log('Audio play failed', e));
            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
        }
-    }, 5 * 60 * 1000);
+    }, 1 * 60 * 1000);
     return () => clearInterval(interval);
   }, [ignoredIds]);
 
@@ -395,6 +410,7 @@ function App() {
         authorName: displayName,
         timestamp: serverTimestamp()
     });
+    setNoticeText('');
     setIsAddingNotice(false);
   };
 
@@ -471,20 +487,6 @@ function App() {
         return usageB - usageA;
     });
   };
-
-  const sensors = useSensors(
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    }),
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 10,
-      },
-    })
-  );
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -829,16 +831,18 @@ function App() {
 
       <md-dialog open={isAddingNotice || undefined} onClose={() => setIsAddingNotice(false)}>
         <div slot="headline">Add Notice</div>
-        <form slot="content" id="notice-form" method="dialog" onSubmit={(e) => {
-            e.preventDefault();
-            const fd = new FormData(e.target as HTMLFormElement);
-            saveNotice(fd.get('notice') as string);
-        }}>
-            <md-filled-text-field label="Notice Message" name="notice" required type="text" />
-        </form>
+        <div slot="content" className="flex flex-col gap-4">
+            <md-filled-text-field
+                label="Notice Message"
+                value={noticeText}
+                onInput={(e: any) => setNoticeText(e.target.value)}
+                required
+                type="text"
+            />
+        </div>
         <div slot="actions">
             <md-text-button onClick={() => setIsAddingNotice(false)}>Cancel</md-text-button>
-            <md-filled-button form="notice-form" type="submit">Post</md-filled-button>
+            <md-filled-button onClick={() => saveNotice(noticeText)}>Post</md-filled-button>
         </div>
       </md-dialog>
 
@@ -853,29 +857,29 @@ function App() {
         </div>
       </md-dialog>
 
-      <div className="flex-none flex justify-between items-center p-4 bg-[#121212] border-b border-[#333] z-10">
+      <div className="flex-none flex justify-between items-center p-6 bg-[#121212] border-b border-[#333] z-10">
         <div
             className="flex items-center justify-between min-w-[200px] gap-8 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto"
             onClick={() => setShowAccountDialog(true)}
         >
-            <span className="text-white font-bold text-lg truncate mr-4">{displayName}</span>
-            <span className="bg-gray-800 px-3 py-1 rounded text-sm text-gray-300 whitespace-nowrap ml-auto">{userRole}</span>
+            <span className="text-white font-bold text-xl truncate mr-4">{displayName}</span>
+            <span className="bg-gray-800 px-4 py-2 rounded text-base text-gray-300 whitespace-nowrap ml-auto">{userRole}</span>
         </div>
-        <div className="flex items-center gap-4">
-           <span className="font-bold text-lg text-white tracking-wide hidden sm:block">{barName}</span>
+        <div className="flex items-center gap-6">
+           <span className="font-bold text-xl text-white tracking-wide hidden sm:block">{barName}</span>
            <md-text-button onClick={() => setShowBarManager(true)} className="sm:hidden">
-             <span className="font-bold text-white tracking-wide">{barName}</span>
+             <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
            </md-text-button>
 
-           <div className="flex gap-2">
+           <div className="flex gap-4">
                 <md-icon-button onClick={() => setIsAddingNotice(true)} title="Add Notice">
-                    <md-icon className="text-gray-400">campaign</md-icon>
+                    <md-icon className="text-gray-400" style={{ fontSize: '28px' }}>campaign</md-icon>
                 </md-icon-button>
                 <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings">
-                    <md-icon className="text-gray-400">settings</md-icon>
+                    <md-icon className="text-gray-400" style={{ fontSize: '28px' }}>settings</md-icon>
                 </md-icon-button>
                 <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock">
-                    <PowerOff className="text-gray-500 hover:text-red-500" />
+                    <PowerOff className="text-gray-500 hover:text-red-500 w-7 h-7" />
                 </md-icon-button>
            </div>
         </div>
@@ -926,41 +930,45 @@ function App() {
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden w-full relative pb-[35vh]">
       {navStack.length > 0 && (
-        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col p-6 animate-in fade-in duration-300 overflow-y-auto pb-32">
-          <div className="flex items-center gap-4 mb-8 flex-none">
-            <md-icon-button onClick={() => setNavStack([])}><md-icon>close</md-icon></md-icon-button>
-            <span className="text-xl font-medium text-gray-200">{navStack.map(b => b.label).join(' > ')}</span>
-          </div>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragOver={(e) => handleDragOver(e, currentContextId, currentButtons)}
-            onDragEnd={(e) => handleDragEnd(e, currentContextId)}
-          >
-            <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
-              <div className="grid grid-cols-2 gap-4 mb-auto">
-                {currentButtons.map(btn => (
-                  <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
-                    <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', border: '8px solid #000000', boxSizing: 'border-box' }}>
-                      {btn.label}
-                    </md-filled-tonal-button>
-                  </SortableButton>
-                ))}
-              </div>
-            </SortableContext>
-            <DragOverlay>
-              {activeId ? (
-                 <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
-                    {currentButtons.find(b => b.id === activeId)?.label}
-                 </md-filled-tonal-button>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-          <div className="mt-8">
-            <md-filled-button className="w-full bg-gray-800 text-gray-300" onClick={() => setNavStack([])}>
-               Cancel
-            </md-filled-button>
+        <div className="fixed inset-0 top-[88px] z-50 bg-black/95 flex items-start justify-center p-4 pt-10 animate-in fade-in duration-200 backdrop-blur-sm">
+          <div className="bg-[#121212] w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 rounded-2xl border border-gray-800 shadow-2xl flex flex-col relative animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4 flex-none border-b border-gray-800 pb-4">
+              <md-icon-button onClick={() => setNavStack([])}><md-icon>arrow_back</md-icon></md-icon-button>
+              <span className="text-lg font-bold text-white uppercase tracking-wide truncate flex-1">
+                {navStack.map(b => b.label).join(' > ')}
+              </span>
+            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={(e) => handleDragOver(e, currentContextId, currentButtons)}
+              onDragEnd={(e) => handleDragEnd(e, currentContextId)}
+            >
+              <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-2 gap-4 mb-auto">
+                  {currentButtons.map(btn => (
+                    <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
+                      <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', border: '8px solid #000000', boxSizing: 'border-box' }}>
+                        {btn.label}
+                      </md-filled-tonal-button>
+                    </SortableButton>
+                  ))}
+                </div>
+              </SortableContext>
+              <DragOverlay>
+                {activeId ? (
+                   <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
+                      {currentButtons.find(b => b.id === activeId)?.label}
+                   </md-filled-tonal-button>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+            <div className="mt-6 flex-none">
+              <md-outlined-button className="w-full" onClick={() => setNavStack([])} style={{ height: '56px' }}>
+                 Cancel
+              </md-outlined-button>
+            </div>
           </div>
         </div>
       )}
@@ -1025,35 +1033,52 @@ function App() {
         <div className="flex-1 overflow-y-auto w-full">
             {activeRequests.map(req => {
                 const isIgnored = ignoredIds.includes(req.id);
+                const isMyRequest = user && req.requesterId === user.uid;
+
                 return (
                     <div
                         key={req.id}
-                        className={`p-3 w-full flex flex-col gap-2 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
+                        className={`w-full grid grid-cols-[1fr_auto_auto] items-center gap-2 p-3 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
                     >
-                        <div className="flex justify-between items-start">
-                            <div className="flex flex-col">
-                                <span className={`font-medium ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
-                                <span className="text-xs text-gray-500">{req.requesterName} ({req.requesterRole})</span>
+                        <div className="flex flex-col overflow-hidden mr-2">
+                            <span className={`font-bold text-lg leading-tight truncate ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
+                            <div className="flex flex-wrap gap-1 text-xs text-gray-400 mt-1 truncate">
+                                <span>{req.requesterName}</span>
+                                <span>•</span>
+                                <span>{formatTime(req.timestamp)}</span>
                             </div>
-                            <span className="text-xs text-gray-400">{formatTime(req.timestamp)}</span>
                         </div>
-                        <div className="flex gap-2 w-full mt-1">
-                            <md-filled-button
-                                onClick={() => claimRequest(req.id)}
-                                className={`flex-1 ${isIgnored ? '' : 'btn-alert'}`}
-                                style={{ height: '32px' }}
+
+                        <md-filled-button
+                            onClick={() => claimRequest(req.id)}
+                            className={`${isIgnored ? '' : 'btn-alert'}`}
+                            style={{ height: '48px', minWidth: '100px' }}
+                        >
+                            CLAIM
+                        </md-filled-button>
+
+                        {isMyRequest ? (
+                             <md-outlined-button
+                                onClick={async (e: any) => {
+                                    e.stopPropagation();
+                                    if(confirm('Cancel this request?')) {
+                                        await deleteDoc(doc(db, 'requests', req.id));
+                                    }
+                                }}
+                                style={{ height: '48px', minWidth: '100px', '--md-outlined-button-label-text-color': '#EF4444', '--md-sys-color-outline': '#EF4444' } as React.CSSProperties}
                             >
-                                CLAIM
-                            </md-filled-button>
-                            {!isIgnored && (
+                                CANCEL
+                            </md-outlined-button>
+                        ) : (
+                            !isIgnored && (
                                 <md-outlined-button
                                     onClick={(e: any) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
-                                    style={{ height: '32px' }}
+                                    style={{ height: '48px', minWidth: '100px' }}
                                 >
                                     Ignore
                                 </md-outlined-button>
-                            )}
-                        </div>
+                            )
+                        )}
                     </div>
                 );
             })}

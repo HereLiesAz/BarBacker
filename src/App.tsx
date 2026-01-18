@@ -134,20 +134,6 @@ function App() {
     })
   );
 
-  const sensors = useSensors(
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    }),
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 10,
-      },
-    })
-  );
-
   const getButtonIdForLabel = (label: string): string | undefined => {
     for (const btn of buttons) {
         if (label === btn.label) return btn.id;

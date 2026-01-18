@@ -22,18 +22,3 @@ In a busy bar, bartenders often need itemsâ€”ice, glassware, fruit, restockingâ€
     *   **Bartender**: You will see a grid of buttons. Tap to request items.
     *   **Barback**: You will see a list of incoming requests. Tap a request to claim it.
 4.  **Stay synced**: The app keeps everyone on the same page, preventing duplicate work and ensuring the bar never runs dry.
-
-## Development
-
-This project is built with:
-*   **React** & **TypeScript**
-*   **Vite**
-*   **Firebase** (Firestore, Auth, Messaging)
-*   **Material Web Components**
-
-### Running Locally
-
-1.  Clone the repository.
-2.  Install dependencies: `npm install`
-3.  Set up your `.env` file with Firebase credentials.
-4.  Run: `npm run dev`

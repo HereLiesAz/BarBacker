@@ -204,7 +204,13 @@ function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (u) requestNotificationPermission().then(t => t && setFcmToken(t));
+      // Only request permission if already installed (standalone)
+      if (u) {
+          const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+          if (isStandalone) {
+              requestNotificationPermission().then(t => t && setFcmToken(t));
+          }
+      }
     });
     onMessageListener().then(() => {
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
@@ -676,6 +682,27 @@ function App() {
     const { outcome } = await installPrompt.userChoice;
     if (outcome === 'accepted') {
       setInstallPrompt(null);
+      // Request permissions after install
+      if (user) {
+         requestNotificationPermission().then(t => t && setFcmToken(t));
+      }
+    }
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'BarBacker',
+                text: 'Join my bar on BarBacker!',
+                url: window.location.href
+            });
+        } catch (err) {
+            console.log('Error sharing:', err);
+        }
+    } else {
+        navigator.clipboard.writeText(window.location.href);
+        alert('Link copied to clipboard!');
     }
   };
 
@@ -878,19 +905,22 @@ function App() {
 
       <div className="flex-none flex justify-between items-center py-8 px-6 bg-[#121212] border-b border-[#333] z-10">
         <div
-            className="flex items-center justify-between min-w-[200px] gap-8 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto"
+            className="flex items-center justify-between min-w-[200px] gap-8 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto ml-4"
             onClick={() => setShowAccountDialog(true)}
         >
             <span className="text-white font-bold text-xl truncate mr-4">{displayName}</span>
             <span className="bg-gray-800 px-4 py-2 rounded text-base text-gray-300 whitespace-nowrap ml-auto">{userRole}</span>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-6 mr-4">
            <span className="font-bold text-xl text-white tracking-wide hidden sm:block">{barName}</span>
            <md-text-button onClick={() => setShowBarManager(true)} className="sm:hidden">
              <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
            </md-text-button>
 
            <div className="flex gap-4">
+                <md-icon-button onClick={handleShare} title="Share App">
+                    <md-icon className="text-white" style={{ fontSize: '36px' }}>share</md-icon>
+                </md-icon-button>
                 {installPrompt && (
                   <md-icon-button onClick={handleInstall} title="Install App">
                     <md-icon className="text-blue-400" style={{ fontSize: '36px' }}>download</md-icon>

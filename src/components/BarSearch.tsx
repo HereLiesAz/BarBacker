@@ -177,27 +177,32 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                     onInput={(e: any) => setAddress(e.target.value)}
                 />
 
-                <div className="flex gap-2">
-                    <md-filled-text-field
-                        label="City"
-                        value={city}
-                        onInput={(e: any) => setCity(e.target.value)}
-                        className="flex-1"
-                    />
-                    <md-filled-text-field
-                        label="State"
-                        value={state}
-                        onInput={(e: any) => setState(e.target.value)}
-                        className="w-20"
-                    />
-                </div>
-
                 <md-filled-text-field
-                    label="Zip Code"
-                    value={zip}
-                    onInput={(e: any) => setZip(e.target.value)}
-                    type="number"
+                    label="City"
+                    value={city}
+                    onInput={(e: any) => setCity(e.target.value)}
+                    className="w-full"
                 />
+
+                <div className="flex gap-2">
+                    <div className="w-24">
+                        <md-filled-text-field
+                            label="State"
+                            value={state}
+                            onInput={(e: any) => setState(e.target.value)}
+                            style={{ width: '100%' }}
+                        />
+                    </div>
+                    <div className="flex-1">
+                        <md-filled-text-field
+                            label="Zip Code"
+                            value={zip}
+                            onInput={(e: any) => setZip(e.target.value)}
+                            type="number"
+                            style={{ width: '100%' }}
+                        />
+                    </div>
+                </div>
 
                 <md-filled-text-field
                     label="Phone"

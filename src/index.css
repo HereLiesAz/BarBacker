@@ -110,3 +110,9 @@ md-icon {
   animation: marquee 20s linear infinite;
   padding-left: 100%;
 }
+
+/* Navbar Icon Button Override */
+.navbar-icon-button {
+  width: 64px;
+  height: 64px;
+}

@@ -119,6 +119,7 @@ function App() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
   const [noticeText, setNoticeText] = useState('');
+  const [noticeError, setNoticeError] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   const sensors = useSensors(
@@ -431,7 +432,7 @@ function App() {
       setIsAddingNotice(false);
     } catch (e) {
       console.error("Error saving notice:", e);
-      alert("Failed to save notice. Please try again.");
+      setNoticeError("Failed to save notice. Please try again.");
     }
   };
 
@@ -890,6 +891,7 @@ function App() {
                 required
                 type="text"
             />
+            {noticeError && <div className="text-red-500 text-sm mt-2">{noticeError}</div>}
         </div>
         <div slot="actions">
             <md-text-button onClick={() => setIsAddingNotice(false)}>Cancel</md-text-button>
@@ -923,21 +925,21 @@ function App() {
            </md-text-button>
 
            <div className="flex gap-4">
-                <md-icon-button onClick={handleShare} title="Share App" style={{ width: '64px', height: '64px' }}>
+                <md-icon-button onClick={handleShare} title="Share App" className="navbar-icon-button">
                     <md-icon className="text-white" style={{ fontSize: '36px' }}>share</md-icon>
                 </md-icon-button>
                 {installPrompt && (
-                  <md-icon-button onClick={handleInstall} title="Install App" style={{ width: '64px', height: '64px' }}>
+                  <md-icon-button onClick={handleInstall} title="Install App" className="navbar-icon-button">
                     <md-icon className="text-blue-400" style={{ fontSize: '36px' }}>download</md-icon>
                   </md-icon-button>
                 )}
-                <md-icon-button onClick={() => setIsAddingNotice(true)} title="Add Notice" style={{ width: '64px', height: '64px' }}>
+                <md-icon-button onClick={() => { setIsAddingNotice(true); setNoticeError(null); }} title="Add Notice" className="navbar-icon-button">
                     <md-icon className="text-white" style={{ fontSize: '36px' }}>campaign</md-icon>
                 </md-icon-button>
-                <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings" style={{ width: '64px', height: '64px' }}>
+                <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings" className="navbar-icon-button">
                     <md-icon className="text-white" style={{ fontSize: '36px' }}>settings</md-icon>
                 </md-icon-button>
-                <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock" style={{ width: '64px', height: '64px' }}>
+                <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock" className="navbar-icon-button">
                     <PowerOff className="text-white hover:text-red-500 w-9 h-9" />
                 </md-icon-button>
            </div>

@@ -420,14 +420,19 @@ function App() {
 
   const saveNotice = async (text: string) => {
     if (!user || !barId || !text.trim()) return;
-    await addDoc(collection(db, `bars/${barId}/notices`), {
-        text,
-        authorId: user.uid,
-        authorName: displayName,
-        timestamp: serverTimestamp()
-    });
-    setNoticeText('');
-    setIsAddingNotice(false);
+    try {
+      await addDoc(collection(db, `bars/${barId}/notices`), {
+          text,
+          authorId: user.uid,
+          authorName: displayName,
+          timestamp: serverTimestamp()
+      });
+      setNoticeText('');
+      setIsAddingNotice(false);
+    } catch (e) {
+      console.error("Error saving notice:", e);
+      alert("Failed to save notice. Please try again.");
+    }
   };
 
   const deleteNotice = async (noticeId: string) => {

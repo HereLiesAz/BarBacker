@@ -49,5 +49,8 @@
     "vite-plugin-pwa": "^1.2.0",
     "vitest": "^4.0.16",
     "vitest-mock-extended": "^3.1.0"
+  },
+  "overrides": {
+    "tar": "^7.5.4"
   }
 }

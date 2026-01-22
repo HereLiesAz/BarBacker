@@ -51,8 +51,6 @@ import '@material/web/iconbutton/icon-button.js';
 import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
 
-import { PowerOff } from 'lucide-react';
-
 import { Bar, ButtonConfig, Request, Notice } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
 import BarSearch from './components/BarSearch';

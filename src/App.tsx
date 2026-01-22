@@ -276,7 +276,15 @@ function App() {
           // If no preferences saved, use defaults for role
           setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[data.role] || []);
         }
-        if (data.ntfyTopic) setNtfyTopic(data.ntfyTopic);
+
+        // Auto-coordinate ntfy topic
+        const autoTopic = `barbacker-${user.uid}`;
+        if (data.ntfyTopic !== autoTopic) {
+            updateDoc(userRef, { ntfyTopic: autoTopic }).catch(console.error);
+            setNtfyTopic(autoTopic);
+        } else {
+            setNtfyTopic(data.ntfyTopic);
+        }
       } else {
         setUserRole(null);
       }
@@ -767,7 +775,20 @@ function App() {
         </div>
         <div className="text-center text-gray-500 text-sm mt-8 space-y-2">
             <p>Install <span className="text-blue-400">BarBacker PWA</span> for Android.</p>
-            <p>For iOS alerts, install <a href="https://ntfy.sh" target="_blank" className="text-blue-400 underline">ntfy.sh</a>.</p>
+            {user && (
+                <div className="flex flex-col items-center gap-1 mt-4">
+                     <p>iOS Users:</p>
+                     <a
+                        href={`ntfy://subscribe/barbacker-${user.uid}`}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full font-bold text-sm inline-flex items-center gap-2"
+                     >
+                        <md-icon style={{ fontSize: '18px' }}>notifications_active</md-icon>
+                        Subscribe to Alerts
+                     </a>
+                     <span className="text-xs text-green-400 font-bold">(It's free!)</span>
+                     <span className="text-xs text-gray-600">(Requires ntfy app)</span>
+                </div>
+            )}
         </div>
       </div>
     );
@@ -806,7 +827,16 @@ function App() {
         }} />
         <div className="text-center text-gray-500 text-xs mt-8 space-y-2 max-w-[300px]">
             <p>Tip: Install <span className="text-blue-400">BarBacker</span> as an app for the best experience.</p>
-            <p>iOS users: Use <a href="https://ntfy.sh" target="_blank" className="text-blue-400 underline">ntfy.sh</a> for reliable notifications.</p>
+            <div className="flex flex-col items-center gap-1 mt-2">
+                 <a
+                    href={`ntfy://subscribe/barbacker-${user.uid}`}
+                    className="text-blue-400 underline font-bold"
+                 >
+                    Subscribe to iOS Alerts
+                 </a>
+                 <span className="text-xs text-green-400 font-bold">(It's free!)</span>
+                 <span className="text-[10px] text-gray-600">(Requires ntfy app)</span>
+            </div>
         </div>
       </div>
     );

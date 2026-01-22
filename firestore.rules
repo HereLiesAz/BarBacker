@@ -22,6 +22,11 @@ service cloud.firestore {
       match /tokens/{userId} {
         allow read, write: if isAuthenticated();
       }
+
+      // Notices subcollection: Allow read/write for authenticated users
+      match /notices/{noticeId} {
+        allow read, write: if isAuthenticated();
+      }
     }
 
     // Requests: Allow read/write for authenticated users

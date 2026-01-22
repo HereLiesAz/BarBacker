@@ -439,9 +439,9 @@ function App() {
       });
       setNoticeText('');
       setIsAddingNotice(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error saving notice:", e);
-      setNoticeError("Failed to save notice. Please try again.");
+      setNoticeError("Failed to save notice: " + (e.message || "Unknown error"));
     }
   };
 
@@ -765,6 +765,10 @@ function App() {
            <md-text-button onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? 'Login' : 'Register'}</md-text-button>
            <md-outlined-button onClick={handleGoogle}><md-icon slot="icon">mail</md-icon>Google</md-outlined-button>
         </div>
+        <div className="text-center text-gray-500 text-sm mt-8 space-y-2">
+            <p>Install <span className="text-blue-400">BarBacker PWA</span> for Android.</p>
+            <p>For iOS alerts, install <a href="https://ntfy.sh" target="_blank" className="text-blue-400 underline">ntfy.sh</a>.</p>
+        </div>
       </div>
     );
   }
@@ -800,6 +804,10 @@ function App() {
             setBarId(b.id);
           }
         }} />
+        <div className="text-center text-gray-500 text-xs mt-8 space-y-2 max-w-[300px]">
+            <p>Tip: Install <span className="text-blue-400">BarBacker</span> as an app for the best experience.</p>
+            <p>iOS users: Use <a href="https://ntfy.sh" target="_blank" className="text-blue-400 underline">ntfy.sh</a> for reliable notifications.</p>
+        </div>
       </div>
     );
   }
@@ -953,8 +961,9 @@ function App() {
             className="flex items-center min-w-[200px] cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto ml-4"
             onClick={() => setShowAccountDialog(true)}
         >
+            <span className="whitespace-pre">    </span>
             <span className="text-white font-bold text-xl truncate">{displayName}</span>
-            <span className="text-white text-xl whitespace-pre">    </span>
+            <span className="text-white text-xl whitespace-pre">        </span>
             <span className="bg-gray-800 px-4 py-2 rounded text-base text-gray-300 whitespace-nowrap">{userRole}</span>
         </div>
         <div className="flex items-center gap-6 mr-4 flex-wrap justify-end">
@@ -987,6 +996,16 @@ function App() {
                         quick
                         style={{ zIndex: 2000 }}
                     >
+                        <md-menu-item onClick={() => setShowAccountDialog(true)}>
+                            <md-icon slot="start">account_circle</md-icon>
+                            <div slot="headline">Account Options</div>
+                        </md-menu-item>
+                        {(userRole === 'Owner' || userRole === 'Manager') && (
+                            <md-menu-item onClick={() => setShowBarManager(true)}>
+                                <md-icon slot="start">store</md-icon>
+                                <div slot="headline">Manage Bar</div>
+                            </md-menu-item>
+                        )}
                         <md-menu-item onClick={handleShare}>
                             <md-icon slot="start">share</md-icon>
                             <div slot="headline">Share</div>
@@ -1010,8 +1029,8 @@ function App() {
       </div>
 
       {/* Bulletin Board */}
-      <div className="bg-yellow-900/20 border-b border-yellow-900/50 overflow-hidden relative h-8 flex items-center">
-          {notices.length > 0 ? (
+      {notices.length > 0 && (
+          <div className="bg-yellow-900/20 border-b border-yellow-900/50 overflow-hidden relative h-8 flex items-center">
               <div className="animate-marquee whitespace-nowrap flex gap-12 text-yellow-500 text-sm font-medium items-center">
                   {notices.map(notice => (
                       <span key={notice.id} className="inline-flex items-center gap-2 cursor-pointer" onClick={() => deleteNotice(notice.id)}>
@@ -1026,12 +1045,8 @@ function App() {
                       </span>
                   ))}
               </div>
-          ) : (
-              <div className="w-full text-center text-xs text-gray-600 italic cursor-pointer" onClick={() => setIsAddingNotice(true)}>
-                  No active notices. Click megaphone to add one.
-              </div>
-          )}
-      </div>
+          </div>
+      )}
 
       <md-dialog open={showAccountDialog || undefined} onClose={() => setShowAccountDialog(false)}>
         <div slot="headline">Account Options</div>
@@ -1074,7 +1089,7 @@ function App() {
                   {currentButtons.map(btn => (
                     <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
                       <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', border: '8px solid #000000', boxSizing: 'border-box' }}>
-                        <span className="text-red-100 font-bold">{btn.label}</span>
+                        <span className="text-red-500 font-bold text-3xl">{btn.label}</span>
                       </md-filled-tonal-button>
                     </SortableButton>
                   ))}
@@ -1112,9 +1127,9 @@ function App() {
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
                   <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', border: isPending ? '8px solid #EF4444' : '8px solid #000000', boxSizing: 'border-box' }}>
                       <div className="flex flex-col items-center gap-2">
-                      <md-icon style={{ fontSize: 32 }} className="text-red-100">{btn.icon || 'circle'}</md-icon>
-                      <span className="text-lg font-bold leading-none text-red-100">{btn.label}</span>
-                      {isPending && <span className="text-xs opacity-80 text-red-100">PENDING</span>}
+                      <md-icon style={{ fontSize: 32 }} className="text-red-500">{btn.icon || 'circle'}</md-icon>
+                      <span className="text-3xl font-bold leading-none text-red-500">{btn.label}</span>
+                      {isPending && <span className="text-xs opacity-80 text-red-500">PENDING</span>}
                       </div>
                   </md-filled-tonal-button>
                 </SortableButton>

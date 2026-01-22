@@ -48,6 +48,8 @@ import '@material/web/chips/filter-chip.js';
 import '@material/web/radio/radio.js';
 import '@material/web/dialog/dialog.js';
 import '@material/web/iconbutton/icon-button.js';
+import '@material/web/menu/menu.js';
+import '@material/web/menu/menu-item.js';
 
 import { PowerOff } from 'lucide-react';
 
@@ -91,6 +93,7 @@ function App() {
   const [userStatus, setUserStatus] = useState<string>('active');
   const [displayName, setDisplayName] = useState<string>('');
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
+  const [ntfyTopic, setNtfyTopic] = useState<string | null>(null);
   
   const [requests, setRequests] = useState<Request[]>([]);
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
@@ -120,6 +123,7 @@ function App() {
   const [noticeText, setNoticeText] = useState('');
   const [noticeError, setNoticeError] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(TouchSensor, {
@@ -274,6 +278,7 @@ function App() {
           // If no preferences saved, use defaults for role
           setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[data.role] || []);
         }
+        if (data.ntfyTopic) setNtfyTopic(data.ntfyTopic);
       } else {
         setUserRole(null);
       }
@@ -635,6 +640,32 @@ function App() {
       timestamp: serverTimestamp(),
       lastNotification: serverTimestamp()
     });
+
+    // Send ntfy notifications to relevant users
+    // Filter logic: Users who are active, not the requester (optional), and have a topic
+    // For simplicity, send to all users with a topic in this bar.
+    // In a real app, you might filter by role or preference (using notificationPreferences logic would be complex here without loading every user's preferences fully).
+    // Let's blindly send to all configured topics for now, as ntfy is opt-in via topic.
+
+    // We need to iterate unique topics to avoid duplicates if multiple users share a topic
+    const topics = new Set<string>();
+    allUsers.forEach(u => {
+        if (u.id !== user.uid && u.ntfyTopic) {
+            topics.add(u.ntfyTopic);
+        }
+    });
+
+    topics.forEach(topic => {
+        fetch(`https://ntfy.sh/${topic}`, {
+            method: 'POST',
+            body: `New Request: ${label} (by ${displayName})`,
+            headers: {
+                'Title': 'BarBacker Alert',
+                'Priority': 'high',
+                'Tags': 'bell,bar_chart'
+            }
+        }).catch(err => console.error('Failed to send ntfy', err));
+    });
   };
 
   const claimRequest = async (reqId: string) => {
@@ -646,11 +677,13 @@ function App() {
     });
   };
 
-  const saveNotificationPreferences = async (prefs: string[]) => {
+  const saveNotificationPreferences = async (prefs: string[], topic: string) => {
     if (!user || !barId) return;
     setNotificationPreferences(prefs);
+    setNtfyTopic(topic);
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
-        notificationPreferences: prefs
+        notificationPreferences: prefs,
+        ntfyTopic: topic
     }, { merge: true });
   };
 
@@ -834,6 +867,7 @@ function App() {
         onSave={saveNotificationPreferences}
         userRole={userRole || ''}
         currentPreferences={notificationPreferences}
+        currentNtfyTopic={ntfyTopic}
         allButtons={buttons}
       />
 
@@ -931,24 +965,48 @@ function App() {
              <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
            </md-text-button>
 
-           <div className="flex gap-4 flex-wrap justify-end">
-                <md-icon-button onClick={handleShare} title="Share App" className="navbar-icon-button">
-                    <md-icon className="text-white" style={{ fontSize: '36px' }}>share</md-icon>
-                </md-icon-button>
+           <div className="flex gap-4 items-center">
                 {installPrompt && (
                   <md-icon-button onClick={handleInstall} title="Install App" className="navbar-icon-button">
                     <md-icon className="text-blue-400" style={{ fontSize: '36px' }}>download</md-icon>
                   </md-icon-button>
                 )}
-                <md-icon-button onClick={() => { setIsAddingNotice(true); setNoticeError(null); }} title="Add Notice" className="navbar-icon-button">
-                    <md-icon className="text-white" style={{ fontSize: '36px' }}>campaign</md-icon>
-                </md-icon-button>
-                <md-icon-button onClick={() => setShowNotificationSettings(true)} title="Notification Settings" className="navbar-icon-button">
-                    <md-icon className="text-white" style={{ fontSize: '36px' }}>settings</md-icon>
-                </md-icon-button>
-                <md-icon-button onClick={() => setShowOffClockDialog(true)} title="Go Off Clock" className="navbar-icon-button">
-                    <PowerOff className="text-white hover:text-red-500 w-9 h-9" />
-                </md-icon-button>
+
+                <span style={{ position: 'relative' }}>
+                    <md-icon-button
+                        id="menu-anchor"
+                        onClick={() => setMenuOpen(!menuOpen)}
+                        className="navbar-icon-button"
+                    >
+                        <md-icon className="text-white" style={{ fontSize: '36px' }}>menu</md-icon>
+                    </md-icon-button>
+
+                    <md-menu
+                        anchor="menu-anchor"
+                        open={menuOpen}
+                        onClosed={() => setMenuOpen(false)}
+                        positioning="fixed"
+                        quick
+                        style={{ zIndex: 2000 }}
+                    >
+                        <md-menu-item onClick={handleShare}>
+                            <md-icon slot="start">share</md-icon>
+                            <div slot="headline">Share</div>
+                        </md-menu-item>
+                        <md-menu-item onClick={() => { setIsAddingNotice(true); setNoticeError(null); }}>
+                            <md-icon slot="start">campaign</md-icon>
+                            <div slot="headline">Post Notice</div>
+                        </md-menu-item>
+                        <md-menu-item onClick={() => setShowNotificationSettings(true)}>
+                            <md-icon slot="start">settings</md-icon>
+                            <div slot="headline">Pagers</div>
+                        </md-menu-item>
+                        <md-menu-item onClick={() => setShowOffClockDialog(true)}>
+                            <md-icon slot="start">power_settings_new</md-icon>
+                            <div slot="headline">Clock Out</div>
+                        </md-menu-item>
+                    </md-menu>
+                </span>
            </div>
         </div>
       </div>

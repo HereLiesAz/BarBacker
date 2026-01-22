@@ -183,7 +183,7 @@ function App() {
     const interval = setInterval(() => {
        const pending = activeRequestsRef.current.filter(r => !ignoredIds.includes(r.id));
        if (pending.length > 0) {
-           const audio = new Audio('/alert.mp3');
+           const audio = new Audio('/alert.wav');
            audio.play().catch(e => console.log('Audio play failed', e));
            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
        }
@@ -212,10 +212,17 @@ function App() {
           }
       }
     });
-    onMessageListener().then(() => {
+    onMessageListener().then((payload: any) => {
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
 
-      const audio = new Audio('/alert.mp3');
+      if (payload && payload.notification) {
+        new Notification(payload.notification.title, {
+          body: payload.notification.body,
+          icon: '/icon-192x192.png',
+        });
+      }
+
+      const audio = new Audio('/alert.wav');
       let plays = 0;
       audio.onended = () => {
           plays++;
@@ -909,21 +916,22 @@ function App() {
         </div>
       </md-dialog>
 
-      <div className="flex-none flex justify-between items-center py-12 px-6 bg-[#121212] border-b border-[#333] z-10">
+      <div className="flex-none flex flex-wrap justify-between items-center py-12 px-6 bg-[#121212] border-b border-[#333] z-10 gap-4">
         <div
-            className="flex items-center justify-between min-w-[200px] gap-8 cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto ml-4"
+            className="flex items-center min-w-[200px] cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto ml-4"
             onClick={() => setShowAccountDialog(true)}
         >
-            <span className="text-white font-bold text-xl truncate mr-4">{displayName}</span>
-            <span className="bg-gray-800 px-4 py-2 rounded text-base text-gray-300 whitespace-nowrap ml-auto">{userRole}</span>
+            <span className="text-white font-bold text-xl truncate">{displayName}</span>
+            <span className="text-white text-xl whitespace-pre">    </span>
+            <span className="bg-gray-800 px-4 py-2 rounded text-base text-gray-300 whitespace-nowrap">{userRole}</span>
         </div>
-        <div className="flex items-center gap-6 mr-4">
+        <div className="flex items-center gap-6 mr-4 flex-wrap justify-end">
            <span className="font-bold text-xl text-white tracking-wide hidden sm:block">{barName}</span>
            <md-text-button onClick={() => setShowBarManager(true)} className="sm:hidden">
              <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
            </md-text-button>
 
-           <div className="flex gap-4">
+           <div className="flex gap-4 flex-wrap justify-end">
                 <md-icon-button onClick={handleShare} title="Share App" className="navbar-icon-button">
                     <md-icon className="text-white" style={{ fontSize: '36px' }}>share</md-icon>
                 </md-icon-button>

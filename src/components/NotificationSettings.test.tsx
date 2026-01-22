@@ -54,7 +54,7 @@ describe('NotificationSettings', () => {
 
         // Click Save immediately
         fireEvent.click(screen.getByText('Save'));
-        expect(mockOnSave).toHaveBeenCalledWith(['ice']);
+        expect(mockOnSave).toHaveBeenCalledWith(['ice'], '');
     });
 
     it('toggles preferences', async () => {
@@ -93,7 +93,7 @@ describe('NotificationSettings', () => {
         fireEvent.click(screen.getByText('Save'));
 
         // Should now include 'ice' and 'security'
-        expect(mockOnSave).toHaveBeenCalledWith(['ice', 'security']);
+        expect(mockOnSave).toHaveBeenCalledWith(['ice', 'security'], '');
     });
 
     it('resets to defaults', async () => {

@@ -101,6 +101,22 @@ declare module 'react' {
         disabled?: boolean | null;
         onClick?: (e: Event) => void;
       };
+      'md-menu': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        anchor?: string;
+        open?: boolean;
+        quick?: boolean;
+        fixed?: boolean;
+        x?: number;
+        y?: number;
+        positioning?: 'absolute' | 'fixed' | 'document' | 'popover';
+        onClosed?: (e: Event) => void;
+      };
+      'md-menu-item': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        disabled?: boolean | null;
+        href?: string;
+        target?: string;
+        onClick?: (e: Event) => void;
+      };
     }
   }
 }

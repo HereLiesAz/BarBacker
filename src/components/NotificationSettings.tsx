@@ -6,15 +6,17 @@ import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
 import '@material/web/switch/switch.js';
 import '@material/web/icon/icon.js';
+import '@material/web/textfield/filled-text-field.js';
 import { ButtonConfig } from '../types';
 import { ROLE_NOTIFICATION_DEFAULTS } from '../constants';
 
 interface NotificationSettingsProps {
   open: boolean;
   onClose: () => void;
-  onSave: (preferences: string[]) => void;
+  onSave: (preferences: string[], ntfyTopic: string) => void;
   userRole: string;
   currentPreferences: string[]; // List of enabled IDs
+  currentNtfyTopic?: string | null;
   allButtons: ButtonConfig[];
 }
 
@@ -24,16 +26,19 @@ const NotificationSettings = ({
   onSave,
   userRole,
   currentPreferences,
+  currentNtfyTopic,
   allButtons
 }: NotificationSettingsProps) => {
   const [preferences, setPreferences] = useState<string[]>([]);
+  const [ntfyTopic, setNtfyTopic] = useState<string>('');
 
   // Initialize preferences when the dialog opens or props change
   useEffect(() => {
     if (open) {
       setPreferences(currentPreferences);
+      setNtfyTopic(currentNtfyTopic || '');
     }
-  }, [open, currentPreferences]);
+  }, [open, currentPreferences, currentNtfyTopic]);
 
   const handleToggle = (id: string, selected: boolean) => {
     if (selected) {
@@ -49,7 +54,7 @@ const NotificationSettings = ({
   };
 
   const handleSave = () => {
-    onSave(preferences);
+    onSave(preferences, ntfyTopic);
     onClose();
   };
 
@@ -62,6 +67,18 @@ const NotificationSettings = ({
       <div slot="content" className="flex flex-col gap-4 min-w-[300px]">
         <div className="text-sm text-gray-400">
           Enable or disable notifications for your role ({userRole}).
+        </div>
+
+        <div className="p-2 bg-[#2D2D2D] rounded-lg border border-[#444]">
+            <md-filled-text-field
+                label="ntfy.sh Topic (Optional)"
+                value={ntfyTopic}
+                onInput={(e: any) => setNtfyTopic(e.target.value)}
+                placeholder="e.g. my-bar-alerts-123"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+                Enter a topic to receive iOS/Android push notifications via the <a href="https://ntfy.sh" target="_blank" className="text-blue-400 underline">ntfy app</a>.
+            </p>
         </div>
 
         <md-list className="bg-transparent max-h-[60vh] overflow-y-auto">

@@ -340,15 +340,15 @@ function App() {
 
   // --- Timer ---
   useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
+    if (timerRef.current) window.clearTimeout(timerRef.current);
     if (navStack.length > 0) {
-      timerRef.current = setTimeout(() => {
+      timerRef.current = window.setTimeout(() => {
         const trail = navStack.map(b => b.label).join(': ');
         submitRequest(`${trail} (Ask Me)`);
         setNavStack([]);
       }, 60000);
     }
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
   }, [navStack]);
 
   // --- Actions ---

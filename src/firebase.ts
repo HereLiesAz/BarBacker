@@ -23,6 +23,7 @@ export const messaging = getMessaging(app);
 
 // Auth Providers
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 export const appleProvider = new OAuthProvider('apple.com');
 
 export const requestNotificationPermission = async () => {

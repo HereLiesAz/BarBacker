@@ -653,10 +653,30 @@ function App() {
     // In a real app, you might filter by role or preference (using notificationPreferences logic would be complex here without loading every user's preferences fully).
     // Let's blindly send to all configured topics for now, as ntfy is opt-in via topic.
 
-    // We need to iterate unique topics to avoid duplicates if multiple users share a topic
+    const btnId = getButtonIdForLabel(label);
+
+    // Send ntfy notifications to relevant users
+    // Filter logic: Users who are active, not the requester, and have a topic
+    // AND fulfill the role-based filtering requirement
     const topics = new Set<string>();
+
     allUsers.forEach(u => {
-        if (u.id !== user.uid && u.ntfyTopic) {
+        if (u.id === user.uid || !u.ntfyTopic) return;
+
+        let prefs = u.notificationPreferences;
+        if (!prefs && u.role) {
+            prefs = ROLE_NOTIFICATION_DEFAULTS[u.role] || [];
+        }
+
+        // Special BREAK logic
+        if (label.includes('BREAK') || btnId === 'break') {
+             if (u.role === 'Manager' || u.role === 'Owner' || u.role === userRole) {
+                 topics.add(u.ntfyTopic);
+             }
+             return;
+        }
+
+        if (prefs && btnId && prefs.includes(btnId)) {
             topics.add(u.ntfyTopic);
         }
     });
@@ -775,20 +795,7 @@ function App() {
         </div>
         <div className="text-center text-gray-500 text-sm mt-8 space-y-2">
             <p>Install <span className="text-blue-400">BarBacker PWA</span> for Android.</p>
-            {user && (
-                <div className="flex flex-col items-center gap-1 mt-4">
-                     <p>iOS Users:</p>
-                     <a
-                        href={`ntfy://subscribe/barbacker-${user.uid}`}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full font-bold text-sm inline-flex items-center gap-2"
-                     >
-                        <md-icon style={{ fontSize: '18px' }}>notifications_active</md-icon>
-                        Subscribe to Alerts
-                     </a>
-                     <span className="text-xs text-green-400 font-bold">(It's free!)</span>
-                     <span className="text-xs text-gray-600">(Requires ntfy app)</span>
-                </div>
-            )}
+            <p>For iOS alerts, install <a href="https://ntfy.sh" target="_blank" className="text-blue-400 underline">ntfy.sh</a>.</p>
         </div>
       </div>
     );

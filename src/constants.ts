@@ -3,11 +3,13 @@ import { ButtonConfig } from './types';
 export const ROLES = ['Owner', 'Bartender', 'Barback', 'Server', 'Manager', 'Security', 'Runner'];
 
 export const DEFAULT_BEERS = [
-  'Corona', 'Heineken', 'Guinness', 'Budweiser', 'Corona Light',
-  'Blue Moon', 'Stella Artois', 'Samuel Adams', 'Miller', 'Dos Equis',
-  'Modelo', 'Heineken Light', 'Miller High Life', 'Coors', 'Corona Extra',
-  'Michelob Light', 'Miller Lite', 'Coors Light', 'Bud Light', 'Coors Banquet',
-  'Pabst Blue Ribbon', 'Busch', 'Natural Light', 'Yuengling', 'Michelob Ultra'
+  'Amstel Light', 'Bass Ale', 'Beck\'s', 'Blue Moon', 'Bud Light', 'Bud Light Lime', 'Bud Light Platinum', 'Budweiser',
+  'Busch', 'Busch Light', 'Coors', 'Coors Banquet', 'Coors Light', 'Corona', 'Corona Extra', 'Corona Light', 'Corona Premier',
+  'Dos Equis Amber', 'Dos Equis Lager', 'Foster\'s', 'Goose Island IPA', 'Guinness', 'Heineken', 'Heineken 0.0', 'Heineken Light',
+  'Hoegaarden', 'Kona Big Wave', 'Lagunitas IPA', 'Landshark Lager', 'Michelob', 'Michelob Light', 'Michelob Ultra', 'Michelob Ultra Amber',
+  'Miller Genuine Draft', 'Miller High Life', 'Miller Lite', 'Modelo Especial', 'Modelo Negra', 'Natural Light', 'Newcastle Brown Ale',
+  'Pabst Blue Ribbon', 'Pacifico', 'Peroni', 'Pilsner Urquell', 'Red Stripe', 'Rolling Rock', 'Samuel Adams Boston Lager', 'Sapporo',
+  'Shiner Bock', 'Shock Top', 'Sierra Nevada Pale Ale', 'Sol', 'St. Pauli Girl', 'Stella Artois', 'Tecate', 'Victoria', 'Yuengling'
 ];
 
 export const DEFAULT_BUTTONS: ButtonConfig[] = [
@@ -80,10 +82,10 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
 // Map of Role -> Array of Button IDs that are enabled by default
 export const ROLE_NOTIFICATION_DEFAULTS: Record<string, string[]> = {
   'Owner': ['manager', 'security', 'keg', 'trash', 'ice', 'glass', 'fruit', 'restock', 'mixers', 'restock_beer', 'break'],
-  'Manager': ['manager', 'security', 'keg', 'trash', 'restock', 'mixers', 'restock_beer', 'break'],
+  'Manager': ['manager', 'security', 'keg', 'trash', 'break'],
   'Bartender': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer'],
-  'Barback': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer'],
+  'Barback': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer', 'break'],
   'Server': [],
   'Runner': ['ice', 'glass', 'restock', 'mixers', 'restock_beer'],
-  'Security': ['security', 'fight', 'manager']
+  'Security': ['security', 'manager', 'break']
 };

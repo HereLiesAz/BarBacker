@@ -1,112 +1,15 @@
 /// <reference types="vite/client" />
 
-import * as React from 'react';
-
-declare module 'react' {
-  namespace JSX {
-    interface IntrinsicElements {
-      'md-filled-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean | null;
-        type?: 'button' | 'submit' | 'reset';
-        value?: string;
-        form?: string;
-      };
-      'md-outlined-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean | null;
-        type?: 'button' | 'submit' | 'reset';
-        form?: string;
-      };
-      'md-text-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean | null;
-        type?: 'button' | 'submit' | 'reset';
-        href?: string;
-        target?: string;
-        form?: string;
-      };
-      'md-filled-tonal-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean | null;
-        type?: 'button' | 'submit' | 'reset';
-        form?: string;
-      };
-      'md-elevated-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean | null;
-        type?: 'button' | 'submit' | 'reset';
-        form?: string;
-      };
-      'md-dialog': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        open?: boolean;
-        onClose?: (e: Event) => void;
-      };
-      'md-filled-text-field': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        label?: string;
-        value?: string;
-        type?: string;
-        placeholder?: string;
-        required?: boolean;
-        disabled?: boolean | null;
-        error?: boolean;
-        errorText?: string;
-        supportingText?: string;
-        name?: string;
-        onInput?: (e: Event) => void;
-        onChange?: (e: Event) => void;
-        min?: string | number;
-        max?: string | number;
-      };
-      'md-checkbox': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        checked?: boolean;
-        disabled?: boolean | null;
-        indeterminate?: boolean;
-        onChange?: (e: Event) => void;
-      };
-      'md-switch': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        selected?: boolean;
-        disabled?: boolean | null;
-        onChange?: (e: Event) => void;
-      };
-      'md-list': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'md-list-item': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        type?: 'button' | 'link' | 'text';
-        href?: string;
-        disabled?: boolean | null;
-        active?: boolean;
-        selected?: boolean;
-      };
-      'md-icon': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        slot?: string;
-      };
-      'md-icon-button': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        disabled?: boolean | null;
-        href?: string;
-        target?: string;
-        onClick?: (e: Event) => void;
-      };
-      'md-radio': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        checked?: boolean;
-        disabled?: boolean | null;
-        value?: string;
-        name?: string;
-        onChange?: (e: Event) => void;
-        'touch-target'?: 'wrapper' | 'none';
-      };
-      'md-circular-progress': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        indeterminate?: boolean;
-        value?: number;
-        max?: number;
-      };
-      'md-chip-set': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'md-filter-chip': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        label?: string;
-        selected?: boolean;
-        disabled?: boolean | null;
-        onClick?: (e: Event) => void;
-      };
-    }
-  }
+interface ImportMetaEnv {
+  readonly VITE_FIREBASE_API_KEY: string
+  readonly VITE_FIREBASE_AUTH_DOMAIN: string
+  readonly VITE_FIREBASE_PROJECT_ID: string
+  readonly VITE_FIREBASE_STORAGE_BUCKET: string
+  readonly VITE_FIREBASE_MESSAGING_SENDER_ID: string
+  readonly VITE_FIREBASE_APP_ID: string
+  readonly VITE_FIREBASE_VAPID_KEY: string
 }
 
-declare global {
-  interface HTMLElementTagNameMap {
-    'md-dialog': any;
-  }
+interface ImportMeta {
+  readonly env: ImportMetaEnv
 }

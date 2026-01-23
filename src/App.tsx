@@ -631,6 +631,7 @@ function App() {
     setBarId(null);
     localStorage.removeItem('barId');
     setShowOffClockDialog(false);
+    await signOut(auth);
   };
 
   const submitRequest = async (label: string) => {
@@ -725,6 +726,7 @@ function App() {
     setBarId(null);
     localStorage.removeItem('barId');
     setShowAccountDialog(false);
+    await signOut(auth);
   };
 
   const handleDeleteAccount = async () => {
@@ -852,7 +854,10 @@ function App() {
   if (!userRole) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black">
-        <md-icon-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}><md-icon>arrow_back</md-icon></md-icon-button>
+        <div className="flex w-full justify-between items-center max-w-[300px]">
+            <md-icon-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}><md-icon>arrow_back</md-icon></md-icon-button>
+            <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
+        </div>
         <RoleSelector onSelect={confirmRole} />
       </div>
     );
@@ -985,11 +990,11 @@ function App() {
       <md-dialog open={showOffClockDialog || undefined} onClose={() => setShowOffClockDialog(false)}>
         <div slot="headline">Abandon Ship?</div>
         <div slot="content">
-          Going off clock stops all notifications. The bar will be unprotected. Are you sure?
+          Going off clock stops all notifications and signs you out. The bar will be unprotected. Are you sure?
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setShowOffClockDialog(false)}>Stay</md-text-button>
-          <md-filled-button onClick={goOffClock} className="btn-alert">Leave</md-filled-button>
+          <md-filled-button onClick={goOffClock} className="btn-alert">Clock Out</md-filled-button>
         </div>
       </md-dialog>
 

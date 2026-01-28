@@ -112,7 +112,8 @@ function App() {
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
-  const timerRef = useRef<number | null>(null);
+  // Use proper return type for browser environment
+  const timerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const isDraggingRef = useRef(false);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);

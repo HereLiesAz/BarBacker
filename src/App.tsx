@@ -16,6 +16,7 @@ import {
   where, 
   onSnapshot, 
   orderBy, 
+  limit,
   updateDoc, 
   doc,
   serverTimestamp,
@@ -313,7 +314,7 @@ function App() {
     });
 
     const unsubReq = onSnapshot(
-      query(collection(db, 'requests'), where('barId', '==', barId), orderBy('timestamp', 'desc')), 
+      query(collection(db, 'requests'), where('barId', '==', barId), orderBy('timestamp', 'desc'), limit(100)),
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 

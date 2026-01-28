@@ -16,6 +16,7 @@ import {
   where, 
   onSnapshot, 
   orderBy, 
+  limit,
   updateDoc, 
   doc,
   serverTimestamp,
@@ -24,6 +25,8 @@ import {
   deleteDoc,
   arrayUnion,
   increment,
+  limit,
+  getDocs,
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -53,6 +56,7 @@ import '@material/web/menu/menu-item.js';
 
 import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
+import { useNag } from './hooks/useNag';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
@@ -119,6 +123,8 @@ function App() {
   const [showWhoIsOn, setShowWhoIsOn] = useState(false);
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
 
+  const shouldFetchAllUsers = showBarManager || showWhoIsOn;
+
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
   const [noticeText, setNoticeText] = useState('');
@@ -175,26 +181,7 @@ function App() {
       return aIgnored ? 1 : -1;
   });
 
-  // Reference to active requests for the nag timer
-  const activeRequestsRef = useRef<Request[]>([]);
-
-  // Keep ref updated for the interval
-  useEffect(() => {
-    activeRequestsRef.current = activeRequests;
-  }, [activeRequests]);
-
-  // Nag Script: Play sound every 5 minutes if there are pending requests
-  useEffect(() => {
-    const interval = setInterval(() => {
-       const pending = activeRequestsRef.current.filter(r => !ignoredIds.includes(r.id));
-       if (pending.length > 0) {
-           const audio = new Audio('/alert.wav');
-           audio.play().catch(e => console.log('Audio play failed', e));
-           if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-       }
-    }, 1 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [ignoredIds]);
+  useNag(activeRequests, ignoredIds);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -314,32 +301,34 @@ function App() {
     });
 
     const unsubReq = onSnapshot(
-      query(collection(db, 'requests'), where('barId', '==', barId), orderBy('timestamp', 'desc')), 
+      query(collection(db, 'requests'), where('barId', '==', barId), orderBy('timestamp', 'desc'), limit(100)),
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
-    const unsubAllUsers = onSnapshot(collection(db, `bars/${barId}/users`), (s) => {
+    const userQuery = shouldFetchAllUsers
+        ? collection(db, `bars/${barId}/users`)
+        : query(collection(db, `bars/${barId}/users`), where('status', 'in', ['active', 'pending']));
+
+    const unsubAllUsers = onSnapshot(userQuery, (s) => {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
     // Notices Subscription
     const unsubNotices = onSnapshot(
-      query(collection(db, `bars/${barId}/notices`), orderBy('timestamp', 'desc')),
+      query(
+        collection(db, `bars/${barId}/notices`),
+        // Filter for last 3 days. Legacy documents without timestamp will be excluded.
+        where('timestamp', '>=', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
+        orderBy('timestamp', 'desc')
+      ),
       (s) => {
-        const now = Date.now();
-        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-        const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice))
-            .filter(n => {
-                // Filter locally for 3 days expiration if simpler than composite index query
-                const ts = n.timestamp && (n.timestamp as any).toMillis ? (n.timestamp as any).toMillis() : Date.now();
-                return (now - ts) < threeDaysMs;
-            });
+        const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice));
         setNotices(validNotices);
       }
     );
 
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
-  }, [user, barId, fcmToken, setSearchParams]);
+  }, [user, barId, fcmToken, setSearchParams, shouldFetchAllUsers]);
 
   // --- Timer ---
   useEffect(() => {
@@ -601,8 +590,13 @@ function App() {
 
     let status = 'active';
     if (role !== 'Owner') {
-        const hasManager = allUsers.some(u => u.role === 'Owner' || u.role === 'Manager');
-        if (hasManager) {
+        const q = query(
+          collection(db, `bars/${barId}/users`),
+          where('role', 'in', ['Owner', 'Manager']),
+          limit(1)
+        );
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
             status = 'pending';
         }
     }
@@ -665,7 +659,7 @@ function App() {
     const topics = new Set<string>();
 
     allUsers.forEach(u => {
-        if (u.id === user.uid || !u.ntfyTopic) return;
+        if (u.status !== 'active' || u.id === user.uid || !u.ntfyTopic) return;
 
         let prefs = u.notificationPreferences;
         if (!prefs && u.role) {

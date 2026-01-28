@@ -23,8 +23,8 @@ vi.mock('firebase/auth', () => ({
 // Mock Firebase Firestore
 // We need to spy on 'query' and 'where' so we don't mock them completely in the factory
 // Instead we mock the module in a way that allows spying
-vi.mock('firebase/firestore', async (importOriginal) => {
-    const actual = await importOriginal<typeof firestore>();
+vi.mock('firebase/firestore', async () => {
+    const actual = await vi.importActual<typeof firestore>('firebase/firestore');
     return {
         ...actual,
         getFirestore: vi.fn(),
@@ -82,18 +82,22 @@ describe('Notices Query Optimization', () => {
 
   afterEach(() => {
       localStorage.clear();
+      vi.useRealTimers();
   });
 
   it('initial query should have timestamp filter', async () => {
+    // Setup time
+    const fixedNow = new Date('2024-01-10T00:00:00Z');
+    vi.setSystemTime(fixedNow); // Only mock Date, avoid timer issues with waitFor
+
     render(
       <MemoryRouter>
         <App />
       </MemoryRouter>
     );
 
-    // Wait for the useEffect to run (which calls onSnapshot)
     await waitFor(() => {
-        expect(firestore.onSnapshot).toHaveBeenCalled();
+       expect(firestore.onSnapshot).toHaveBeenCalled();
     });
 
     // Find the call to onSnapshot for notices
@@ -108,7 +112,6 @@ describe('Notices Query Optimization', () => {
 
     // Check query calls
     // We expect query to be called with the collection and orderBy
-    // We verify that 'where' is NOT called for this query (or at least not with 'timestamp')
 
     const queryCalls = vi.mocked(firestore.query).mock.calls;
     // Inspect arguments passed to query. One of them should be the result of collection('.../notices')
@@ -121,6 +124,9 @@ describe('Notices Query Optimization', () => {
     // NEW BEHAVIOR: Server-side filtering on timestamp should be present
     expect(timestampFilter).toBeDefined();
     expect(timestampFilter?.[1]).toBe('>=');
-    expect(timestampFilter?.[2]).toBeInstanceOf(Date);
+
+    // The timestamp filter should use a deterministic 3-day cutoff from "now"
+    const expectedTimestampBoundary = new Date(fixedNow.getTime() - 3 * 24 * 60 * 60 * 1000);
+    expect(timestampFilter?.[2]).toEqual(expectedTimestampBoundary);
   });
 });

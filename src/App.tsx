@@ -51,13 +51,14 @@ import '@material/web/iconbutton/icon-button.js';
 import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
 
-import { Bar, ButtonConfig, Request, Notice } from './types';
+import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
 import BarManager from './components/BarManager';
 import InputDialog from './components/InputDialog';
+import { WhoIsOnDialog } from './components/WhoIsOnDialog';
 import { SortableButton } from './components/SortableButton';
 import {
   DndContext,
@@ -114,6 +115,7 @@ function App() {
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [showBarManager, setShowBarManager] = useState(false);
   const [showAccountDialog, setShowAccountDialog] = useState(false);
+  const [showWhoIsOn, setShowWhoIsOn] = useState(false);
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
 
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -909,6 +911,12 @@ function App() {
         currentUserRole={userRole || ''}
       />
 
+      <WhoIsOnDialog
+        open={showWhoIsOn}
+        onClose={() => setShowWhoIsOn(false)}
+        users={allUsers as BarUser[]}
+      />
+
       <NotificationSettings
         open={showNotificationSettings}
         onClose={() => setShowNotificationSettings(false)}
@@ -1051,6 +1059,10 @@ function App() {
                         <md-menu-item onClick={handleShare}>
                             <md-icon slot="start">share</md-icon>
                             <div slot="headline">Share</div>
+                        </md-menu-item>
+                        <md-menu-item onClick={() => setShowWhoIsOn(true)}>
+                            <md-icon slot="start">group</md-icon>
+                            <div slot="headline">Who's On</div>
                         </md-menu-item>
                         <md-menu-item onClick={() => { setIsAddingNotice(true); setNoticeError(null); }}>
                             <md-icon slot="start">campaign</md-icon>

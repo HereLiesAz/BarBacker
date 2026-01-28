@@ -113,8 +113,8 @@ function App() {
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
-  // Use proper return type for browser environment
-  const timerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  // Use environment-agnostic timeout return type (works in SSR and browsers)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isDraggingRef = useRef(false);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);

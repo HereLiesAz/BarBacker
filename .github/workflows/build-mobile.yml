@@ -90,7 +90,7 @@ jobs:
           cache-read-only: false
 
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        run: chmod +x android/gradlew
 
       - name: Build with Gradle
         id: gradle-build
@@ -105,14 +105,15 @@ jobs:
           # Build the APK
           if [ -f "app/keystore.jks" ]; then
             echo "Building with custom keystore..."
-            ./gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache \
+            ./android/gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache \
               -Pandroid.injected.signing.store.file=$(pwd)/app/keystore.jks \
               -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
               -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
-              -Pandroid.injected.signing.key.password=$KEY_PASSWORD > build.log 2>&1
+              -Pandroid.injected.signing.key.password=$KEY_PASSWORD \
+              -p android > build.log 2>&1
           else
             echo "Building with default debug keystore..."
-            ./gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache > build.log 2>&1
+            ./android/gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache -p android > build.log 2>&1
           fi
           
           EXIT_CODE=$?

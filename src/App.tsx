@@ -176,6 +176,7 @@ function App() {
 
   // Reference to active requests for the nag timer
   const activeRequestsRef = useRef<Request[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Keep ref updated for the interval
   useEffect(() => {
@@ -187,8 +188,11 @@ function App() {
     const interval = setInterval(() => {
        const pending = activeRequestsRef.current.filter(r => !ignoredIds.includes(r.id));
        if (pending.length > 0) {
-           const audio = new Audio('/alert.wav');
-           audio.play().catch(e => console.log('Audio play failed', e));
+           if (!audioRef.current) {
+               audioRef.current = new Audio('/alert.wav');
+           }
+           audioRef.current.currentTime = 0;
+           audioRef.current.play().catch(e => console.log('Audio play failed', e));
            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
        }
     }, 1 * 60 * 1000);

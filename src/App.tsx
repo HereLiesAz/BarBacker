@@ -25,6 +25,8 @@ import {
   deleteDoc,
   arrayUnion,
   increment,
+  limit,
+  getDocs,
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -118,6 +120,8 @@ function App() {
   const [showAccountDialog, setShowAccountDialog] = useState(false);
   const [showWhoIsOn, setShowWhoIsOn] = useState(false);
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
+
+  const shouldFetchAllUsers = showBarManager || showWhoIsOn;
 
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
@@ -322,7 +326,11 @@ function App() {
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
-    const unsubAllUsers = onSnapshot(collection(db, `bars/${barId}/users`), (s) => {
+    const userQuery = shouldFetchAllUsers
+        ? collection(db, `bars/${barId}/users`)
+        : query(collection(db, `bars/${barId}/users`), where('status', 'in', ['active', 'pending']));
+
+    const unsubAllUsers = onSnapshot(userQuery, (s) => {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
@@ -340,7 +348,7 @@ function App() {
     );
 
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
-  }, [user, barId, fcmToken, setSearchParams]);
+  }, [user, barId, fcmToken, setSearchParams, shouldFetchAllUsers]);
 
   // --- Timer ---
   useEffect(() => {
@@ -602,8 +610,13 @@ function App() {
 
     let status = 'active';
     if (role !== 'Owner') {
-        const hasManager = allUsers.some(u => u.role === 'Owner' || u.role === 'Manager');
-        if (hasManager) {
+        const q = query(
+          collection(db, `bars/${barId}/users`),
+          where('role', 'in', ['Owner', 'Manager']),
+          limit(1)
+        );
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
             status = 'pending';
         }
     }
@@ -666,7 +679,7 @@ function App() {
     const topics = new Set<string>();
 
     allUsers.forEach(u => {
-        if (u.id === user.uid || !u.ntfyTopic) return;
+        if (u.status !== 'active' || u.id === user.uid || !u.ntfyTopic) return;
 
         let prefs = u.notificationPreferences;
         if (!prefs && u.role) {

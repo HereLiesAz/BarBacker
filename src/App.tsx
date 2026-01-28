@@ -841,7 +841,7 @@ function App() {
            <md-outlined-button onClick={handleGoogle}><md-icon slot="icon">mail</md-icon>Google</md-outlined-button>
         </div>
         <div className="text-center text-gray-500 text-sm mt-8 space-y-2">
-            <p>Install <span className="text-blue-400">BarBacker PWA</span> for Android.</p>
+            <p><a href="https://github.com/HereLiesAz/BarBacker/releases/latest" className="text-blue-400 underline">Install BarBacker App</a> for Android.</p>
             <p>For iOS alerts, install <a href="https://ntfy.sh" target="_blank" className="text-blue-400 underline">ntfy.sh</a>.</p>
         </div>
       </div>
@@ -880,7 +880,7 @@ function App() {
           }
         }} />
         <div className="text-center text-gray-500 text-xs mt-8 space-y-2 max-w-[300px]">
-            <p>Tip: Install <span className="text-blue-400">BarBacker</span> as an app for the best experience.</p>
+            <p>Tip: <a href="https://github.com/HereLiesAz/BarBacker/releases/latest" className="text-blue-400 underline">Install BarBacker App</a> for the best experience.</p>
             <div className="flex flex-col items-center gap-1 mt-2">
                  <a
                     href={`ntfy://subscribe/barbacker-${user.uid}`}

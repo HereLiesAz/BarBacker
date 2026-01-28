@@ -54,3 +54,14 @@ export interface OSMResult {
   display_name: string;
   name: string;
 }
+
+export interface BarUser {
+  id: string;
+  displayName?: string;
+  role?: string;
+  status?: 'active' | 'off_clock' | 'pending';
+  lastSeen?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  email?: string;
+  notificationPreferences?: string[];
+  ntfyTopic?: string;
+}

@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">barbacker</string>
-    <string name="title_activity_main">barbacker</string>
+    <string name="app_name">BarBacker</string>
+    <string name="title_activity_main">BarBacker</string>
     <string name="package_name">com.barbacker.app</string>
     <string name="custom_url_scheme">com.barbacker.app</string>
 </resources>

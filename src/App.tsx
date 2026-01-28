@@ -32,6 +32,9 @@ import {
   requestNotificationPermission, 
   onMessageListener 
 } from './firebase';
+import { PushNotifications } from '@capacitor/push-notifications';
+import { Capacitor } from '@capacitor/core';
+import { useLatestRelease } from './hooks/useLatestRelease';
 
 // --- Material Web Imports ---
 import '@material/web/button/filled-button.js';
@@ -124,6 +127,7 @@ function App() {
   const [noticeError, setNoticeError] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { downloadUrl: apkUrl, loading: apkLoading } = useLatestRelease();
 
   const sensors = useSensors(
     useSensor(TouchSensor, {
@@ -206,36 +210,69 @@ function App() {
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
-      // Only request permission if already installed (standalone)
       if (u) {
+        if (Capacitor.isNativePlatform()) {
+          // Native Push Logic
+          try {
+             await PushNotifications.addListener('registration', token => {
+                setFcmToken(token.value);
+             });
+
+             await PushNotifications.addListener('registrationError', err => {
+                console.error('Registration error: ', err.error);
+             });
+
+             await PushNotifications.addListener('pushNotificationReceived', () => {
+                if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+                const audio = new Audio('/alert.wav');
+                audio.play().catch(() => {});
+             });
+
+             await PushNotifications.addListener('pushNotificationActionPerformed', () => {
+                 // Future: Handle tap action
+             });
+
+             let permStatus = await PushNotifications.checkPermissions();
+             if (permStatus.receive === 'prompt') {
+               permStatus = await PushNotifications.requestPermissions();
+             }
+             if (permStatus.receive === 'granted') {
+               await PushNotifications.register();
+             }
+          } catch (e) {
+             console.error("Native push setup failed", e);
+          }
+        } else {
+          // Web Logic
           const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
           if (isStandalone) {
               requestNotificationPermission().then(t => t && setFcmToken(t));
           }
-      }
-    });
-    onMessageListener().then((payload: any) => {
-      if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+          onMessageListener().then((payload: any) => {
+            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
 
-      if (payload && payload.notification) {
-        new Notification(payload.notification.title, {
-          body: payload.notification.body,
-          icon: '/icon-192x192.png',
-        });
-      }
+            if (payload && payload.notification) {
+              new Notification(payload.notification.title, {
+                body: payload.notification.body,
+                icon: '/icon-192x192.png',
+              });
+            }
 
-      const audio = new Audio('/alert.wav');
-      let plays = 0;
-      audio.onended = () => {
-          plays++;
-          if (plays < 8) {
-              audio.currentTime = 0;
-              audio.play().catch(() => {});
-          }
-      };
-      audio.play().catch(() => {});
+            const audio = new Audio('/alert.wav');
+            let plays = 0;
+            audio.onended = () => {
+                plays++;
+                if (plays < 8) {
+                    audio.currentTime = 0;
+                    audio.play().catch(() => {});
+                }
+            };
+            audio.play().catch(() => {});
+          });
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -798,7 +835,13 @@ function App() {
            <md-outlined-button onClick={handleGoogle}><md-icon slot="icon">mail</md-icon>Google</md-outlined-button>
         </div>
         <div className="text-center text-gray-500 text-sm mt-8 space-y-2">
-            <p>Install <span className="text-blue-400">BarBacker PWA</span> for Android.</p>
+            <p>
+              {apkLoading ? (
+                 <span>Checking for Android App...</span>
+              ) : (
+                 <a href={apkUrl || "https://github.com/HereLiesAz/BarBacker/releases/latest"} className="text-blue-400 underline">Install BarBacker App</a>
+              )} for Android.
+            </p>
             <p>For iOS alerts, install <a href="https://ntfy.sh" target="_blank" className="text-blue-400 underline">ntfy.sh</a>.</p>
         </div>
       </div>
@@ -837,7 +880,9 @@ function App() {
           }
         }} />
         <div className="text-center text-gray-500 text-xs mt-8 space-y-2 max-w-[300px]">
-            <p>Tip: Install <span className="text-blue-400">BarBacker</span> as an app for the best experience.</p>
+            <p>
+              Tip: <a href={apkUrl || "https://github.com/HereLiesAz/BarBacker/releases/latest"} className="text-blue-400 underline">Install BarBacker App</a> for the best experience.
+            </p>
             <div className="flex flex-col items-center gap-1 mt-2">
                  <a
                     href={`ntfy://subscribe/barbacker-${user.uid}`}

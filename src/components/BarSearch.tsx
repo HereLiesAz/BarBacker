@@ -20,6 +20,8 @@ const MODES = [
     { id: 'create', label: 'Create' }
 ] as const;
 
+export const SEARCH_DEBOUNCE_MS = 500;
+
 const BarSearch = ({ onJoin }: BarSearchProps) => {
   const [mode, setMode] = useState<'search' | 'create'>('search');
 
@@ -77,7 +79,7 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
         } finally {
           setIsSearching(false);
         }
-      }, 500);
+      }, SEARCH_DEBOUNCE_MS);
       return () => clearTimeout(timer);
     } else {
       setResults([]);
@@ -128,7 +130,7 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
 
                 {isSearching && (
                     <div className="flex justify-center p-4">
-                        <md-circular-progress indeterminate></md-circular-progress>
+                        <md-circular-progress indeterminate data-testid="search-progress"></md-circular-progress>
                     </div>
                 )}
 

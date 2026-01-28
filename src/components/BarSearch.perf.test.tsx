@@ -1,6 +1,6 @@
-import { render, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import BarSearch from './BarSearch';
+import BarSearch, { SEARCH_DEBOUNCE_MS } from './BarSearch';
 
 // Mock Firebase
 vi.mock('../firebase', () => ({
@@ -47,7 +47,7 @@ describe('BarSearch Performance', () => {
     const fetchMock = vi.spyOn(global, 'fetch').mockReturnValue(fetchPromise as any);
     (getDocs as any).mockReturnValue(firestorePromise);
 
-    const { container } = render(<BarSearch onJoin={() => {}} />);
+    const { container, getByTestId } = render(<BarSearch onJoin={() => {}} />);
 
     const input = container.querySelector('md-filled-text-field');
     if (!input) throw new Error('Input not found');
@@ -58,17 +58,22 @@ describe('BarSearch Performance', () => {
         fireEvent.input(input);
     });
 
-    // Advance timer to trigger the debounce effect
+    // Advance timer to trigger the debounce effect, using the constant
     await act(async () => {
-        vi.advanceTimersByTime(500);
+        vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
     });
 
     // The component sets isSearching=true immediately when the timeout fires,
     // BEFORE awaiting the promises. So we can check for spinners now.
 
-    // We expect 2 currently: 1 in input, 1 below
-    const progressBars = container.querySelectorAll('md-circular-progress');
-    expect(progressBars.length).toBe(2);
+    // We expect 1 main spinner with the test ID
+    const mainProgress = getByTestId('search-progress');
+    expect(mainProgress).toBeInTheDocument();
+
+    // Check total count including the one inside the input
+    // The one in the input is in a slot, we'll still query all to ensure no extras
+    const allProgressBars = container.querySelectorAll('md-circular-progress');
+    expect(allProgressBars.length).toBe(2);
 
     expect(fetchMock).toHaveBeenCalled();
 

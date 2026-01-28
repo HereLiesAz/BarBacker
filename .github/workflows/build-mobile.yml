@@ -51,6 +51,11 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
+          if [ -z "$KEYSTORE_PRIVATE" ]; then
+            echo "Warning: KEYSTORE_PRIVATE secret is missing. Skipping custom keystore generation."
+            exit 0
+          fi
+
           echo "Generating keystore from certificate chain and private key..."
 
           # Write the private key and certificate chain to temporary files
@@ -99,11 +104,17 @@ jobs:
           export BUILD_NUMBER=$(git rev-list --count HEAD)
           
           # Build the APK
-          ./gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache \
-            -Pandroid.injected.signing.store.file=$(pwd)/app/keystore.jks \
-            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$KEY_PASSWORD > build.log 2>&1
+          if [ -f "app/keystore.jks" ]; then
+            echo "Building with custom keystore..."
+            ./gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache \
+              -Pandroid.injected.signing.store.file=$(pwd)/app/keystore.jks \
+              -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+              -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+              -Pandroid.injected.signing.key.password=$KEY_PASSWORD > build.log 2>&1
+          else
+            echo "Building with default debug keystore..."
+            ./gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache > build.log 2>&1
+          fi
           
           EXIT_CODE=$?
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT

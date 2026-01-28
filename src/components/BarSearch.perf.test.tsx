@@ -1,5 +1,5 @@
 import { render, fireEvent, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import BarSearch from './BarSearch';
 
 // Mock Firebase
@@ -14,7 +14,7 @@ vi.mock('firebase/firestore', async () => {
         collection: vi.fn(),
         query: vi.fn(),
         where: vi.fn(),
-        getDocs: vi.fn().mockReturnValue(new Promise(() => {})), // Never resolve to keep loading state
+        getDocs: vi.fn(), // Will be mocked per test
         limit: vi.fn(),
         orderBy: vi.fn(),
         startAt: vi.fn(),
@@ -22,12 +22,31 @@ vi.mock('firebase/firestore', async () => {
     };
 });
 
-// Mock fetch to never resolve
-const fetchMock = vi.fn().mockReturnValue(new Promise(() => {}));
-global.fetch = fetchMock;
+import { getDocs } from 'firebase/firestore';
 
 describe('BarSearch Performance', () => {
-  it('renders redundant progress indicators during search', async () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('renders optimized progress indicators during search', async () => {
+    // Create controlled promises that we can resolve later
+    let resolveFetch: (val: any) => void;
+    const fetchPromise = new Promise(resolve => { resolveFetch = resolve; });
+
+    let resolveFirestore: (val: any) => void;
+    const firestorePromise = new Promise(resolve => { resolveFirestore = resolve; });
+
+    // Mock fetch and Firestore to return these pending promises
+    const fetchMock = vi.spyOn(global, 'fetch').mockReturnValue(fetchPromise as any);
+    (getDocs as any).mockReturnValue(firestorePromise);
+
     const { container } = render(<BarSearch onJoin={() => {}} />);
 
     const input = container.querySelector('md-filled-text-field');
@@ -39,11 +58,24 @@ describe('BarSearch Performance', () => {
         fireEvent.input(input);
     });
 
-    // Wait for the debounce timeout (500ms) to trigger the effect and set isSearching=true
-    await waitFor(() => {
-        const progressBars = container.querySelectorAll('md-circular-progress');
-        // We expect 2 currently: 1 in input, 1 below
-        expect(progressBars.length).toBe(2);
-    }, { timeout: 2000 });
+    // Advance timer to trigger the debounce effect
+    await act(async () => {
+        vi.advanceTimersByTime(500);
+    });
+
+    // The component sets isSearching=true immediately when the timeout fires,
+    // BEFORE awaiting the promises. So we can check for spinners now.
+
+    // We expect 2 currently: 1 in input, 1 below
+    const progressBars = container.querySelectorAll('md-circular-progress');
+    expect(progressBars.length).toBe(2);
+
+    expect(fetchMock).toHaveBeenCalled();
+
+    // Clean up by resolving the promises so the test can finish gracefully
+    await act(async () => {
+        resolveFetch!({ json: async () => [] });
+        resolveFirestore!({ docs: [] });
+    });
   });
 });

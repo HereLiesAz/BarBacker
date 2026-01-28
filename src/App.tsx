@@ -330,6 +330,18 @@ function App() {
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
   }, [user, barId, fcmToken, setSearchParams, shouldFetchAllUsers]);
 
+  // --- Data Healing ---
+  useEffect(() => {
+    if (shouldFetchAllUsers && barId) {
+        allUsers.forEach(u => {
+            if (u.status === undefined) {
+                updateDoc(doc(db, `bars/${barId}/users`, u.id), { status: 'active' })
+                    .catch(e => console.error("Failed to heal user status", e));
+            }
+        });
+    }
+  }, [allUsers, shouldFetchAllUsers, barId]);
+
   // --- Timer ---
   useEffect(() => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
@@ -659,7 +671,9 @@ function App() {
     const topics = new Set<string>();
 
     allUsers.forEach(u => {
-        if (u.status !== 'active' || u.id === user.uid || !u.ntfyTopic) return;
+        // Treat undefined status as active for backward compatibility
+        const isActive = u.status === 'active' || u.status === undefined;
+        if (!isActive || u.id === user.uid || !u.ntfyTopic) return;
 
         let prefs = u.notificationPreferences;
         if (!prefs && u.role) {

@@ -53,6 +53,7 @@ import '@material/web/menu/menu-item.js';
 
 import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
+import { useNag } from './hooks/useNag';
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
@@ -174,26 +175,7 @@ function App() {
       return aIgnored ? 1 : -1;
   });
 
-  // Reference to active requests for the nag timer
-  const activeRequestsRef = useRef<Request[]>([]);
-
-  // Keep ref updated for the interval
-  useEffect(() => {
-    activeRequestsRef.current = activeRequests;
-  }, [activeRequests]);
-
-  // Nag Script: Play sound every 5 minutes if there are pending requests
-  useEffect(() => {
-    const interval = setInterval(() => {
-       const pending = activeRequestsRef.current.filter(r => !ignoredIds.includes(r.id));
-       if (pending.length > 0) {
-           const audio = new Audio('/alert.wav');
-           audio.play().catch(e => console.log('Audio play failed', e));
-           if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-       }
-    }, 1 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [ignoredIds]);
+  useNag(activeRequests, ignoredIds);
 
   useEffect(() => {
     const handler = (e: any) => {

@@ -34,6 +34,8 @@ import {
   requestNotificationPermission, 
   onMessageListener 
 } from './firebase';
+import { PushNotifications } from '@capacitor/push-notifications';
+import { Capacitor } from '@capacitor/core';
 
 // --- Material Web Imports ---
 import '@material/web/button/filled-button.js';
@@ -193,36 +195,69 @@ function App() {
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
-      // Only request permission if already installed (standalone)
       if (u) {
+        if (Capacitor.isNativePlatform()) {
+          // Native Push Logic
+          try {
+             await PushNotifications.addListener('registration', token => {
+                setFcmToken(token.value);
+             });
+
+             await PushNotifications.addListener('registrationError', err => {
+                console.error('Registration error: ', err.error);
+             });
+
+             await PushNotifications.addListener('pushNotificationReceived', () => {
+                if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+                const audio = new Audio('/alert.wav');
+                audio.play().catch(() => {});
+             });
+
+             await PushNotifications.addListener('pushNotificationActionPerformed', () => {
+                 // Future: Handle tap action
+             });
+
+             let permStatus = await PushNotifications.checkPermissions();
+             if (permStatus.receive === 'prompt') {
+               permStatus = await PushNotifications.requestPermissions();
+             }
+             if (permStatus.receive === 'granted') {
+               await PushNotifications.register();
+             }
+          } catch (e) {
+             console.error("Native push setup failed", e);
+          }
+        } else {
+          // Web Logic
           const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
           if (isStandalone) {
               requestNotificationPermission().then(t => t && setFcmToken(t));
           }
-      }
-    });
-    onMessageListener().then((payload: any) => {
-      if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+          onMessageListener().then((payload: any) => {
+            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
 
-      if (payload && payload.notification) {
-        new Notification(payload.notification.title, {
-          body: payload.notification.body,
-          icon: '/icon-192x192.png',
-        });
-      }
+            if (payload && payload.notification) {
+              new Notification(payload.notification.title, {
+                body: payload.notification.body,
+                icon: '/icon-192x192.png',
+              });
+            }
 
-      const audio = new Audio('/alert.wav');
-      let plays = 0;
-      audio.onended = () => {
-          plays++;
-          if (plays < 8) {
-              audio.currentTime = 0;
-              audio.play().catch(() => {});
-          }
-      };
-      audio.play().catch(() => {});
+            const audio = new Audio('/alert.wav');
+            let plays = 0;
+            audio.onended = () => {
+                plays++;
+                if (plays < 8) {
+                    audio.currentTime = 0;
+                    audio.play().catch(() => {});
+                }
+            };
+            audio.play().catch(() => {});
+          });
+        }
+      }
     });
     return () => unsubscribe();
   }, []);

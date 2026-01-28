@@ -324,16 +324,13 @@ function App() {
 
     // Notices Subscription
     const unsubNotices = onSnapshot(
-      query(collection(db, `bars/${barId}/notices`), orderBy('timestamp', 'desc')),
+      query(
+        collection(db, `bars/${barId}/notices`),
+        where('timestamp', '>=', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
+        orderBy('timestamp', 'desc')
+      ),
       (s) => {
-        const now = Date.now();
-        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-        const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice))
-            .filter(n => {
-                // Filter locally for 3 days expiration if simpler than composite index query
-                const ts = n.timestamp && (n.timestamp as any).toMillis ? (n.timestamp as any).toMillis() : Date.now();
-                return (now - ts) < threeDaysMs;
-            });
+        const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice));
         setNotices(validNotices);
       }
     );

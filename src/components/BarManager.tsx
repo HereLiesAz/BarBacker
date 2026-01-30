@@ -22,7 +22,7 @@ interface BarManagerProps {
   currentUserRole?: string;
 }
 
-const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHideButton, users = [], onApproveUser, onRemoveUser, currentUserRole }: BarManagerProps) => {
+const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHideButton, users = [], onApproveUser, onRemoveUser }: BarManagerProps) => {
   const [activeTab, setActiveTab] = useState<'buttons' | 'users'>('buttons');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmUserId, setConfirmUserId] = useState<string | null>(null);
@@ -60,11 +60,9 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
         <div slot="content" className="flex flex-col gap-4 min-w-[300px]">
            <div className="flex gap-2 border-b border-gray-800 pb-2">
                <md-text-button onClick={() => setActiveTab('buttons')} disabled={activeTab === 'buttons' || undefined} className={activeTab === 'buttons' ? 'bg-white/10' : ''}>Buttons</md-text-button>
-               {(currentUserRole === 'Owner' || currentUserRole === 'Manager') && (
-                   <md-text-button onClick={() => setActiveTab('users')} disabled={activeTab === 'users' || undefined} className={activeTab === 'users' ? 'bg-white/10' : ''}>
-                       Staff {pendingUsers.length > 0 && `(${pendingUsers.length})`}
-                   </md-text-button>
-               )}
+               <md-text-button onClick={() => setActiveTab('users')} disabled={activeTab === 'users' || undefined} className={activeTab === 'users' ? 'bg-white/10' : ''}>
+                   Staff {pendingUsers.length > 0 && `(${pendingUsers.length})`}
+               </md-text-button>
            </div>
 
            {activeTab === 'buttons' && (

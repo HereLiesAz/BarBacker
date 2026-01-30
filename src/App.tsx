@@ -25,7 +25,6 @@ import {
   deleteDoc,
   arrayUnion,
   increment,
-  getDocs,
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -168,9 +167,7 @@ function App() {
 
       // Special logic for BREAK
       if (btnId === 'break' || r.label.includes('BREAK')) {
-         if (userRole === 'Manager' || userRole === 'Owner') return true;
-         // Allow users with same role to see it
-         if (r.requesterRole === userRole) return true;
+         return true;
       }
 
       if (!btnId) return true;
@@ -636,18 +633,7 @@ function App() {
   const confirmRole = async (role: string, name: string) => {
     if (!user || !barId) return;
 
-    let status = 'active';
-    if (role !== 'Owner') {
-        const q = query(
-          collection(db, `bars/${barId}/users`),
-          where('role', 'in', ['Owner', 'Manager']),
-          limit(1)
-        );
-        const snapshot = await getDocs(q);
-        if (!snapshot.empty) {
-            status = 'pending';
-        }
-    }
+    const status = 'active';
 
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
       role: role,
@@ -718,9 +704,7 @@ function App() {
 
         // Special BREAK logic
         if (label.includes('BREAK') || btnId === 'break') {
-             if (u.role === 'Manager' || u.role === 'Owner' || u.role === userRole) {
-                 topics.add(u.ntfyTopic);
-             }
+             topics.add(u.ntfyTopic);
              return;
         }
 
@@ -935,7 +919,7 @@ function App() {
   const mainScreenButtons = sortedAllButtons.filter(btn => !hiddenButtonIds.includes(btn.id));
 
   const pendingUsers = allUsers.filter(u => u.status === 'pending');
-  const showApprovals = (userRole === 'Owner' || userRole === 'Manager') && pendingUsers.length > 0;
+  const showApprovals = pendingUsers.length > 0;
 
   if (userStatus === 'pending') {
       return (
@@ -1103,12 +1087,10 @@ function App() {
                             <md-icon slot="start">account_circle</md-icon>
                             <div slot="headline">Account Options</div>
                         </md-menu-item>
-                        {(userRole === 'Owner' || userRole === 'Manager') && (
-                            <md-menu-item onClick={() => setShowBarManager(true)}>
-                                <md-icon slot="start">store</md-icon>
-                                <div slot="headline">Manage Bar</div>
-                            </md-menu-item>
-                        )}
+                        <md-menu-item onClick={() => setShowBarManager(true)}>
+                            <md-icon slot="start">store</md-icon>
+                            <div slot="headline">Manage Bar</div>
+                        </md-menu-item>
                         <md-menu-item onClick={handleShare}>
                             <md-icon slot="start">share</md-icon>
                             <div slot="headline">Share</div>

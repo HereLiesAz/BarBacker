@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'barbacker',
   webDir: 'dist',
   server: {
-    url: 'https://hereliesaz.github.io/BarBacker/',
+    url: import.meta.env.VITE_PWA_URL || 'https://hereliesaz.github.io/BarBacker/',
     allowNavigation: ['hereliesaz.github.io']
   }
 };

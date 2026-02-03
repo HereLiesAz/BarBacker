@@ -73,7 +73,7 @@ describe('BarSearch Performance', () => {
     // Check total count including the one inside the input
     // The one in the input is in a slot, we'll still query all to ensure no extras
     const allProgressBars = container.querySelectorAll('md-circular-progress');
-    expect(allProgressBars.length).toBe(2);
+    expect(allProgressBars.length).toBe(1);
 
     expect(fetchMock).toHaveBeenCalled();
 

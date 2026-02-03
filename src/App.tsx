@@ -114,8 +114,8 @@ function App() {
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
-  // Use environment-agnostic timeout return type (works in SSR and browsers)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // FIX 1: Use proper return type for browser environment
+  const timerRef = useRef<number | null>(null);
   const isDraggingRef = useRef(false);
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
@@ -463,15 +463,6 @@ function App() {
     setHiddenButtonIds(prev => [...prev, btnId]);
   };
 
-  const approveUser = async (uid: string) => {
-    if (!user || !barId) return;
-    await updateDoc(doc(db, `bars/${barId}/users`, uid), { status: 'active' });
-  };
-
-  const removeUser = async (uid: string) => {
-    if (!user || !barId) return;
-    await deleteDoc(doc(db, `bars/${barId}/users`, uid));
-  };
 
   const saveNotice = async (text: string) => {
     if (!user || !barId || !text.trim()) return;
@@ -942,10 +933,6 @@ function App() {
         allButtons={sortedAllButtons}
         hiddenButtonIds={hiddenButtonIds}
         onHideButton={hideButton}
-        users={allUsers}
-        onApproveUser={approveUser}
-        onRemoveUser={removeUser}
-        currentUserRole={userRole || ''}
       />
 
       <WhoIsOnDialog

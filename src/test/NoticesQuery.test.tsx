@@ -111,7 +111,15 @@ describe('Notices Query Optimization', () => {
 
     // Verify timestamp filter creation
     const whereCalls = vi.mocked(firestore.where).mock.calls;
-    const timestampFilter = whereCalls.find(call => call[0] === 'timestamp');
+    const expectedTimestampBoundary = new Date(fixedNow.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+    // Find the specific timestamp filter that matches the 3-day cutoff
+    const timestampFilter = whereCalls.find(call =>
+        call[0] === 'timestamp' &&
+        call[1] === '>=' &&
+        (call[2] instanceof Date) &&
+        call[2].getTime() === expectedTimestampBoundary.getTime()
+    );
 
     expect(timestampFilter).toBeDefined();
     expect(timestampFilter?.[1]).toBe('>=');

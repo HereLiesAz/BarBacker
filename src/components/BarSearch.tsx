@@ -122,9 +122,6 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                         type="search"
                         className="w-full"
                     >
-                        {isSearching && (
-                             <md-circular-progress slot="trailing-icon" indeterminate style={{ width: '24px', height: '24px' }}></md-circular-progress>
-                        )}
                     </md-filled-text-field>
                 </div>
 

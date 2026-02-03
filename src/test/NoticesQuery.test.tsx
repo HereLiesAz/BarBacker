@@ -44,8 +44,9 @@ vi.mock('firebase/firestore', async () => {
             return () => {};
         }),
         query: vi.fn(() => 'mock-query'),
-        where: vi.fn(() => 'mock-where'),
+        where: vi.fn((field) => `mock-where-${field}`),
         orderBy: vi.fn(() => 'mock-order-by'),
+        limit: vi.fn((n) => `mock-limit-${n}`),
         serverTimestamp: vi.fn(),
     };
 });
@@ -85,7 +86,7 @@ describe('Notices Query Optimization', () => {
       vi.useRealTimers();
   });
 
-  it('initial query should have timestamp filter', async () => {
+  it('initial query should have timestamp filter and limit', async () => {
     // Setup time
     const fixedNow = new Date('2024-01-10T00:00:00Z');
     vi.setSystemTime(fixedNow); // Only mock Date, avoid timer issues with waitFor
@@ -102,31 +103,32 @@ describe('Notices Query Optimization', () => {
 
     // Find the call to onSnapshot for notices
     // The App calls onSnapshot multiple times (user, bar, requests, users, notices)
-    // We need to find the one that targets the notices collection
 
-    // Check collection calls
-    // notices collection is `bars/${barId}/notices`
+    // Verify collection call
     const collectionCalls = vi.mocked(firestore.collection).mock.calls;
     const noticesCollectionCall = collectionCalls.find(call => call[1] === 'bars/test-bar-id/notices');
     expect(noticesCollectionCall).toBeDefined();
 
-    // Check query calls
-    // We expect query to be called with the collection and orderBy
-
-    const queryCalls = vi.mocked(firestore.query).mock.calls;
-    // Inspect arguments passed to query. One of them should be the result of collection('.../notices')
-    // creating a specific match is tricky because we return string mocks.
-
-    // Let's verify 'where' calls.
+    // Verify timestamp filter creation
     const whereCalls = vi.mocked(firestore.where).mock.calls;
     const timestampFilter = whereCalls.find(call => call[0] === 'timestamp');
 
-    // NEW BEHAVIOR: Server-side filtering on timestamp should be present
     expect(timestampFilter).toBeDefined();
     expect(timestampFilter?.[1]).toBe('>=');
-
-    // The timestamp filter should use a deterministic 3-day cutoff from "now"
     const expectedTimestampBoundary = new Date(fixedNow.getTime() - 3 * 24 * 60 * 60 * 1000);
     expect(timestampFilter?.[2]).toEqual(expectedTimestampBoundary);
+
+    // Verify query composition
+    // We expect a query call that includes the timestamp filter AND limit(100)
+    const queryCalls = vi.mocked(firestore.query).mock.calls;
+
+    // We look for a query that contains 'mock-where-timestamp' AND 'mock-limit-100'
+    // args are [collection, constraint1, constraint2, ...]
+    const noticesQuery = queryCalls.find(args =>
+        args.includes('mock-where-timestamp') &&
+        args.includes('mock-limit-100')
+    );
+
+    expect(noticesQuery).toBeDefined();
   });
 });

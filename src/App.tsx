@@ -352,7 +352,7 @@ function App() {
         collection(db, `bars/${barId}/notices`),
         // Filter for last 3 days. Legacy documents without timestamp will be excluded.
         where('timestamp', '>=', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
-        orderBy('timestamp', 'desc')
+        orderBy('timestamp', 'desc'), limit(100)
       ),
       (s) => {
         const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice));

@@ -213,6 +213,7 @@ function App() {
                 if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
                 if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
                 const audio = audioRef.current;
+                audio.pause();
                 audio.onended = null;
                 audio.currentTime = 0;
                 audio.play().catch(() => {});

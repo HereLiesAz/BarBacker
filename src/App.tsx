@@ -125,7 +125,7 @@ function App() {
   const [showWhoIsOn, setShowWhoIsOn] = useState(false);
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
 
-  const showExtendedUsers = showWhoIsOn;
+
 
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
@@ -344,15 +344,8 @@ function App() {
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
-    const usersCollection = collection(db, `bars/${barId}/users`);
-    const queryConstraints = showExtendedUsers
-        ? [
-            where('status', 'in', ['active', 'pending', 'off_clock']),
-            orderBy('lastSeen', 'desc'),
-            limit(100),
-          ]
-        : [where('status', 'in', ['active', 'pending'])];
-    const userQuery = query(usersCollection, ...queryConstraints);
+    const requiredStatuses = showWhoIsOn ? ['active', 'pending', 'off_clock'] : ['active', 'pending'];
+    const userQuery = query(collection(db, `bars/${barId}/users`), where('status', 'in', requiredStatuses));
 
     const unsubAllUsers = onSnapshot(userQuery, (s) => {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -373,8 +366,9 @@ function App() {
     );
 
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
-  }, [user, barId, fcmToken, setSearchParams, showExtendedUsers]);
-  // Data Healing removed for performance.
+  }, [user, barId, fcmToken, setSearchParams, showWhoIsOn]);
+
+
 
   // --- Timer ---
   useEffect(() => {
@@ -464,15 +458,9 @@ function App() {
     setHiddenButtonIds(prev => [...prev, btnId]);
   };
 
-  const approveUser = async (uid: string) => {
-    if (!user || !barId) return;
-    await updateDoc(doc(db, `bars/${barId}/users`, uid), { status: 'active' });
-  };
 
-  const removeUser = async (uid: string) => {
-    if (!user || !barId) return;
-    await deleteDoc(doc(db, `bars/${barId}/users`, uid));
-  };
+
+
 
   const saveNotice = async (text: string) => {
     if (!user || !barId || !text.trim()) return;
@@ -943,10 +931,6 @@ function App() {
         allButtons={sortedAllButtons}
         hiddenButtonIds={hiddenButtonIds}
         onHideButton={hideButton}
-        users={allUsers}
-        onApproveUser={approveUser}
-        onRemoveUser={removeUser}
-        currentUserRole={userRole || ''}
       />
 
       <WhoIsOnDialog

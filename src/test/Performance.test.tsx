@@ -155,4 +155,38 @@ describe('Performance Optimization', () => {
     );
     expect(hasTimestampFilter).toBe(true);
   });
+
+  it('verifies users query constraints (prevents unbounded query)', async () => {
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+        expect(querySpy).toHaveBeenCalled();
+    });
+
+    const calls = querySpy.mock.calls;
+
+    // Look for query on bars/test-bar-id/users
+    const usersQueryArgs = calls.find(args => {
+        const firstArg = args[0];
+        // collectionSpy returns { type: 'collection', name: ... }
+        // The second arg to collection() in App.tsx is `bars/${barId}/users`
+        return firstArg && firstArg.type === 'collection' && firstArg.name === 'bars/test-bar-id/users';
+    });
+
+    expect(usersQueryArgs).toBeDefined();
+
+    const constraints = usersQueryArgs.slice(1);
+
+    // Verify it has 'where' constraint on 'status'
+    const statusConstraint = constraints.find((a: any) => a.type === 'where' && a.field === 'status');
+    expect(statusConstraint).toBeDefined();
+    expect(statusConstraint.op).toBe('in');
+
+    // Default valid statuses
+    expect(statusConstraint.val).toEqual(expect.arrayContaining(['active', 'pending']));
+  });
 });

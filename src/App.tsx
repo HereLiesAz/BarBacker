@@ -84,6 +84,7 @@ import {
 
 // --- MAIN APP COMPONENT ---
 function App() {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
@@ -210,7 +211,11 @@ function App() {
 
              await PushNotifications.addListener('pushNotificationReceived', () => {
                 if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-                const audio = new Audio('/alert.wav');
+                if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
+                const audio = audioRef.current;
+                audio.pause();
+                audio.onended = null;
+                audio.currentTime = 0;
                 audio.play().catch(() => {});
              });
 
@@ -244,7 +249,8 @@ function App() {
               });
             }
 
-            const audio = new Audio('/alert.wav');
+            if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
+            const audio = audioRef.current;
             let plays = 0;
             audio.onended = () => {
                 plays++;

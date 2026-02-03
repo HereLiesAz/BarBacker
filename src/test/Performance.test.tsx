@@ -148,6 +148,12 @@ describe('Performance Optimization', () => {
     const limitConstraint = constraints.find((a: any) => a.type === 'limit');
     expect(limitConstraint).toBeDefined();
     expect(limitConstraint.n).toBe(100);
+
+    // Verify timestamp filter
+    const hasTimestampFilter = constraints.some((a: any) =>
+        a.type === 'where' && a.field === 'timestamp' && a.op === '>='
+    );
+    expect(hasTimestampFilter).toBe(true);
   });
 
   it('verifies users query constraints (prevents unbounded query)', async () => {

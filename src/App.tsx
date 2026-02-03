@@ -84,6 +84,7 @@ import {
 
 // --- MAIN APP COMPONENT ---
 function App() {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
@@ -210,7 +211,11 @@ function App() {
 
              await PushNotifications.addListener('pushNotificationReceived', () => {
                 if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-                const audio = new Audio('/alert.wav');
+                if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
+                const audio = audioRef.current;
+                audio.pause();
+                audio.onended = null;
+                audio.currentTime = 0;
                 audio.play().catch(() => {});
              });
 
@@ -244,7 +249,8 @@ function App() {
               });
             }
 
-            const audio = new Audio('/alert.wav');
+            if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
+            const audio = audioRef.current;
             let plays = 0;
             audio.onended = () => {
                 plays++;
@@ -334,7 +340,7 @@ function App() {
     });
 
     const unsubReq = onSnapshot(
-      query(collection(db, 'requests'), where('barId', '==', barId), orderBy('timestamp', 'desc'), limit(100)),
+      query(collection(db, 'requests'), where('barId', '==', barId), where('timestamp', '>=', new Date(Date.now() - 24 * 60 * 60 * 1000)), orderBy('timestamp', 'desc'), limit(100)),
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
@@ -351,7 +357,7 @@ function App() {
         collection(db, `bars/${barId}/notices`),
         // Filter for last 3 days. Legacy documents without timestamp will be excluded.
         where('timestamp', '>=', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
-        orderBy('timestamp', 'desc')
+        orderBy('timestamp', 'desc'), limit(100)
       ),
       (s) => {
         const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice));

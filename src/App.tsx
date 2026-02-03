@@ -334,7 +334,7 @@ function App() {
     });
 
     const unsubReq = onSnapshot(
-      query(collection(db, 'requests'), where('barId', '==', barId), orderBy('timestamp', 'desc'), limit(100)),
+      query(collection(db, 'requests'), where('barId', '==', barId), where('timestamp', '>=', new Date(Date.now() - 24 * 60 * 60 * 1000)), orderBy('timestamp', 'desc'), limit(100)),
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 

@@ -338,14 +338,15 @@ function App() {
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
-    const userQuery = showExtendedUsers
-        ? query(
-            collection(db, `bars/${barId}/users`),
+    const usersCollection = collection(db, `bars/${barId}/users`);
+    const queryConstraints = showExtendedUsers
+        ? [
             where('status', 'in', ['active', 'pending', 'off_clock']),
             orderBy('lastSeen', 'desc'),
-            limit(100)
-          )
-        : query(collection(db, `bars/${barId}/users`), where('status', 'in', ['active', 'pending']));
+            limit(100),
+          ]
+        : [where('status', 'in', ['active', 'pending'])];
+    const userQuery = query(usersCollection, ...queryConstraints);
 
     const unsubAllUsers = onSnapshot(userQuery, (s) => {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));

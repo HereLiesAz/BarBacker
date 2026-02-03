@@ -36,7 +36,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
 
   return (
     <>
-      <md-dialog open={open || undefined} onClose={onClose} style={{ maxHeight: '80vh' }}>
+      <md-dialog data-testid="bar-manager-dialog" open={open || undefined} onClose={onClose} style={{ maxHeight: '80vh' }}>
         <div slot="headline">Manage {barName}</div>
         <div slot="content" className="flex flex-col gap-4 min-w-[300px]">
            <div className="text-sm text-gray-400">
@@ -60,7 +60,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
            </div>
         </div>
         <div slot="actions">
-          <md-text-button onClick={onClose}>Close</md-text-button>
+          <md-text-button onClick={onClose} data-testid="bar-manager-close">Close</md-text-button>
         </div>
       </md-dialog>
 

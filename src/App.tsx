@@ -124,7 +124,7 @@ function App() {
   const [showWhoIsOn, setShowWhoIsOn] = useState(false);
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
 
-  const shouldFetchAllUsers = showBarManager || showWhoIsOn;
+  const showExtendedUsers = showWhoIsOn;
 
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
@@ -338,9 +338,15 @@ function App() {
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
-    const userQuery = shouldFetchAllUsers
-        ? collection(db, `bars/${barId}/users`)
-        : query(collection(db, `bars/${barId}/users`), where('status', 'in', ['active', 'pending']));
+    const usersCollection = collection(db, `bars/${barId}/users`);
+    const queryConstraints = showExtendedUsers
+        ? [
+            where('status', 'in', ['active', 'pending', 'off_clock']),
+            orderBy('lastSeen', 'desc'),
+            limit(100),
+          ]
+        : [where('status', 'in', ['active', 'pending'])];
+    const userQuery = query(usersCollection, ...queryConstraints);
 
     const unsubAllUsers = onSnapshot(userQuery, (s) => {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -361,19 +367,8 @@ function App() {
     );
 
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
-  }, [user, barId, fcmToken, setSearchParams, shouldFetchAllUsers]);
-
-  // --- Data Healing ---
-  useEffect(() => {
-    if (shouldFetchAllUsers && barId) {
-        allUsers.forEach(u => {
-            if (u.status === undefined) {
-                updateDoc(doc(db, `bars/${barId}/users`, u.id), { status: 'active' })
-                    .catch(e => console.error("Failed to heal user status", e));
-            }
-        });
-    }
-  }, [allUsers, shouldFetchAllUsers, barId]);
+  }, [user, barId, fcmToken, setSearchParams, showExtendedUsers]);
+  // Data Healing removed for performance.
 
   // --- Timer ---
   useEffect(() => {

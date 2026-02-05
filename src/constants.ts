@@ -1,7 +1,11 @@
+// Import the 'ButtonConfig' interface to type the default button structures.
 import { ButtonConfig } from './types';
 
+// Define the list of available roles in the application.
+// These are used for role selection and permission logic.
 export const ROLES = ['Owner', 'Bartender', 'Barback', 'Server', 'Manager', 'Security', 'Runner'];
 
+// Define a default list of common beer brands to populate suggestions.
 export const DEFAULT_BEERS = [
   'Amstel Light', 'Bass Ale', 'Beck\'s', 'Blue Moon', 'Bud Light', 'Bud Light Lime', 'Bud Light Platinum', 'Budweiser',
   'Busch', 'Busch Light', 'Coors', 'Coors Banquet', 'Coors Light', 'Corona', 'Corona Extra', 'Corona Light', 'Corona Premier',
@@ -12,11 +16,14 @@ export const DEFAULT_BEERS = [
   'Shiner Bock', 'Shock Top', 'Sierra Nevada Pale Ale', 'Sol', 'St. Pauli Girl', 'Stella Artois', 'Tecate', 'Victoria', 'Yuengling'
 ];
 
+// Define the default button configuration for a new bar.
+// This structure creates the initial grid of request buttons.
 export const DEFAULT_BUTTONS: ButtonConfig[] = [
   { id: 'break', label: 'BREAK', icon: 'coffee' },
   { id: 'ice', label: 'ICE', icon: 'ac_unit' },
   {
     id: 'glass', label: 'SERVICE ITEMS', icon: 'wine_bar',
+    // Nested children define the sub-menu items.
     children: [
       { id: 'pint', label: 'PINT' },
       { id: 'rocks', label: 'ROCKS' },
@@ -79,13 +86,21 @@ export const DEFAULT_BUTTONS: ButtonConfig[] = [
   { id: 'manager', label: 'MANAGER', icon: 'manage_accounts' },
 ];
 
-// Map of Role -> Array of Button IDs that are enabled by default
+// Define the default notification subscriptions for each role.
+// This maps a Role Name to an array of Button IDs that they should be alerted for by default.
 export const ROLE_NOTIFICATION_DEFAULTS: Record<string, string[]> = {
+  // Owners get everything important + managerial alerts.
   'Owner': ['manager', 'security', 'keg', 'trash', 'ice', 'glass', 'fruit', 'restock', 'mixers', 'restock_beer', 'break'],
+  // Managers focus on operations and safety.
   'Manager': ['manager', 'security', 'keg', 'trash', 'break'],
+  // Bartenders care about stocking and safety.
   'Bartender': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer'],
+  // Barbacks are the primary workhorses for stocking and cleaning.
   'Barback': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer', 'break'],
+  // Servers generally don't need alerts in this system (they might be sending them).
   'Server': [],
+  // Runners focus on moving product.
   'Runner': ['ice', 'glass', 'restock', 'mixers', 'restock_beer'],
+  // Security deals with safety.
   'Security': ['security', 'manager', 'break']
 };

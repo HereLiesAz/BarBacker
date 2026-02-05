@@ -1,9 +1,11 @@
+// Import necessary Firebase Admin SDK modules.
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-// Environment check
+// --- Environment Configuration & Validation ---
 let serviceAccount;
 try {
+    // Parse the service account from environment variable.
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
     if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is missing");
     serviceAccount = JSON.parse(raw);
@@ -12,106 +14,131 @@ try {
     process.exit(1);
 }
 
+// Initialize Firebase Admin.
 initializeApp({
   credential: cert(serviceAccount)
 });
 
+// Get Firestore reference.
 const db = getFirestore();
 
+// Main function to coordinate deduplication tasks.
 async function deduplicate() {
   console.log("Starting Deduplication...");
 
+  // Run bar deduplication first.
   await deduplicateBars();
-  await deduplicateButtons(); // Pagers
+  // Run button (pager) deduplication second.
+  await deduplicateButtons();
 
   console.log("Deduplication Complete.");
 }
 
+// Function to find and merge duplicate Bar documents.
 async function deduplicateBars() {
     console.log("--> Checking for duplicate Bars...");
     const barsRef = db.collection('bars');
     const snapshot = await barsRef.get();
 
-    // Group by normalized key: name|city|zip
+    // Group bars by a normalized key to detect duplicates.
+    // Key format: "name|city|zip" (all lowercased and trimmed).
     const groups = {};
     snapshot.forEach(doc => {
         const data = doc.data();
         const key = `${data.name?.toLowerCase().trim()}|${data.city?.toLowerCase().trim()}|${data.zip?.trim()}`;
         if (!groups[key]) groups[key] = [];
+        // Store full doc data and reference for later use.
         groups[key].push({ id: doc.id, ...data, ref: doc.ref });
     });
 
+    // Iterate over groups to find collisions (groups with >1 bar).
     for (const [key, bars] of Object.entries(groups)) {
         if (bars.length < 2) continue;
 
         console.log(`Duplicate Group Found: ${key} (${bars.length} items)`);
 
-        // Pick Master: Prefer 'verified', then oldest created (if timestamp exists), or just first
-        // Assuming 'verified' status exists
+        // --- Select Master Record ---
+        // Heuristic: Prefer a bar that is already 'verified'. Fallback to the first one found (oldest usually).
         let master = bars.find(b => b.status === 'verified') || bars[0];
+        // Identify the duplicates that will be merged into the master.
         const duplicates = bars.filter(b => b.id !== master.id);
 
         for (const dup of duplicates) {
             console.log(`  Squashing ${dup.id} into ${master.id}...`);
             const batch = db.batch();
 
-            // 1. Move Users
+            // --- 1. Migrate Users ---
+            // Fetch users from the duplicate bar.
             const usersSnap = await db.collection(`bars/${dup.id}/users`).get();
             for (const userDoc of usersSnap.docs) {
-                // Check if user already exists in master
+                // Check if this user already exists in the master bar to avoid overwriting.
                 const masterUserRef = db.doc(`bars/${master.id}/users/${userDoc.id}`);
                 const masterUserSnap = await masterUserRef.get();
                 if (!masterUserSnap.exists) {
+                    // Copy user data to master.
                     batch.set(masterUserRef, userDoc.data());
                 }
-                // batch.delete(userDoc.ref); // Delete from old bar (done via deleting parent bar later usually, but safe to do explicit)
+                // Note: We don't delete the old user doc here; it gets deleted when the parent bar is deleted?
+                // Actually, Firestore subcollections are NOT automatically deleted when parent is deleted.
+                // Ideally, we should delete them, but for safety in this script, we might leave them or delete explicitly.
+                // The original code commented out the delete, likely for safety.
+                // batch.delete(userDoc.ref);
             }
 
-            // 2. Move Requests
-            // Requests are a top level collectionGroup query often, but stored with barId
+            // --- 2. Migrate Requests ---
+            // Requests are stored in a root collection but link to 'barId'.
+            // We find all requests for the duplicate bar and point them to the master bar.
             const requestsSnap = await db.collection('requests').where('barId', '==', dup.id).get();
             requestsSnap.forEach(reqDoc => {
                 batch.update(reqDoc.ref, { barId: master.id });
             });
 
-            // 3. Merge Data (Inventory, Wells, etc)
-            // Simple array merges
+            // --- 3. Merge Bar Data (Inventory, Wells) ---
             const updates = {};
+
+            // Merge Wells (Set union).
             if (dup.wells) {
                 const combinedWells = new Set([...(master.wells || []), ...dup.wells]);
                 updates.wells = Array.from(combinedWells);
             }
-            // Beer Inventory Merge
+
+            // Merge Beer Inventory.
             if (dup.beerInventory) {
                 const masterInv = master.beerInventory || {};
                 const dupInv = dup.beerInventory;
                 for (const [brand, types] of Object.entries(dupInv)) {
                     if (!masterInv[brand]) {
+                        // If brand missing in master, add it.
                         masterInv[brand] = types;
                     } else {
+                        // If brand exists, merge the types list.
                         masterInv[brand] = Array.from(new Set([...masterInv[brand], ...types]));
                     }
                 }
                 updates.beerInventory = masterInv;
             }
 
+            // Apply updates to the master bar if any data was merged.
             if (Object.keys(updates).length > 0) {
                 batch.update(master.ref, updates);
             }
 
-            // 4. Delete Duplicate Bar
+            // --- 4. Delete Duplicate Bar ---
+            // Delete the duplicate bar document itself.
             batch.delete(dup.ref);
 
+            // Commit the batch operation.
             await batch.commit();
             console.log(`  Squashed ${dup.id}.`);
         }
     }
 }
 
+// Function to clean up duplicate buttons within a single bar.
 async function deduplicateButtons() {
     console.log("--> Checking for duplicate Pagers...");
     const barsRef = db.collection('bars');
-    const snapshot = await barsRef.get(); // Iterate all bars again to be safe
+    const snapshot = await barsRef.get();
 
     for (const doc of snapshot.docs) {
         const data = doc.data();
@@ -121,18 +148,16 @@ async function deduplicateButtons() {
         const seenLabels = new Set();
         let changed = false;
 
-        // Recursive dedupe logic if needed, but top-level first
-        // We only care about ID collisions or exact Label collisions in the same list
-
+        // Iterate through buttons to find duplicates by Label.
         for (const btn of data.buttons) {
             const key = btn.label.toLowerCase().trim();
             if (seenLabels.has(key)) {
                 changed = true;
-                continue; // Skip duplicate
+                continue; // Skip this button as it's a duplicate.
             }
             seenLabels.add(key);
 
-            // Also clean children if they exist
+            // Also check for duplicates in children (sub-menus).
             if (btn.children) {
                const uniqueChildren = [];
                const seenChildLabels = new Set();
@@ -145,6 +170,7 @@ async function deduplicateButtons() {
                    seenChildLabels.add(childKey);
                    uniqueChildren.push(child);
                }
+               // If children list changed, update the button object.
                if (uniqueChildren.length !== btn.children.length) {
                    btn.children = uniqueChildren;
                    changed = true;
@@ -154,6 +180,7 @@ async function deduplicateButtons() {
             uniqueButtons.push(btn);
         }
 
+        // If any changes were detected, update the bar document.
         if (changed) {
             console.log(`  Fixing duplicates in bar ${data.name} (${doc.id})...`);
             await doc.ref.update({ buttons: uniqueButtons });
@@ -161,6 +188,7 @@ async function deduplicateButtons() {
     }
 }
 
+// Execute logic.
 deduplicate().then(() => process.exit(0)).catch(e => {
   console.error(e);
   process.exit(1);

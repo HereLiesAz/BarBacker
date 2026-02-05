@@ -1,15 +1,21 @@
+// Import useState.
 import { useState } from 'react';
+// Import Material Web components.
 import '@material/web/button/filled-button.js';
 import '@material/web/textfield/filled-text-field.js';
 import '@material/web/icon/icon.js';
 import '@material/web/radio/radio.js';
+// Import roles constant.
 import { ROLES } from '../constants';
 
+// Define props.
 interface RoleSelectorProps {
   onSelect: (role: string, name: string) => void;
 }
 
+// Component to select user role and set display name upon joining.
 const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
+  // Local state.
   const [selectedRole, setSelectedRole] = useState('');
   const [displayName, setDisplayName] = useState('');
 
@@ -20,6 +26,7 @@ const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
         <p className="text-gray-500">Name and Rank, soldier.</p>
       </div>
 
+      {/* Name Input */}
       <md-filled-text-field
         label="Display Name (e.g. 'Angry Steve')"
         value={displayName}
@@ -27,10 +34,12 @@ const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
         required
       />
 
+      {/* Role List */}
       <div className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800 max-h-60 overflow-y-auto">
         {ROLES.map((role) => (
           <div
             key={role}
+            // Selecting via clicking the row.
             onClick={() => setSelectedRole(role)}
             className={`p-4 flex items-center justify-between cursor-pointer border-b border-gray-800 last:border-0 hover:bg-white/5 ${selectedRole === role ? 'bg-white/10' : ''}`}
           >
@@ -38,11 +47,14 @@ const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
               <md-icon>{role === 'Bartender' ? 'local_bar' : 'person'}</md-icon>
               <span className="font-medium text-lg">{role}</span>
             </div>
+            {/* Radio button visual indicator */}
             <md-radio checked={selectedRole === role} touch-target="wrapper"></md-radio>
           </div>
         ))}
       </div>
 
+      {/* Submit Button */}
+      {/* Disabled until both role and name are filled */}
       <md-filled-button disabled={!selectedRole || !displayName || null} onClick={() => onSelect(selectedRole, displayName)}>
         Clock In
       </md-filled-button>

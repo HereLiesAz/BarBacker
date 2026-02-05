@@ -2,6 +2,14 @@
 
 **BarBacker** is a real-time communication tool designed to bridge the gap between bartenders and barbacks in high-volume environments. It replaces shouting and hand signals with a streamlined, digital paging system.
 
+## Documentation
+
+*   [Architecture](docs/ARCHITECTURE.md)
+*   [Data Model](docs/DATA_MODEL.md)
+*   [Components](docs/COMPONENTS.md)
+*   [Deployment](docs/DEPLOYMENT.md)
+*   [Scripts](docs/SCRIPTS.md)
+
 ## What is it?
 
 In a busy bar, bartenders often need items—ice, glassware, fruit, restocking—immediately. **BarBacker** allows bartenders to send these requests with a single tap. Barbacks receive these requests instantly on their device and can "claim" them to let the team know they are on it.

@@ -122,14 +122,14 @@ describe('Users Query Performance', () => {
     onSnapshotSpy.mockClear();
 
     // Open Manager
-    let manageBtn = screen.queryByText('Manage Bar');
+    let manageBtn = screen.queryByText('Bar Settings');
     if (!manageBtn) {
-        const menuIcon = screen.getByText('menu');
+        const menuIcon = screen.getByText('more_vert');
         fireEvent.click(menuIcon);
-        manageBtn = await screen.findByText('Manage Bar');
+        manageBtn = await screen.findByText('Bar Settings');
     }
     if (!manageBtn) {
-         const btns = screen.queryAllByText('Manage Bar');
+         const btns = screen.queryAllByText('Bar Settings');
          if(btns.length > 0) manageBtn = btns[0];
     }
     if(manageBtn) fireEvent.click(manageBtn);

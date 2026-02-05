@@ -1,6 +1,10 @@
 /// <reference types="vite/client" />
 /// <reference path="./declarations.d.ts" />
 
+/**
+ * Interface definition for Vite environment variables.
+ * These match the variables defined in .env files and used in src/firebase.ts.
+ */
 interface ImportMetaEnv {
   readonly VITE_FIREBASE_API_KEY: string
   readonly VITE_FIREBASE_AUTH_DOMAIN: string
@@ -11,6 +15,9 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_VAPID_KEY: string
 }
 
+/**
+ * Extends the global ImportMeta interface to include our specific env variables.
+ */
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }

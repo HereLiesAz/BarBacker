@@ -5,13 +5,23 @@ import '@material/web/list/list-item.js';
 import '@material/web/icon/icon.js';
 import { BarUser } from '../types';
 
+/**
+ * Props for the WhoIsOnDialog.
+ */
 interface WhoIsOnDialogProps {
   open: boolean;
   onClose: () => void;
   users: BarUser[];
 }
 
+/**
+ * WhoIsOnDialog Component.
+ *
+ * Displays a roster of users currently associated with the bar.
+ * Segments users into "Clocked In" (active) and "Off Clock" (inactive).
+ */
 export const WhoIsOnDialog = ({ open, onClose, users }: WhoIsOnDialogProps) => {
+  // Filter active users. Includes 'undefined' status for legacy data compatibility.
   const clockedInUsers = users.filter(u => u.status === 'active' || u.status === undefined);
   const offClockUsers = users.filter(u => u.status === 'off_clock');
 
@@ -20,6 +30,7 @@ export const WhoIsOnDialog = ({ open, onClose, users }: WhoIsOnDialogProps) => {
       <div slot="headline">Who's On</div>
       <div slot="content" className="flex flex-col gap-4 min-w-[300px]">
 
+        {/* CLOCKED IN SECTION */}
         <div>
            <h3 className="text-green-400 font-bold text-sm uppercase tracking-wide mb-2">Clocked In ({clockedInUsers.length})</h3>
            <div className="border border-gray-800 rounded overflow-hidden">
@@ -36,6 +47,7 @@ export const WhoIsOnDialog = ({ open, onClose, users }: WhoIsOnDialogProps) => {
            </div>
         </div>
 
+        {/* OFF CLOCK SECTION */}
         {offClockUsers.length > 0 && (
             <div>
                <h3 className="text-gray-500 font-bold text-sm uppercase tracking-wide mb-2">Off Clock ({offClockUsers.length})</h3>

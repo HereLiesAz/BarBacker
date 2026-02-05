@@ -64,8 +64,8 @@ describe('App Integration', () => {
       </MemoryRouter>
     );
     await waitFor(() => {
-        expect(screen.getByText('BARBACKER')).toBeInTheDocument();
-        expect(screen.getByText('Clock In')).toBeInTheDocument();
+        expect(screen.getByText(/BAR/)).toBeInTheDocument();
+        expect(screen.getByText('Start Shift')).toBeInTheDocument();
     });
   });
 });

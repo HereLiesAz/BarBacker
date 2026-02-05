@@ -2,9 +2,17 @@ import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { chromium } from 'playwright';
 
-// Environment check
+/**
+ * Enrichment Bot
+ *
+ * Uses Playwright (Headless Browser) to fill in missing details (Phone, Address) for bars
+ * that were created with minimal info by users.
+ */
+
+// Initialize Firebase Admin SDK.
 let serviceAccount;
 try {
+    // Requires the service account JSON to be in env var (CI/CD friendly).
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
     if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is missing");
     serviceAccount = JSON.parse(raw);
@@ -22,13 +30,14 @@ const db = getFirestore();
 async function enrich() {
   console.log("Starting Enrichment...");
 
-  // 1. Find incomplete bars
+  // 1. Scan Firestore for incomplete bars.
   const barsRef = db.collection('bars');
   const snapshot = await barsRef.get();
 
   const incompleteBars = [];
   snapshot.forEach(doc => {
       const data = doc.data();
+      // Definition of 'incomplete': Missing any key contact field.
       if (!data.address || !data.phone || !data.city || !data.state || !data.zip) {
           incompleteBars.push({ id: doc.id, ...data });
       }
@@ -41,49 +50,48 @@ async function enrich() {
 
   console.log(`Found ${incompleteBars.length} bars to enrich.`);
 
-  // 2. Launch Browser
+  // 2. Launch Headless Browser.
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
+      // Spoof User Agent to avoid immediate blocking by Google.
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
   });
   const page = await context.newPage();
 
-  // 3. Process each bar
+  // 3. Process each bar sequentially.
   for (const bar of incompleteBars) {
       try {
           console.log(`Enriching: ${bar.name}...`);
 
-          // Construct Query
+          // Construct Search Query: Name + City + State.
           const queryParts = [bar.name];
           if (bar.city) queryParts.push(bar.city);
           if (bar.state) queryParts.push(bar.state);
-          // if (bar.zip) queryParts.push(bar.zip); // Optional, might be too specific if wrong
 
           const q = queryParts.join(' ');
           await page.goto(`https://www.google.com/search?q=${encodeURIComponent(q)}`);
 
-          // Wait for results
+          // Wait for results to settle.
           await page.waitForLoadState('domcontentloaded');
-
-          // Scrape Data
-          // Address: Often in [data-attrid="kc:/location/location:address"]
-          // Phone: Often in [data-attrid="kc:/collection/knowledge_panels/has_phone:phone"]
-          // Note: These selectors are brittle. We'll try a few strategies.
 
           const updates = {};
 
-          // Strategy A: Knowledge Panel Selectors
+          // Strategy: Scrape Google Knowledge Panel.
+          // Selectors are based on common classes/attributes for the "Address" and "Phone" sections.
+
+          // Address Extraction.
           if (!bar.address) {
+              // Try multiple selectors.
               const addressText = await page.locator('[data-attrid="kc:/location/location:address"] .LrzXr').first().textContent().catch(() => null)
                                || await page.locator('[data-attrid="kc:/location/location:address"]').first().textContent().catch(() => null);
               if (addressText) {
-                  // Text often looks like: "Address: 123 Main St, City, ST 12345"
-                  // Remove "Address: " prefix if present
+                  // Clean up prefix like "Address: ".
                   updates.address = addressText.replace(/^Address:\s*/i, '').trim();
                   console.log(`  Found Address: ${updates.address}`);
               }
           }
 
+          // Phone Extraction.
           if (!bar.phone) {
               const phoneText = await page.locator('[data-attrid="kc:/collection/knowledge_panels/has_phone:phone"] .LrzXr').first().textContent().catch(() => null)
                              || await page.locator('[data-attrid="kc:/collection/knowledge_panels/has_phone:phone"] span').last().textContent().catch(() => null);
@@ -93,10 +101,7 @@ async function enrich() {
               }
           }
 
-          // Strategy B: Fallback Text Search if A failed
-          // (Simplified for now, as text scraping full DOM is noisy)
-
-          // 4. Update Firestore
+          // 4. Update Firestore with findings.
           if (Object.keys(updates).length > 0) {
               await barsRef.doc(bar.id).update(updates);
               console.log(`  Updated ${bar.name}`);
@@ -104,7 +109,7 @@ async function enrich() {
               console.log(`  No info found for ${bar.name}`);
           }
 
-          // Random delay to be nice
+          // Random delay (2-4s) to act human and avoid rate limits.
           await page.waitForTimeout(2000 + Math.random() * 2000);
 
       } catch (e) {

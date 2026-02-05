@@ -1,22 +1,22 @@
-// scripts/nag-bot.js
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 
-// This secrets needs to be in your GitHub Repo Secrets as FIREBASE_SERVICE_ACCOUNT
+/**
+ * Nag Bot
+ *
+ * A scheduled task (cron job) that finds requests that have been ignored/pending
+ * for too long and sends aggressive push notifications ("Nags") to remind staff.
+ */
+
+// Load Service Account.
 let serviceAccount;
 try {
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
     if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is missing");
-
-    // Debug logging (safe)
-    const firstChar = raw.trim().charAt(0);
-    console.log(`Service Account starts with: '${firstChar}'`);
-
     serviceAccount = JSON.parse(raw);
 } catch (error) {
     console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT. Ensure it is valid JSON.");
-    console.error("Error:", error.message);
     process.exit(1);
 }
 
@@ -28,9 +28,10 @@ const db = getFirestore();
 const messaging = getMessaging();
 
 async function nag() {
+  // Define "Ignored" as: Status is pending AND last notification was > 5 minutes ago.
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   
-  // 1. Find requests that are ignored
+  // 1. Query for ignored requests.
   const snapshot = await db.collection('requests')
     .where('status', '==', 'pending')
     .where('lastNotification', '<', fiveMinutesAgo)
@@ -43,7 +44,8 @@ async function nag() {
 
   console.log(`Found ${snapshot.size} ignored requests. Initiating harassment.`);
 
-  // 2. Group by Bar to avoid spamming the same bar 50 times for 50 ice requests
+  // 2. Group requests by Bar ID.
+  // We want to send ONE notification per bar summarizing the backlog, not one per request.
   const barUpdates = {}; // Map of barId -> [requestLabels]
 
   snapshot.docs.forEach(doc => {
@@ -52,9 +54,9 @@ async function nag() {
     barUpdates[data.barId].push(data.label);
   });
 
-  // 3. Blast each bar
+  // 3. Process each bar.
   for (const [barId, labels] of Object.entries(barUpdates)) {
-    // Get all user tokens for this bar
+    // Get all FCM tokens for users currently clocked into this bar.
     const tokensSnap = await db.collection(`bars/${barId}/tokens`).get();
     const tokens = tokensSnap.docs.map(d => d.data().token).filter(t => t);
 
@@ -64,7 +66,7 @@ async function nag() {
     const title = `IGNORED: ${labels.length} TASKS`;
     const body = `${summary} are still waiting. DO YOUR JOB.`;
 
-    // Send the Push
+    // Send Multicast Push.
     await messaging.sendEachForMulticast({
       tokens: tokens,
       notification: {
@@ -75,6 +77,7 @@ async function nag() {
         type: 'nag_alert',
         barId: barId
       },
+      // Android Config: High Priority to break through doze mode.
       android: {
         priority: 'high',
         notification: {
@@ -82,6 +85,7 @@ async function nag() {
           channelId: 'urgent_alerts'
         }
       },
+      // iOS Config.
       apns: {
         payload: {
           aps: {
@@ -95,7 +99,8 @@ async function nag() {
     console.log(`Nagged bar ${barId} regarding: ${summary}`);
   }
 
-  // 4. Update timestamps so we don't nag again for another 5 mins
+  // 4. Update 'lastNotification' timestamp on the requests.
+  // This ensures we don't nag again for another 5 minutes.
   const batch = db.batch();
   snapshot.docs.forEach(doc => {
     batch.update(doc.ref, { lastNotification: new Date() });

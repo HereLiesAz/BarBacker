@@ -770,7 +770,7 @@ function App() {
   const confirmRole = async (role: string, name: string) => {
     if (!user || !barId) return;
 
-    const status = 'pending';
+    const status = 'active';
 
     // Update User Document.
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {

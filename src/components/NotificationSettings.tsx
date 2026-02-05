@@ -1,4 +1,6 @@
+// Import React hooks.
 import { useState, useEffect } from 'react';
+// Import Material Web components.
 import '@material/web/dialog/dialog.js';
 import '@material/web/button/text-button.js';
 import '@material/web/button/filled-button.js';
@@ -7,12 +9,15 @@ import '@material/web/list/list-item.js';
 import '@material/web/switch/switch.js';
 import '@material/web/icon/icon.js';
 import '@material/web/textfield/filled-text-field.js';
+// Import types and constants.
 import { ButtonConfig } from '../types';
 import { ROLE_NOTIFICATION_DEFAULTS } from '../constants';
 
+// Define props.
 interface NotificationSettingsProps {
   open: boolean;
   onClose: () => void;
+  // Callback to save: returns the list of enabled button IDs and the ntfy topic.
   onSave: (preferences: string[], ntfyTopic: string) => void;
   userRole: string;
   currentPreferences: string[]; // List of enabled IDs
@@ -20,6 +25,7 @@ interface NotificationSettingsProps {
   allButtons: ButtonConfig[];
 }
 
+// Dialog for configuring which notifications the user receives.
 const NotificationSettings = ({
   open,
   onClose,
@@ -29,10 +35,12 @@ const NotificationSettings = ({
   currentNtfyTopic,
   allButtons
 }: NotificationSettingsProps) => {
+  // Local state for the list of enabled IDs.
   const [preferences, setPreferences] = useState<string[]>([]);
+  // Local state for the ntfy topic (read-only mostly, but passed back).
   const [ntfyTopic, setNtfyTopic] = useState<string>('');
 
-  // Initialize preferences when the dialog opens or props change
+  // Initialize preferences when the dialog opens or props change.
   useEffect(() => {
     if (open) {
       setPreferences(currentPreferences);
@@ -40,26 +48,28 @@ const NotificationSettings = ({
     }
   }, [open, currentPreferences, currentNtfyTopic]);
 
+  // Handler for toggling a specific button's notification.
   const handleToggle = (id: string, selected: boolean) => {
     if (selected) {
+      // Add to preferences.
       setPreferences(prev => [...prev, id]);
     } else {
+      // Remove from preferences.
       setPreferences(prev => prev.filter(p => p !== id));
     }
   };
 
+  // Reset to default settings based on role.
   const handleReset = () => {
     const defaults = ROLE_NOTIFICATION_DEFAULTS[userRole] || [];
     setPreferences(defaults);
   };
 
+  // Save changes.
   const handleSave = () => {
     onSave(preferences, ntfyTopic);
     onClose();
   };
-
-  // Filter out buttons that shouldn't be notifications?
-  // For now, assume all top-level buttons are notification categories.
 
   return (
     <md-dialog open={open || undefined} onClose={onClose}>
@@ -69,16 +79,19 @@ const NotificationSettings = ({
           Enable or disable notifications for your role ({userRole}).
         </div>
 
+        {/* iOS Notification Info Card */}
         <div className="p-4 bg-[#2D2D2D] rounded-lg border border-[#444] flex flex-col gap-3">
              <div className="flex items-center justify-between">
                  <span className="font-bold text-gray-300">iOS Alerts (ntfy)</span>
                  <span className="text-xs text-green-400 font-mono bg-green-900/30 px-2 py-1 rounded">Active</span>
              </div>
 
+             {/* Display Topic ID */}
              <div className="text-xs text-gray-400 font-mono break-all p-2 bg-black/50 rounded select-all">
                 {ntfyTopic || 'Loading...'}
              </div>
 
+             {/* Subscribe Link (Deep Link) */}
              {ntfyTopic && (
                  <a
                     href={`ntfy://subscribe/${ntfyTopic}`}
@@ -96,6 +109,7 @@ const NotificationSettings = ({
              </div>
         </div>
 
+        {/* Notification Toggles List */}
         <md-list className="bg-transparent max-h-[60vh] overflow-y-auto">
           {allButtons.map(btn => {
             const isEnabled = preferences.includes(btn.id);
@@ -106,8 +120,9 @@ const NotificationSettings = ({
                 <md-switch
                     slot="end"
                     selected={isEnabled}
-                    onClick={() => handleToggle(btn.id, !isEnabled)} // md-switch uses 'selected' and dispatches click/change
-                    // Note: accessing React event for Web Component might require standard onClick
+                    // md-switch handles its own state visually, but we need to track it manually.
+                    // The 'selected' prop sets initial state.
+                    onClick={() => handleToggle(btn.id, !isEnabled)}
                 ></md-switch>
               </md-list-item>
             );

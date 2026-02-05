@@ -39,6 +39,14 @@ function checkEnv() {
   } else {
       log(COLORS.YELLOW, '⚠️  No .env file found. Checking process.env...');
   }
+
+  const missing = requiredVars.filter(v => !process.env[v]);
+  if (missing.length > 0) {
+    log(COLORS.RED, `❌ Missing required environment variables: ${missing.join(', ')}`);
+    process.exitCode = 1;
+  } else {
+    log(COLORS.GREEN, '✅ All required environment variables are present.');
+  }
 }
 
 // Check if node_modules is installed.

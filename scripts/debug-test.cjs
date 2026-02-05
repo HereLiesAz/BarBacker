@@ -1,8 +1,11 @@
-
+// Import File System module.
 const fs = require('fs');
+// Import Path module.
 const path = require('path');
+// Import execSync for running shell commands.
 const { execSync } = require('child_process');
 
+// Define color codes for console output.
 const COLORS = {
   RESET: '\x1b[0m',
   RED: '\x1b[31m',
@@ -11,10 +14,12 @@ const COLORS = {
   BLUE: '\x1b[34m',
 };
 
+// Helper function for colored logging.
 function log(color, message) {
   console.log(`${color}${message}${COLORS.RESET}`);
 }
 
+// Check for required environment variables.
 function checkEnv() {
   log(COLORS.BLUE, '--- Checking Environment Variables ---');
   const requiredVars = [
@@ -27,20 +32,24 @@ function checkEnv() {
     'VITE_FIREBASE_VAPID_KEY'
   ];
 
-  let missing = [];
-  // In a real local run, we might check .env files. In CI, we check process.env.
-  // For this script, we'll check if they are defined in process.env OR if a .env file exists.
-
+  // In a CI environment, variables are usually in process.env.
+  // Locally, they might be in a .env file.
   if (fs.existsSync('.env')) {
       log(COLORS.GREEN, '✅ .env file found.');
   } else {
       log(COLORS.YELLOW, '⚠️  No .env file found. Checking process.env...');
   }
 
-  // Note: This check might be limited in a local node context if .env isn't loaded into process.env by dotenv.
-  // But strictly speaking for CI/CD, they should be in process.env.
+  const missing = requiredVars.filter(v => !process.env[v]);
+  if (missing.length > 0) {
+    log(COLORS.RED, `❌ Missing required environment variables: ${missing.join(', ')}`);
+    process.exitCode = 1;
+  } else {
+    log(COLORS.GREEN, '✅ All required environment variables are present.');
+  }
 }
 
+// Check if node_modules is installed.
 function checkDependencies() {
   log(COLORS.BLUE, '\n--- Checking Dependencies ---');
   if (fs.existsSync('node_modules')) {
@@ -51,22 +60,26 @@ function checkDependencies() {
   }
 }
 
+// Run the TypeScript compiler to check for type errors.
 function runTypeCheck() {
   log(COLORS.BLUE, '\n--- Running TypeScript Check ---');
   try {
+    // Run tsc in noEmit mode just to check for errors.
     execSync('npx tsc --noEmit', { stdio: 'inherit' });
     log(COLORS.GREEN, '✅ TypeScript check passed.');
   } catch (error) {
     log(COLORS.RED, '❌ TypeScript check failed.');
-    // We don't fail the whole script immediately, to allow other checks to run.
+    // Set exit code but continue to other checks.
     process.exitCode = 1;
   }
 }
 
+// Heuristic scan for potential React anti-patterns.
 function scanForAntiPatterns() {
   log(COLORS.BLUE, '\n--- Scanning for React Anti-Patterns ---');
   const srcDir = path.join(__dirname, '../src');
 
+  // Recursively find all .ts/.tsx files.
   function walk(dir, fileList = []) {
     const files = fs.readdirSync(dir);
     files.forEach(file => {
@@ -89,22 +102,15 @@ function scanForAntiPatterns() {
     const content = fs.readFileSync(file, 'utf-8');
     const lines = content.split('\n');
 
-    // Very basic heuristic: check for hooks inside potential control flow blocks.
-    // This is not a full AST parser, just a "smell" detector.
-
-    // Look for useHook indented more than 2 spaces (assuming standard formatting)
-    // AND appearing after keywords like 'if', 'return' (though return is hard to track line-by-line regex).
-
-    // Better heuristic: 'if (' followed by 'use...' on later lines is hard to regex without state.
-    // Let's just look for highly indented hooks as a warning sign.
+    // Heuristic: Check for hooks potentially used inside conditional blocks.
+    // This isn't a perfect parser, just a simple string check for obvious bad formatting.
+    // e.g., if (...) { useHook() }
 
     lines.forEach((line, index) => {
         const trimmed = line.trim();
-        // Check for hook usage
+        // Check if line contains a hook usage.
         if (trimmed.startsWith('use') || (trimmed.includes('use') && trimmed.includes('('))) {
-            // Check indentation. If it's inside a block (more than 2 spaces/tabs), it MIGHT be risky.
-            // But components are often indented.
-            // Let's look for `if (...) { ... use...` on the same line?
+            // Regex to see if 'if' or 'else' appears on the same line before the hook.
             if (/if\s*\(.*\)\s*\{.*use[A-Z]/.test(line)) {
                  log(COLORS.RED, `❌ Potential Conditional Hook in ${path.relative(process.cwd(), file)}:${index + 1}`);
                  log(COLORS.YELLOW, `   Line: ${line.trim()}`);
@@ -121,6 +127,7 @@ function scanForAntiPatterns() {
   }
 }
 
+// Main execution function.
 function main() {
   log(COLORS.BLUE, '🔍 Starting Self-Diagnostic...');
   checkEnv();

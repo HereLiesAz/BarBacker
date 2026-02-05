@@ -123,7 +123,6 @@ describe('Notices Query Optimization', () => {
 
     expect(timestampFilter).toBeDefined();
     expect(timestampFilter?.[1]).toBe('>=');
-    const expectedTimestampBoundary = new Date(fixedNow.getTime() - 3 * 24 * 60 * 60 * 1000);
     expect(timestampFilter?.[2]).toEqual(expectedTimestampBoundary);
 
     // Verify query composition

@@ -524,7 +524,7 @@ function App() {
       unsubAllUsers();
       unsubNotices();
     };
-  }, [user, barId, showWhoIsOn]); // Dependencies that trigger re-subscription.
+  }, [user, barId, fcmToken, showWhoIsOn]); // Dependencies that trigger re-subscription.
 
   // --- Handlers ---
 

@@ -1,31 +1,36 @@
+// Import React hooks for managing state and side effects.
 import { useState, useEffect, useRef } from 'react';
+// Import 'useSearchParams' to read/write URL query parameters.
 import { useSearchParams } from 'react-router-dom';
+// Import Firebase Auth functions.
 import { 
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-  deleteUser,
-  User 
+  onAuthStateChanged, // Listener for auth state changes (login/logout).
+  signInWithPopup,    // Sign in using a popup window (for Google).
+  signInWithEmailAndPassword, // Sign in with email/password.
+  createUserWithEmailAndPassword, // Register with email/password.
+  signOut, // Sign out function.
+  deleteUser, // Function to delete the user account.
+  User // Type definition for a Firebase User.
 } from 'firebase/auth';
+// Import Firestore functions.
 import { 
-  collection, 
-  addDoc, 
-  query, 
-  where, 
-  onSnapshot, 
-  orderBy, 
-  limit,
-  updateDoc, 
-  doc,
-  serverTimestamp,
-  setDoc,
-  getDoc,
-  deleteDoc,
-  arrayUnion,
-  increment,
+  collection, // Reference a collection.
+  addDoc,     // Add a new document with an auto-generated ID.
+  query,      // Create a query.
+  where,      // Add a filter to a query.
+  onSnapshot, // Listen for real-time updates.
+  orderBy,    // Sort query results.
+  limit,      // Limit the number of results.
+  updateDoc,  // Update specific fields in a document.
+  doc,        // Reference a specific document.
+  serverTimestamp, // Generate a server-side timestamp.
+  setDoc,     // Set (overwrite or create) a document.
+  getDoc,     // Fetch a single document once.
+  deleteDoc,  // Delete a document.
+  arrayUnion, // Add elements to an array field.
+  increment,  // Atomic increment of a numeric field.
 } from 'firebase/firestore';
+// Import initialized Firebase instances and helper functions.
 import { 
   auth, 
   db, 
@@ -33,11 +38,14 @@ import {
   requestNotificationPermission, 
   onMessageListener 
 } from './firebase';
+// Import Capacitor plugins for native functionality.
 import { PushNotifications } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
+// Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
 
 // --- Material Web Imports ---
+// These imports register the custom elements with the browser's CustomElementRegistry.
 import '@material/web/button/filled-button.js';
 import '@material/web/button/filled-tonal-button.js';
 import '@material/web/button/outlined-button.js';
@@ -55,9 +63,12 @@ import '@material/web/iconbutton/icon-button.js';
 import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
 
+// Import Types and Constants.
 import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
+// Import Custom Hooks.
 import { useNag } from './hooks/useNag';
+// Import UI Components.
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
@@ -65,6 +76,7 @@ import BarManager from './components/BarManager';
 import InputDialog from './components/InputDialog';
 import { WhoIsOnDialog } from './components/WhoIsOnDialog';
 import { SortableButton } from './components/SortableButton';
+// Import dnd-kit for drag-and-drop functionality.
 import {
   DndContext,
   closestCenter,
@@ -84,75 +96,124 @@ import {
 
 // --- MAIN APP COMPONENT ---
 function App() {
+  // Ref to hold the Audio object for alerts. Persistence prevents memory leaks and glitches.
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // --- Authentication State ---
+  // Store the current logged-in Firebase User.
   const [user, setUser] = useState<User | null>(null);
+  // Store any authentication error messages (e.g., "Wrong password").
   const [authError, setAuthError] = useState<string | null>(null);
+  // Toggle between Login and Register modes in the auth form.
   const [isRegistering, setIsRegistering] = useState(false);
   
+  // --- Routing & Bar State ---
+  // Access URL query parameters.
   const [searchParams, setSearchParams] = useSearchParams();
+  // Get the 'bar' param from URL or fallback to localStorage.
   const initialBarId = searchParams.get('bar') || localStorage.getItem('barId');
+  // Store the current Bar ID.
   const [barId, setBarId] = useState<string | null>(initialBarId);
   
+  // --- User Context in Bar ---
+  // Store the name of the current bar.
   const [barName, setBarName] = useState('');
+  // Store the user's role in this bar (e.g., 'Bartender').
   const [userRole, setUserRole] = useState<string | null>(null);
+  // Store the user's status (active/off_clock/pending).
   const [userStatus, setUserStatus] = useState<string>('active');
+  // Store the user's display name.
   const [displayName, setDisplayName] = useState<string>('');
+  // Store the user's notification preferences (list of button IDs).
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
+  // Store the ntfy topic ID for iOS notifications.
   const [ntfyTopic, setNtfyTopic] = useState<string | null>(null);
   
+  // --- Data State ---
+  // Store the list of active requests.
   const [requests, setRequests] = useState<Request[]>([]);
+  // Store the list of configured buttons.
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
+  // Store the FCM token for push notifications.
   const [fcmToken, setFcmToken] = useState<string | null>(null);
 
+  // --- Bar Configuration State ---
+  // Store inventory mapping for beers (Brand -> Types).
   const [beerInventory, setBeerInventory] = useState<Record<string, string[]>>({});
+  // Store list of well names.
   const [wells, setWells] = useState<string[]>([]);
+  // Store IDs of buttons that should be hidden.
   const [hiddenButtonIds, setHiddenButtonIds] = useState<string[]>([]);
+  // Store usage counts for sorting.
   const [buttonUsage, setButtonUsage] = useState<Record<string, number>>({});
+  // Store custom sort orders.
   const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
+
+  // --- UI State ---
+  // Track the ID of the button currently being dragged.
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Store the list of all users in the bar (for "Who's On" and managing).
   const [allUsers, setAllUsers] = useState<any[]>([]);
+  // Control the Input Dialog state (Open/Close, Type, Context).
   const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well' | 'custom', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
+  // Control the Quantity Picker Dialog state.
   const [quantityPicker, setQuantityPicker] = useState<{ open: boolean, currentQty: number, context: string }>({ open: false, currentQty: 1, context: '' });
 
+  // Stack to navigate through nested button menus.
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
-  // FIX 1: Use proper return type for browser environment
+
+  // Ref for the inactivity timer (auto-closes menus). Typed as 'number' for browser compatibility.
   const timerRef = useRef<number | null>(null);
+  // Ref to track dragging state to prevent accidental clicks.
   const isDraggingRef = useRef(false);
+
+  // Dialog visibility states.
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [showBarManager, setShowBarManager] = useState(false);
   const [showAccountDialog, setShowAccountDialog] = useState(false);
   const [showWhoIsOn, setShowWhoIsOn] = useState(false);
+
+  // List of request IDs the user has locally ignored/muted.
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
 
-
-
+  // Notice Board State.
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isAddingNotice, setIsAddingNotice] = useState(false);
   const [noticeText, setNoticeText] = useState('');
   const [noticeError, setNoticeError] = useState<string | null>(null);
+
+  // Store the PWA install prompt event.
   const [installPrompt, setInstallPrompt] = useState<any>(null);
+  // Control the main menu dropdown.
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Fetch latest APK info using custom hook.
   const { downloadUrl: apkUrl, loading: apkLoading } = useLatestRelease();
 
+  // Configure sensors for Drag and Drop (Mouse and Touch).
   const sensors = useSensors(
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 250,
+        delay: 250, // Require a long press to start dragging on touch.
         tolerance: 5,
       },
     }),
     useSensor(MouseSensor, {
       activationConstraint: {
-        distance: 10,
+        distance: 10, // Require movement to start dragging on mouse.
       },
     })
   );
 
+  // Helper: Find the Button ID given a Request Label string.
   const getButtonIdForLabel = (label: string): string | undefined => {
+    // Iterate through top-level buttons.
     for (const btn of buttons) {
         if (label === btn.label) return btn.id;
+        // Check for partial matches (e.g. "ICE: Well 1" starts with "ICE").
         if (label.startsWith(btn.label)) return btn.id;
+        // Check children if they exist.
         if (btn.children) {
             for (const child of btn.children) {
                 if (label === child.label) return btn.id;
@@ -162,18 +223,25 @@ function App() {
     return undefined;
   };
 
+  // Compute the list of active requests relevant to the user.
   const activeRequests = requests.filter(r => {
+      // Only show pending requests.
       if (r.status !== 'pending') return false;
+
       const btnId = getButtonIdForLabel(r.label);
 
-      // Special logic for BREAK
+      // Special Logic: ALWAYS show BREAK requests.
       if (btnId === 'break' || r.label.includes('BREAK')) {
          return true;
       }
 
+      // If we can't identify the button type, show it by default (safety).
       if (!btnId) return true;
+
+      // Otherwise, check if the user has subscribed to this notification type.
       return notificationPreferences.includes(btnId);
   }).sort((a, b) => {
+      // Sort Logic: Ignored requests go to the bottom.
       const aIgnored = ignoredIds.includes(a.id);
       const bIgnored = ignoredIds.includes(b.id);
       if (aIgnored === bIgnored) {
@@ -182,12 +250,14 @@ function App() {
       return aIgnored ? 1 : -1;
   });
 
+  // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);
 
+  // Effect: Capture the PWA 'beforeinstallprompt' event.
   useEffect(() => {
     const handler = (e: any) => {
-      e.preventDefault();
-      setInstallPrompt(e);
+      e.preventDefault(); // Prevent the mini-infobar from appearing.
+      setInstallPrompt(e); // Stash the event so it can be triggered later.
     };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
@@ -195,22 +265,29 @@ function App() {
 
   // --- 1. Auth & Token Sync ---
   useEffect(() => {
+    // Listen for auth state changes.
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
+        // User is logged in. Setup notifications.
         if (Capacitor.isNativePlatform()) {
-          // Native Push Logic
+          // Native (Android/iOS) Push Logic using Capacitor.
           try {
+             // Listen for registration success to get the token.
              await PushNotifications.addListener('registration', token => {
                 setFcmToken(token.value);
              });
 
+             // Listen for registration errors.
              await PushNotifications.addListener('registrationError', err => {
                 console.error('Registration error: ', err.error);
              });
 
+             // Listen for incoming notifications (foreground).
              await PushNotifications.addListener('pushNotificationReceived', () => {
+                // Vibrate.
                 if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+                // Play sound.
                 if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
                 const audio = audioRef.current;
                 audio.pause();
@@ -219,10 +296,12 @@ function App() {
                 audio.play().catch(() => {});
              });
 
+             // Listen for notification taps.
              await PushNotifications.addListener('pushNotificationActionPerformed', () => {
-                 // Future: Handle tap action
+                 // Future: Handle tap action (e.g., open specific request).
              });
 
+             // Request permissions.
              let permStatus = await PushNotifications.checkPermissions();
              if (permStatus.receive === 'prompt') {
                permStatus = await PushNotifications.requestPermissions();
@@ -234,14 +313,18 @@ function App() {
              console.error("Native push setup failed", e);
           }
         } else {
-          // Web Logic
+          // Web (PWA) Push Logic.
           const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+          // Only request permission if installed as PWA (to avoid annoying web visitors).
           if (isStandalone) {
               requestNotificationPermission().then(t => t && setFcmToken(t));
           }
+
+          // Listen for foreground messages.
           onMessageListener().then((payload: any) => {
             if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
 
+            // Show system notification if supported.
             if (payload && payload.notification) {
               new Notification(payload.notification.title, {
                 body: payload.notification.body,
@@ -249,6 +332,7 @@ function App() {
               });
             }
 
+            // Play alert sound (looped 8 times for urgency).
             if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
             const audio = audioRef.current;
             let plays = 0;
@@ -269,20 +353,26 @@ function App() {
 
   // --- 2. Bar Logic & Auto-Clock In ---
   useEffect(() => {
+    // If no user or bar selected, do nothing.
     if (!user || !barId) return;
 
+    // Persist Bar ID to URL and LocalStorage.
     setSearchParams({ bar: barId });
     localStorage.setItem('barId', barId);
 
+    // References to Firestore documents.
     const userRef = doc(db, `bars/${barId}/users`, user.uid);
     const tokenRef = doc(db, `bars/${barId}/tokens`, user.uid);
 
+    // Function to auto-update status and token.
     const autoClockIn = async () => {
       if (fcmToken) {
+        // Store FCM token.
         await setDoc(tokenRef, {
           token: fcmToken,
           updated: serverTimestamp()
         });
+        // Set status to active and update heartbeat.
         await updateDoc(userRef, { 
           status: 'active',
           lastSeen: serverTimestamp()
@@ -291,6 +381,7 @@ function App() {
     };
     autoClockIn();
 
+    // Listen for changes to the User's profile.
     const unsubUser = onSnapshot(userRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
@@ -298,39 +389,46 @@ function App() {
         setUserStatus(data.status || 'active');
         setDisplayName(data.displayName || 'Unknown');
 
-        // Load notification preferences or set defaults
+        // Load notification preferences or set defaults.
         if (data.notificationPreferences) {
           setNotificationPreferences(data.notificationPreferences);
         } else if (data.role) {
-          // If no preferences saved, use defaults for role
+          // If no preferences saved, use defaults for role.
           setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[data.role] || []);
         }
 
-        // Auto-coordinate ntfy topic
+        // Auto-coordinate ntfy topic (e.g., 'barbacker-uid').
         const autoTopic = `barbacker-${user.uid}`;
         if (data.ntfyTopic !== autoTopic) {
+            // If topic is missing or wrong, update it.
             updateDoc(userRef, { ntfyTopic: autoTopic }).catch(console.error);
             setNtfyTopic(autoTopic);
         } else {
             setNtfyTopic(data.ntfyTopic);
         }
       } else {
+        // User document doesn't exist (new user).
         setUserRole(null);
       }
     });
 
+    // Listen for changes to the Bar configuration.
     const unsubBar = onSnapshot(doc(db, 'bars', barId), (d) => {
       if (d.exists()) {
         const data = d.data() as Bar;
         setBarName(data.name);
+
+        // Merge default buttons with custom bar buttons.
         if (data.buttons) {
-            // Deduplicate buttons by ID, preferring custom (data.buttons) over default
+            // Deduplicate buttons by ID, preferring custom (data.buttons) over default.
             const customMap = new Map(data.buttons.map(b => [b.id, b]));
             const combined = [...DEFAULT_BUTTONS.filter(b => !customMap.has(b.id)), ...data.buttons];
             setButtons(combined);
         } else {
             setButtons(DEFAULT_BUTTONS);
         }
+
+        // Update local state with bar data.
         if (data.beerInventory) setBeerInventory(data.beerInventory);
         if (data.wells) setWells(data.wells);
         if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
@@ -339,11 +437,15 @@ function App() {
       }
     });
 
+    // Listen for Requests.
+    // Query: Last 24 hours, matching Bar ID, ordered by time. Limit to 100 for performance.
     const unsubReq = onSnapshot(
       query(collection(db, 'requests'), where('barId', '==', barId), where('timestamp', '>=', new Date(Date.now() - 24 * 60 * 60 * 1000)), orderBy('timestamp', 'desc'), limit(100)),
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
     );
 
+    // Listen for All Users (for "Who's On").
+    // Query varies based on whether we are viewing the "Who's On" dialog (show off_clock users too).
     const requiredStatuses = showWhoIsOn ? ['active', 'pending', 'off_clock'] : ['active', 'pending'];
     const userQuery = query(collection(db, `bars/${barId}/users`), where('status', 'in', requiredStatuses));
 
@@ -351,11 +453,11 @@ function App() {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // Notices Subscription
+    // Listen for Notices (Bulletin Board).
+    // Query: Last 3 days.
     const unsubNotices = onSnapshot(
       query(
         collection(db, `bars/${barId}/notices`),
-        // Filter for last 3 days. Legacy documents without timestamp will be excluded.
         where('timestamp', '>=', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
         orderBy('timestamp', 'desc'), limit(100)
       ),
@@ -365,29 +467,40 @@ function App() {
       }
     );
 
+    // Cleanup: Unsubscribe from all listeners when component unmounts or barId changes.
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
   }, [user, barId, fcmToken, setSearchParams, showWhoIsOn]);
 
 
-
   // --- Timer ---
+  // Inactivity timer to close menus after 60 seconds.
   useEffect(() => {
+    // Clear existing timer.
     if (timerRef.current) window.clearTimeout(timerRef.current);
+
+    // If a menu is open (navStack > 0)...
     if (navStack.length > 0) {
+      // Set a timeout.
       timerRef.current = window.setTimeout(() => {
+        // Construct label from the path (e.g. "SERVICE ITEMS: PINT").
         const trail = navStack.map(b => b.label).join(': ');
+        // Auto-submit as an "Ask Me" request.
         submitRequest(`${trail} (Ask Me)`);
+        // Reset stack.
         setNavStack([]);
       }, 60000);
     }
+    // Cleanup.
     return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
   }, [navStack]);
 
   // --- Actions ---
 
+  // Save a new beer brand to the bar's inventory.
   const saveBrand = async (brandName: string) => {
     if (!user || !barId) return;
 
+    // If it already exists, just open it.
     if (beerInventory[brandName]) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
         const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
@@ -395,22 +508,27 @@ function App() {
         return;
     }
 
+    // Write to Firestore.
     await setDoc(doc(db, 'bars', barId), {
-        beerInventory: { [brandName]: [] }
+        beerInventory: { [brandName]: [] } // Object syntax uses dot notation for updates, but here we merge.
     }, { merge: true });
 
+    // Update local state optimistically.
     setBeerInventory(prev => ({ ...prev, [brandName]: [] }));
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
+    // Navigate to the new brand.
     const brandBtn = { id: `brand_${brandName}`, label: brandName, children: [] };
     setNavStack(prev => [...prev, brandBtn]);
   };
 
+  // Save a new beer type (e.g., "Bottle") to a brand.
   const saveType = async (typeName: string) => {
     if (!user || !barId || !inputDialog.parentContext) return;
     const brand = inputDialog.parentContext;
     const currentTypes = beerInventory[brand] || [];
 
+    // If exists, open it.
     if (currentTypes.includes(typeName)) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
         const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
@@ -418,20 +536,25 @@ function App() {
         return;
     }
 
+    // Update Firestore (arrayUnion ensures uniqueness).
     await updateDoc(doc(db, 'bars', barId), {
         [`beerInventory.${brand}`]: arrayUnion(typeName)
     });
 
+    // Update local state.
     setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), typeName] }));
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
+    // Navigate.
     const typeBtn = { id: `type_${brand}_${typeName}`, label: typeName, children: [] };
     setNavStack(prev => [...prev, typeBtn]);
   };
 
+  // Save a new Well location.
   const saveWell = async (wellName: string) => {
     if (!user || !barId) return;
 
+    // If exists, request ice for it.
     if (wells.includes(wellName)) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
         submitRequest(`ICE: ${wellName}`);
@@ -439,17 +562,21 @@ function App() {
         return;
     }
 
+    // Add to Firestore.
     await updateDoc(doc(db, 'bars', barId), {
         wells: arrayUnion(wellName)
     });
 
+    // Update local state.
     setWells(prev => [...prev, wellName]);
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
+    // Submit request.
     submitRequest(`ICE: ${wellName}`);
     setNavStack([]);
   };
 
+  // Hide a button from the dashboard.
   const hideButton = async (btnId: string) => {
     if (!user || !barId) return;
     await updateDoc(doc(db, 'bars', barId), {
@@ -458,7 +585,7 @@ function App() {
     setHiddenButtonIds(prev => [...prev, btnId]);
   };
 
-
+  // Save a notice to the bulletin board.
   const saveNotice = async (text: string) => {
     if (!user || !barId || !text.trim()) return;
     try {
@@ -476,6 +603,7 @@ function App() {
     }
   };
 
+  // Delete a notice.
   const deleteNotice = async (noticeId: string) => {
     if (!user || !barId) return;
     if (confirm("Delete this notice?")) {
@@ -483,24 +611,30 @@ function App() {
     }
   };
 
+  // Determine children for dynamic buttons (ICE, BEER, etc.).
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
+    // Logic for ICE button -> Show Wells.
     if (btn.id === 'ice') {
         const wellButtons: ButtonConfig[] = wells.map(w => ({
             id: `well_${w}`,
             label: w
         }));
+        // Add option to create new well.
         return [...wellButtons, { id: 'add_well', label: '+ ADD WELL', isCustom: true }];
     }
 
+    // Logic for BEER button -> Show Brands.
     if (btn.id === 'restock_beer') {
       const brandButtons: ButtonConfig[] = Object.keys(beerInventory).map(brand => ({
         id: `brand_${brand}`,
         label: brand,
         children: []
       }));
+      // Add option to create new brand.
       return [...brandButtons, { id: 'add_brand', label: '+ ADD BRAND', action: 'add_brand', isCustom: true }];
     }
 
+    // Logic for Brand buttons -> Show Types.
     if (btn.id.startsWith('brand_')) {
       const brandName = btn.label;
       const types = beerInventory[brandName] || [];
@@ -509,9 +643,11 @@ function App() {
         label: t,
         children: []
       }));
+      // Add option to create new type.
       return [...typeButtons, { id: 'add_type', label: '+ ADD TYPE', action: 'add_type', isCustom: true }];
     }
 
+    // Logic for Type buttons -> Show Quantities.
     if (btn.id.startsWith('type_')) {
       return [
         { id: 'qty_6', label: '6' },
@@ -521,9 +657,11 @@ function App() {
       ];
     }
 
+    // Default: return static children.
     return btn.children || [];
   };
 
+  // Track usage for sorting.
   const trackButtonUsage = (btnId: string) => {
     if (!barId) return;
     updateDoc(doc(db, 'bars', barId), {
@@ -531,9 +669,11 @@ function App() {
     }).catch(e => console.error("Failed to track usage", e));
   };
 
+  // Sort buttons based on custom order or usage.
   const sortButtons = (btns: ButtonConfig[], contextId: string) => {
     const order = customOrders[contextId];
     if (order) {
+        // Use custom order.
         return [...btns].sort((a, b) => {
             const indexA = order.indexOf(a.id);
             const indexB = order.indexOf(b.id);
@@ -543,6 +683,7 @@ function App() {
             return indexA - indexB;
         });
     }
+    // Default: Sort by usage (most used first).
     return [...btns].sort((a, b) => {
         const usageA = buttonUsage[a.id] || 0;
         const usageB = buttonUsage[b.id] || 0;
@@ -550,6 +691,7 @@ function App() {
     });
   };
 
+  // Drag handlers for dnd-kit.
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
     isDraggingRef.current = true;
@@ -561,6 +703,7 @@ function App() {
       const oldIndex = items.findIndex(i => i.id === active.id);
       const newIndex = items.findIndex(i => i.id === over.id);
 
+      // Reorder items locally.
       const newOrder = arrayMove(items, oldIndex, newIndex).map(i => i.id);
       setCustomOrders(prev => ({ ...prev, [contextId]: newOrder }));
     }
@@ -570,6 +713,7 @@ function App() {
     setActiveId(null);
     isDraggingRef.current = false;
 
+    // Persist new order to Firestore.
     if (barId && customOrders[contextId]) {
        await updateDoc(doc(db, 'bars', barId), {
           [`customOrders.${contextId}`]: customOrders[contextId]
@@ -577,9 +721,11 @@ function App() {
     }
   };
 
+  // Main button click handler.
   const handleButtonClick = (btn: ButtonConfig) => {
     trackButtonUsage(btn.id);
 
+    // Handle special actions.
     if (btn.id === 'add_well') {
       const defaultName = `Well #${wells.length + 1}`;
       setInputDialog({ type: 'well', open: true, searchTerm: defaultName });
@@ -607,20 +753,26 @@ function App() {
       return;
     }
 
+    // Check for children.
     const children = getDynamicChildren(btn);
     if (children && children.length > 0) {
+      // Navigate deeper.
       setNavStack([...navStack, btn]);
     } else {
+      // Leaf node: Submit Request.
+      // Construct label from stack + current button.
       submitRequest([...navStack, btn].map(b => b.label).join(': '));
       setNavStack([]);
     }
   };
 
+  // Finalize role selection and enter the dashboard.
   const confirmRole = async (role: string, name: string) => {
     if (!user || !barId) return;
 
-    const status = 'active';
+    const status = 'pending';
 
+    // Update User Document.
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
       role: role,
       displayName: name,
@@ -628,9 +780,11 @@ function App() {
       status: status,
       joinedAt: serverTimestamp(),
       lastSeen: serverTimestamp(),
+      // Set default prefs if not exists.
       notificationPreferences: ROLE_NOTIFICATION_DEFAULTS[role] || []
     }, { merge: true });
     
+    // Ensure Token is fresh.
     if (fcmToken) {
       await setDoc(doc(db, `bars/${barId}/tokens`, user.uid), {
         token: fcmToken,
@@ -639,21 +793,29 @@ function App() {
     }
   };
 
+  // Set user status to 'off_clock'.
   const goOffClock = async () => {
     if (!user || !barId) return;
+    // Remove token so they stop getting pushes.
     await deleteDoc(doc(db, `bars/${barId}/tokens`, user.uid));
+    // Update status.
     await updateDoc(doc(db, `bars/${barId}/users`, user.uid), {
       status: 'off_clock'
     });
+    // Cleanup local state.
     setBarId(null);
     localStorage.removeItem('barId');
     setShowOffClockDialog(false);
     await signOut(auth);
   };
 
+  // Create a new request.
   const submitRequest = async (label: string) => {
     if (!user || !barId) return;
+    // Vibrate feedback.
     if (navigator.vibrate) navigator.vibrate(100);
+
+    // Add to Firestore.
     await addDoc(collection(db, 'requests'), {
       barId,
       label: label,
@@ -665,40 +827,37 @@ function App() {
       lastNotification: serverTimestamp()
     });
 
-    // Send ntfy notifications to relevant users
-    // Filter logic: Users who are active, not the requester (optional), and have a topic
-    // For simplicity, send to all users with a topic in this bar.
-    // In a real app, you might filter by role or preference (using notificationPreferences logic would be complex here without loading every user's preferences fully).
-    // Let's blindly send to all configured topics for now, as ntfy is opt-in via topic.
+    // Send ntfy notifications (iOS/external).
 
     const btnId = getButtonIdForLabel(label);
 
-    // Send ntfy notifications to relevant users
-    // Filter logic: Users who are active, not the requester, and have a topic
-    // AND fulfill the role-based filtering requirement
     const topics = new Set<string>();
 
     allUsers.forEach(u => {
-        // Treat undefined status as active for backward compatibility
+        // Treat undefined status as active.
         const isActive = u.status === 'active' || u.status === undefined;
+        // Skip inactive users, self, or those without topics.
         if (!isActive || u.id === user.uid || !u.ntfyTopic) return;
 
         let prefs = u.notificationPreferences;
+        // Fallback to role defaults.
         if (!prefs && u.role) {
             prefs = ROLE_NOTIFICATION_DEFAULTS[u.role] || [];
         }
 
-        // Special BREAK logic
+        // Special BREAK logic: Everyone gets BREAK alerts if configured.
         if (label.includes('BREAK') || btnId === 'break') {
              topics.add(u.ntfyTopic);
              return;
         }
 
+        // Normal check: Does user's prefs include this button?
         if (prefs && btnId && prefs.includes(btnId)) {
             topics.add(u.ntfyTopic);
         }
     });
 
+    // Send the requests.
     topics.forEach(topic => {
         fetch(`https://ntfy.sh/${topic}`, {
             method: 'POST',
@@ -712,6 +871,7 @@ function App() {
     });
   };
 
+  // Mark a request as claimed.
   const claimRequest = async (reqId: string) => {
     await updateDoc(doc(db, 'requests', reqId), {
       status: 'claimed',
@@ -721,6 +881,7 @@ function App() {
     });
   };
 
+  // Save new notification settings.
   const saveNotificationPreferences = async (prefs: string[], topic: string) => {
     if (!user || !barId) return;
     setNotificationPreferences(prefs);
@@ -731,11 +892,13 @@ function App() {
     }, { merge: true });
   };
 
+  // Sign out.
   const handleLogout = async () => {
     await signOut(auth);
     setShowAccountDialog(false);
   };
 
+  // Leave bar (delete user profile from bar).
   const handleLeaveBar = async () => {
     if (!user || !barId) return;
     if (!confirm('Are you sure you want to leave this bar? You will need to join again.')) return;
@@ -746,6 +909,7 @@ function App() {
     await signOut(auth);
   };
 
+  // Delete account entirely.
   const handleDeleteAccount = async () => {
     if (!user || !barId) return;
     if (!confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
@@ -760,25 +924,30 @@ function App() {
     }
   };
 
+  // Handle email login/register form submission.
   const handleEmailAuth = async (e: any) => {
     e.preventDefault(); const fd = new FormData(e.target);
     try { isRegistering ? await createUserWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string) : await signInWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string); } catch (e: any) { setAuthError(e.message); }
   };
+
+  // Handle Google Login.
   const handleGoogle = async () => { try { await signInWithPopup(auth, googleProvider); } catch (e: any) { setAuthError(e.message); } };
 
+  // Handle PWA install click.
   const handleInstall = async () => {
     if (!installPrompt) return;
     installPrompt.prompt();
     const { outcome } = await installPrompt.userChoice;
     if (outcome === 'accepted') {
       setInstallPrompt(null);
-      // Request permissions after install
+      // Request permissions after install.
       if (user) {
          requestNotificationPermission().then(t => t && setFcmToken(t));
       }
     }
   };
 
+  // Share the app URL.
   const handleShare = async () => {
     if (navigator.share) {
         try {
@@ -798,6 +967,7 @@ function App() {
 
   // --- Views ---
 
+  // 1. Auth Screen
   if (!user) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-8 bg-black">
@@ -826,6 +996,7 @@ function App() {
     );
   }
 
+  // 2. Bar Selection Screen
   if (!barId) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black">
@@ -839,7 +1010,7 @@ function App() {
             const barRef = doc(db, 'bars', b.id);
             const existingSnap = await getDoc(barRef);
 
-            // Only create if it doesn't exist to prevent overwriting custom data
+            // Only create if it doesn't exist to prevent overwriting custom data.
             if (!existingSnap.exists()) {
                 await setDoc(barRef, {
                   name: b.name,
@@ -876,6 +1047,7 @@ function App() {
     );
   }
 
+  // 3. Role Selection Screen
   if (!userRole) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black">
@@ -888,25 +1060,33 @@ function App() {
     );
   }
 
+  // --- Main Dashboard Computation ---
+
+  // History log: active requests are already filtered out.
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 
+  // Time formatter.
   const formatTime = (ts: any) => {
     if (!ts) return '';
     const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   };
 
+  // Determine which buttons to show based on nav stack.
   const currentContextId = navStack.length > 0 ? navStack[navStack.length - 1].id : 'main';
   const currentButtonsSource = navStack.length > 0 ? getDynamicChildren(navStack[navStack.length - 1]) : buttons;
   const activeButtons = currentButtonsSource.filter(btn => !hiddenButtonIds.includes(btn.id));
   const currentButtons = sortButtons(activeButtons, currentContextId);
 
+  // Sorting for main screen.
   const sortedAllButtons = sortButtons(buttons, 'main');
   const mainScreenButtons = sortedAllButtons.filter(btn => !hiddenButtonIds.includes(btn.id));
 
+  // Check for pending users (for Managers).
   const pendingUsers = allUsers.filter(u => u.status === 'pending');
   const showApprovals = pendingUsers.length > 0;
 
+  // 4. Pending Approval Screen
   if (userStatus === 'pending') {
       return (
         <div className="h-[100dvh] w-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black text-center overflow-hidden">
@@ -918,9 +1098,11 @@ function App() {
       );
   }
 
+  // 5. Main Dashboard Render
   return (
     <div className="h-[100dvh] w-screen flex flex-col bg-black overflow-hidden">
       
+      {/* Dialogs */}
       <BarManager
         open={showBarManager}
         onClose={() => setShowBarManager(false)}
@@ -953,7 +1135,7 @@ function App() {
         onSearchChange={(val) => setInputDialog(prev => ({ ...prev, searchTerm: val }))}
         onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}
         onSelect={(val) => {
-            // Deduplication Check
+            // Deduplication Check.
             const existingLabels = currentButtonsSource.map(b => b.label.toLowerCase());
             if (existingLabels.includes(val.toLowerCase())) {
                 alert('This button already exists!');
@@ -1025,7 +1207,9 @@ function App() {
         </div>
       </md-dialog>
 
+      {/* --- Navbar --- */}
       <div className="flex-none flex flex-wrap justify-between items-center py-12 px-6 bg-[#121212] border-b border-[#333] z-10 gap-4">
+        {/* User Info */}
         <div
             className="flex items-center min-w-[200px] cursor-pointer hover:bg-white/5 p-2 rounded transition-colors mr-auto ml-4"
             onClick={() => setShowAccountDialog(true)}
@@ -1035,19 +1219,26 @@ function App() {
             <span className="text-white text-xl whitespace-pre">        </span>
             <span className="bg-gray-800 px-4 py-2 rounded text-base text-gray-300 whitespace-nowrap">{userRole}</span>
         </div>
+
+        {/* Right Side Actions */}
         <div className="flex items-center gap-6 mr-4 flex-wrap justify-end">
+           {/* Bar Name (Hidden on small screens) */}
            <span className="font-bold text-xl text-white tracking-wide hidden sm:block">{barName}</span>
+
+           {/* Bar Manager Button (Visible on small screens) */}
            <md-text-button onClick={() => setShowBarManager(true)} className="sm:hidden">
              <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
            </md-text-button>
 
            <div className="flex gap-4 items-center">
+                {/* Install App Button */}
                 {installPrompt && (
                   <md-icon-button onClick={handleInstall} title="Install App" className="navbar-icon-button">
                     <md-icon className="text-blue-400" style={{ fontSize: '36px' }}>download</md-icon>
                   </md-icon-button>
                 )}
 
+                {/* Main Menu */}
                 <span style={{ position: 'relative' }}>
                     <md-icon-button
                         id="menu-anchor"
@@ -1099,7 +1290,7 @@ function App() {
         </div>
       </div>
 
-      {/* Bulletin Board */}
+      {/* --- Bulletin Board (Marquee) --- */}
       {notices.length > 0 && (
           <div className="bg-yellow-900/20 border-b border-yellow-900/50 overflow-hidden relative h-8 flex items-center">
               <div className="animate-marquee whitespace-nowrap flex gap-12 text-yellow-500 text-sm font-medium items-center">
@@ -1119,6 +1310,7 @@ function App() {
           </div>
       )}
 
+      {/* Account Dialog */}
       <md-dialog open={showAccountDialog || undefined} onClose={() => setShowAccountDialog(false)}>
         <div slot="headline">Account Options</div>
         <div slot="content" className="flex flex-col gap-4 pt-4">
@@ -1138,16 +1330,22 @@ function App() {
         </div>
       </md-dialog>
 
+      {/* --- Main Content Area --- */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden w-full relative pb-[35vh]">
+
+      {/* Sub-menu Overlay (NavStack) */}
       {navStack.length > 0 && (
         <div className="fixed inset-0 top-[88px] z-50 bg-black/95 flex items-start justify-center p-4 pt-10 animate-in fade-in duration-200 backdrop-blur-sm">
           <div className="bg-[#121212] w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 rounded-2xl border border-gray-800 shadow-2xl flex flex-col relative animate-in zoom-in-95 duration-200">
+            {/* Breadcrumbs */}
             <div className="flex items-center gap-3 mb-4 flex-none border-b border-gray-800 pb-4">
               <md-icon-button onClick={() => setNavStack([])}><md-icon>arrow_back</md-icon></md-icon-button>
               <span className="text-lg font-bold text-white uppercase tracking-wide truncate flex-1">
                 {navStack.map(b => b.label).join(' > ')}
               </span>
             </div>
+
+            {/* Draggable Sub-buttons */}
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -1174,6 +1372,7 @@ function App() {
                 ) : null}
               </DragOverlay>
             </DndContext>
+
             <div className="mt-6 flex-none">
               <md-outlined-button className="w-full" onClick={() => setNavStack([])} style={{ height: '56px' }}>
                  Cancel
@@ -1183,6 +1382,7 @@ function App() {
         </div>
       )}
 
+      {/* Main Grid Buttons */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -1192,7 +1392,9 @@ function App() {
       >
         <SortableContext items={mainScreenButtons} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-2 gap-8 p-6">
+            {/* Render Standard Buttons + Custom Request Button */}
             {[...mainScreenButtons, { id: 'custom_req_btn', label: 'CUSTOM', icon: 'add', isCustom: true }].map(btn => {
+              // Highlight pending requests.
               const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
               return (
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
@@ -1228,9 +1430,11 @@ function App() {
         </DragOverlay>
       </DndContext>
 
+      {/* --- Notification Footer (Active Requests) --- */}
       <div className="fixed bottom-0 left-0 right-0 w-full max-h-[33vh] bg-[#1E1E1E] border-t border-[#333] z-20 flex flex-col shadow-2xl transition-all duration-300">
         <div className="flex-none p-2 bg-[#252525] border-b border-[#333] flex justify-between items-center px-4 sticky top-0 z-30">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notifications ({activeRequests.length})</span>
+            {/* Show Pending Approvals Badge for Managers */}
             {showApprovals && (
                 <md-filled-button
                     onClick={() => setShowBarManager(true)}
@@ -1250,6 +1454,7 @@ function App() {
                         key={req.id}
                         className={`w-full grid grid-cols-[33vw_1fr_auto] items-center gap-2 p-3 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
                     >
+                        {/* Request Info */}
                         <div className="flex flex-col overflow-hidden mr-2">
                             <span className={`font-bold text-lg leading-tight truncate ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
                             <div className="flex flex-wrap gap-1 text-xs text-gray-400 mt-1 truncate">
@@ -1259,6 +1464,7 @@ function App() {
                             </div>
                         </div>
 
+                        {/* Claim Button */}
                         <md-filled-button
                             onClick={() => claimRequest(req.id)}
                             className={`w-full ${isIgnored ? '' : 'btn-alert'}`}
@@ -1267,6 +1473,7 @@ function App() {
                             CLAIM
                         </md-filled-button>
 
+                        {/* Actions: Cancel (if own) or Ignore */}
                         {isMyRequest ? (
                              <md-outlined-button
                                 onClick={async (e: any) => {
@@ -1300,6 +1507,7 @@ function App() {
         </div>
       </div>
 
+      {/* --- Shift Log (Below Fold) --- */}
       <div className="px-4 mt-8 pb-32">
         <div className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-widest">Shift Log</div>
         <md-list className="bg-transparent">

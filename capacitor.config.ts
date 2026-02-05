@@ -5,7 +5,9 @@ const config: CapacitorConfig = {
   appName: 'barbacker',
   webDir: 'dist',
   server: {
-    url: import.meta.env.VITE_PWA_URL || 'https://hereliesaz.github.io/BarBacker/',
+    // Note: import.meta.env is Vite specific and may fail in Capacitor CLI context if not transpiled.
+    // Falling back to process.env or hardcoded for the config file.
+    url: 'https://hereliesaz.github.io/BarBacker/',
     allowNavigation: ['hereliesaz.github.io']
   }
 };

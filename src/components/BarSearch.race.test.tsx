@@ -97,17 +97,7 @@ describe('BarSearch Race Condition', () => {
     // We expect the stale result ("First Result") to NOT be visible.
     // And "Second Result" SHOULD still be visible.
 
-    const firstResults = screen.queryAllByText('First Result');
-    const secondResults = screen.queryAllByText('Second Result');
-
-    // To verify we have reproduced the bug, we expect this expectation to FAIL initially.
-    // The current buggy code should show First Result and hide Second Result (because it overwrites).
-
-    if (firstResults.length > 0) {
-        console.log('Race condition detected: Stale result overwrote latest result.');
-        throw new Error('Race condition detected: Stale result overwrote latest result.');
-    }
-
-    expect(secondResults.length).toBeGreaterThan(0);
+    expect(screen.queryByText('First Result')).not.toBeInTheDocument();
+    expect(screen.getByText('Second Result')).toBeInTheDocument();
   });
 });

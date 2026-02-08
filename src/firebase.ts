@@ -1,7 +1,11 @@
 // Import the 'initializeApp' function from the Firebase SDK to initialize the Firebase app instance.
 import { initializeApp } from "firebase/app";
-// Import 'getFirestore' to access the Cloud Firestore database service.
-import { getFirestore } from "firebase/firestore";
+// Import Firestore functions including persistence configuration.
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager
+} from "firebase/firestore";
 // Import authentication-related functions from the Firebase Auth SDK.
 // 'getAuth' retrieves the authentication service.
 // 'GoogleAuthProvider' is used for Google Sign-In.
@@ -37,8 +41,12 @@ const firebaseConfig = {
 // Initialize the Firebase application with the configuration.
 const app = initializeApp(firebaseConfig);
 
-// Initialize and export the Cloud Firestore service instance.
-export const db = getFirestore(app);
+// Initialize and export the Cloud Firestore service instance with offline persistence enabled.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+});
 
 // Initialize and export the Firebase Authentication service instance.
 export const auth = getAuth(app);

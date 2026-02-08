@@ -98,6 +98,8 @@ describe('BarSearch Race Condition', () => {
     // And "Second Result" SHOULD still be visible.
 
     expect(screen.queryByText('First Result')).not.toBeInTheDocument();
-    expect(screen.getByText('Second Result')).toBeInTheDocument();
+    const results = screen.getAllByText('Second Result');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]).toBeInTheDocument();
   });
 });

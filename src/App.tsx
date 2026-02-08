@@ -1,5 +1,5 @@
 // Import React hooks for managing state and side effects.
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 // Import 'useSearchParams' to read/write URL query parameters.
 import { useSearchParams } from 'react-router-dom';
 // Import Firebase Auth functions.
@@ -207,7 +207,7 @@ function App() {
   );
 
   // Helper: Find the Button ID given a Request Label string.
-  const getButtonIdForLabel = (label: string): string | undefined => {
+  const getButtonIdForLabel = useCallback((label: string): string | undefined => {
     // Iterate through top-level buttons.
     for (const btn of buttons) {
         if (label === btn.label) return btn.id;
@@ -221,10 +221,10 @@ function App() {
         }
     }
     return undefined;
-  };
+  }, [buttons]);
 
   // Compute the list of active requests relevant to the user.
-  const activeRequests = requests.filter(r => {
+  const activeRequests = useMemo(() => requests.filter(r => {
       // Only show pending requests.
       if (r.status !== 'pending') return false;
 
@@ -248,7 +248,7 @@ function App() {
           return 0;
       }
       return aIgnored ? 1 : -1;
-  });
+  }), [requests, getButtonIdForLabel, notificationPreferences, ignoredIds]);
 
   // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);

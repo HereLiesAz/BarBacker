@@ -11,13 +11,14 @@ import { ROLES } from '../constants';
 // Define props.
 interface RoleSelectorProps {
   onSelect: (role: string, name: string) => void;
+  initialName?: string;
 }
 
 // Component to select user role and set display name upon joining.
-const RoleSelector = ({ onSelect }: RoleSelectorProps) => {
+const RoleSelector = ({ onSelect, initialName }: RoleSelectorProps) => {
   // Local state.
   const [selectedRole, setSelectedRole] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [displayName, setDisplayName] = useState(initialName || '');
 
   return (
     <div className="w-[300px] space-y-6 animate-in fade-in slide-in-from-bottom-4">

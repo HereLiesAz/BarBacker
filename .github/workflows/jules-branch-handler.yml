@@ -1,8 +1,7 @@
 name: Jules Branch Handler
 on:
-  create:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
   pull_request_review:
     types: [submitted]
   issue_comment:
@@ -11,10 +10,9 @@ on:
 jobs:
   manage_branch:
     if: |
-      ((github.event_name == 'create' && github.event.ref_type == 'branch' && github.event.ref != 'main') ||
-      (github.event_name == 'pull_request') ||
+      ((github.event_name == 'pull_request') ||
       (github.event_name == 'pull_request_review') ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request)) &&
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@google-labs-jules'))) &&
       github.actor != 'google-labs-jules[bot]' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
@@ -40,29 +38,23 @@ jobs:
 
             # Instructions
             1. **Identify the Branch/PR**:
-               - If triggered by `create`, the branch is `${{ github.ref_name }}`.
                - If triggered by `pull_request`*, the branch is `${{ github.head_ref }}`.
                - If triggered by `issue_comment`, identify the PR #${{ github.event.issue.number }}.
 
-            2. **Create Pull Request**:
-               - If this is a new branch and no PR exists for it targeting the default branch, CREATE ONE.
-               - Title: Use a descriptive title based on the branch name or commits.
-               - Description: Summarize changes.
-
-            3. **Evaluate & Verify**:
+            2. **Evaluate & Verify**:
                - Examine the code changes. Are they valid and necessary?
                - IF INVALID/UNNECESSARY: Close the PR and delete the branch. Comment with your reasoning.
 
-            4. **Review & Fix**:
+            3. **Review & Fix**:
                - Review the code yourself. Fix any bugs, style issues, or bad practices you find.
                - **Address Reviewer Feedback**: If this run was triggered by a review or comment, or if there are open comments, FIX THEM.
                - **Resolve Conflicts**: Check for merge conflicts. If they exist, rebase or merge the target branch and resolve them.
 
-            5. **Merge**:
+            4. **Merge**:
                - If the PR is valid, approved (or valid enough in your judgment), and passes your verification:
                - MERGE the Pull Request into the default branch.
 
-            6. **Cleanup**:
+            5. **Cleanup**:
                - Upon successful merge (or rejection), ensure the PR is closed and the branch is deleted.
 
             # Constraints

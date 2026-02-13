@@ -8,6 +8,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Users: Allow read/write for the user themselves
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
     // Bars: Allow read/write for authenticated users
     // In a real app, you might restrict write to Owners or specific roles
     match /bars/{barId} {
@@ -15,7 +20,10 @@ service cloud.firestore {
 
       // Users subcollection: Allow read/write for authenticated users
       match /users/{userId} {
-        allow read, write: if isAuthenticated();
+        // Allow write only if user is modifying their own document
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+        // Allow read if user is reading their own document OR the user is active/pending
+        allow read: if isAuthenticated() && (request.auth.uid == userId || resource.data.status in ['active', 'pending']);
       }
 
       // Tokens subcollection: Allow read/write for authenticated users

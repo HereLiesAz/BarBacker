@@ -77,7 +77,7 @@ vi.mock('../firebase', () => ({
 
 // Mock useLatestRelease
 vi.mock('../hooks/useLatestRelease', () => ({
-  useLatestRelease: () => ({ downloadUrl: 'http://example.com/app.apk', loading: false }),
+  useLatestRelease: () => ({ downloadUrl: 'http://example.com/app.apk', loading: false, version: null, error: null }),
 }));
 
 class MockAudio {

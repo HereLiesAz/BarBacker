@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 import { MemoryRouter } from 'react-router-dom';
 
+vi.mock('../hooks/useLatestRelease', () => ({
+  useLatestRelease: () => ({ downloadUrl: 'http://example.com/app.apk', loading: false }),
+}));
+
 // Mocks
 const mockUser = { uid: 'test-user', email: 'test@example.com' };
 

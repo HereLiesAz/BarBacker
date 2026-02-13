@@ -4,6 +4,10 @@ import App from '../App';
 import { MemoryRouter } from 'react-router-dom';
 import * as firestore from 'firebase/firestore';
 
+vi.mock('../hooks/useLatestRelease', () => ({
+  useLatestRelease: () => ({ downloadUrl: 'http://example.com/app.apk', loading: false }),
+}));
+
 // Mock Firebase Auth
 vi.mock('firebase/auth', () => ({
   getAuth: vi.fn(),

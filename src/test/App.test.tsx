@@ -48,6 +48,10 @@ vi.mock('../firebase', () => ({
   onMessageListener: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('../hooks/useLatestRelease', () => ({
+  useLatestRelease: vi.fn(() => ({ downloadUrl: null, version: null, loading: false, error: null })),
+}));
+
 // Mock Audio correctly as a class
 class MockAudio {
     constructor(src: string) {}

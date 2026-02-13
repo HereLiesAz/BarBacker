@@ -75,6 +75,10 @@ vi.mock('../firebase', () => ({
   onMessageListener: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('../hooks/useLatestRelease', () => ({
+  useLatestRelease: vi.fn(() => ({ downloadUrl: null, version: null, loading: false, error: null })),
+}));
+
 class MockAudio {
     constructor(src: string) {}
     play() { return Promise.resolve(); }

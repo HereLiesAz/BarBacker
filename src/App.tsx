@@ -206,22 +206,35 @@ function App() {
     })
   );
 
-  // Helper: Find the Button ID given a Request Label string.
-  const getButtonIdForLabel = useCallback((label: string): string | undefined => {
-    // Iterate through top-level buttons.
+  // Memoized lookup map for button IDs. Maps both top-level and child labels to top-level button ID.
+  const buttonLookupMap = useMemo(() => {
+    const map = new Map<string, string>();
+    // Iterate in order; first match for a label wins, preserving original behavior.
     for (const btn of buttons) {
-        if (label === btn.label) return btn.id;
-        // Check for partial matches (e.g. "ICE: Well 1" starts with "ICE").
-        if (label.startsWith(btn.label)) return btn.id;
-        // Check children if they exist.
+        if (!map.has(btn.label)) map.set(btn.label, btn.id);
         if (btn.children) {
             for (const child of btn.children) {
-                if (label === child.label) return btn.id;
+                if (!map.has(child.label)) map.set(child.label, btn.id);
             }
         }
     }
-    return undefined;
+    return map;
   }, [buttons]);
+
+  // Helper: Find the Button ID given a Request Label string.
+  const getButtonIdForLabel = useCallback((label: string): string | undefined => {
+    // 1. Try exact match from the memoized map (O(1)).
+    const exactMatch = buttonLookupMap.get(label);
+    if (exactMatch) return exactMatch;
+
+    // 2. Check for partial matches (e.g. "ICE: Well 1" starts with "ICE") (O(Buttons)).
+    // We only iterate top-level buttons, avoiding nested child loops.
+    for (const btn of buttons) {
+        if (label.startsWith(btn.label)) return btn.id;
+    }
+
+    return undefined;
+  }, [buttons, buttonLookupMap]);
 
   // Compute the list of active requests relevant to the user.
   const activeRequests = useMemo(() => requests.filter(r => {

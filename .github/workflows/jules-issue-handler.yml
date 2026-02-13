@@ -5,7 +5,10 @@ on:
 
 jobs:
   handle_issue:
-    if: github.actor != 'google-labs-jules[bot]' && github.actor != 'github-actions[bot]'
+    if: |
+      github.actor != 'google-labs-jules[bot]' && github.actor != 'google-labs-jules' &&
+      github.actor != 'github-actions[bot]' && github.actor != 'github-actions' &&
+      !endsWith(github.actor, '[bot]')
     runs-on: ubuntu-latest
     permissions:
       contents: read

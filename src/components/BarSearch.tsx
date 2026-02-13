@@ -55,6 +55,8 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
 
   // Effect to handle the search logic with debouncing.
   useEffect(() => {
+    let isActive = true;
+
     // Only search if in search mode and query is long enough.
     if (mode === 'search' && queryText.length > 2) {
       // Set a timeout to delay execution.
@@ -95,16 +97,21 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
           const [osmData, fbData] = await Promise.all([osmPromise, fbPromise]);
 
           // Merge results: Prioritize Firebase results (existing bars) over OSM results.
-          setResults([...fbData, ...osmData]);
+          if (isActive) {
+             setResults([...fbData, ...osmData]);
+          }
 
         } catch (e) {
           console.error(e);
         } finally {
-          setIsSearching(false);
+          if (isActive) setIsSearching(false);
         }
       }, SEARCH_DEBOUNCE_MS);
       // Cleanup function to clear the timeout if query changes before execution (debounce).
-      return () => clearTimeout(timer);
+      return () => {
+        isActive = false;
+        clearTimeout(timer);
+      };
     } else {
       // Clear results if query is too short.
       setResults([]);

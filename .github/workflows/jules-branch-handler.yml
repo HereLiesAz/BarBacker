@@ -11,10 +11,11 @@ on:
 jobs:
   manage_branch:
     if: |
-      (github.event_name == 'create' && github.event.ref_type == 'branch' && github.event.ref != 'main') ||
+      ((github.event_name == 'create' && github.event.ref_type == 'branch' && github.event.ref != 'main') ||
       (github.event_name == 'pull_request') ||
       (github.event_name == 'pull_request_review') ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request)) &&
+      github.actor != 'google-labs-jules[bot]' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write

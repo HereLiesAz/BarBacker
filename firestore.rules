@@ -8,6 +8,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Users: Allow read/write for the user themselves
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
     // Bars: Allow read/write for authenticated users
     // In a real app, you might restrict write to Owners or specific roles
     match /bars/{barId} {

@@ -20,9 +20,6 @@ export const WhoIsOnDialog = ({ open, onClose, users }: WhoIsOnDialogProps) => {
   // Note: users with undefined status are treated as active for backward compatibility.
   const clockedInUsers = users.filter(u => u.status === 'active' || u.status === undefined);
 
-  // Filter for off-clock users.
-  const offClockUsers = users.filter(u => u.status === 'off_clock');
-
   return (
     <md-dialog open={open || undefined} onClose={onClose}>
       <div slot="headline">Who's On</div>
@@ -44,24 +41,6 @@ export const WhoIsOnDialog = ({ open, onClose, users }: WhoIsOnDialogProps) => {
                </md-list>
            </div>
         </div>
-
-        {/* Section: Off Clock (Optional) */}
-        {offClockUsers.length > 0 && (
-            <div>
-               <h3 className="text-gray-500 font-bold text-sm uppercase tracking-wide mb-2">Off Clock ({offClockUsers.length})</h3>
-               <div className="border border-gray-800 rounded overflow-hidden bg-white/5">
-                   <md-list>
-                       {offClockUsers.map(u => (
-                           <md-list-item key={u.id}>
-                               <div slot="headline" className="text-gray-300">{u.displayName || 'Unknown'}</div>
-                               <div slot="supporting-text" className="text-gray-500">{u.role}</div>
-                               <md-icon slot="start" className="text-gray-600">bedtime</md-icon>
-                           </md-list-item>
-                       ))}
-                   </md-list>
-               </div>
-            </div>
-        )}
       </div>
       <div slot="actions">
         <md-text-button onClick={onClose}>Close</md-text-button>

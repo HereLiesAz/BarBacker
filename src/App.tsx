@@ -104,7 +104,7 @@ const BarListItem = ({ barId, onClick }: { barId: string, onClick: () => void })
         getDoc(doc(db, 'bars', barId)).then(d => {
             if (d.exists()) setName((d.data() as Bar).name);
             else setName('Unknown Bar');
-        });
+        }).catch(() => setName('Error loading bar'));
     }, [barId]);
 
     return (
@@ -1074,7 +1074,7 @@ function App() {
                 <div className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800">
                     <md-list className="bg-transparent">
                     {myBars.map(bid => (
-                        <BarListItem key={bid} barId={bid} onClick={() => setBarId(bid)} />
+                        <BarListItem key={bid} barId={bid} onClick={() => { setBarId(bid); localStorage.setItem('barId', bid); }} />
                     ))}
                     </md-list>
                 </div>
@@ -1131,7 +1131,7 @@ function App() {
             <md-icon-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}><md-icon>arrow_back</md-icon></md-icon-button>
             <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
         </div>
-        <RoleSelector onSelect={confirmRole} initialName={user?.displayName || ''} />
+        <RoleSelector onSelect={confirmRole} initialName={user?.displayName || ''} key={user?.displayName || 'default'} />
       </div>
     );
   }

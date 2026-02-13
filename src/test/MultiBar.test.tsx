@@ -6,12 +6,16 @@ import { MemoryRouter } from 'react-router-dom';
 // Mocks
 const mockUser = { uid: 'test-user', email: 'test@example.com', displayName: 'Test User' };
 
-const { setDocSpy, updateDocSpy, deleteDocSpy, signOutSpy, arrayRemoveSpy } = vi.hoisted(() => ({
+const { setDocSpy, updateDocSpy, deleteDocSpy, signOutSpy, arrayRemoveSpy, updateProfileSpy, arrayUnionSpy, querySpy, whereSpy } = vi.hoisted(() => ({
   setDocSpy: vi.fn(() => Promise.resolve()),
   updateDocSpy: vi.fn(() => Promise.resolve()),
   deleteDocSpy: vi.fn(() => Promise.resolve()),
   signOutSpy: vi.fn(() => Promise.resolve()),
   arrayRemoveSpy: vi.fn((...args) => ({ type: 'arrayRemove', args })),
+  updateProfileSpy: vi.fn(() => Promise.resolve()),
+  arrayUnionSpy: vi.fn((...args) => ({ type: 'arrayUnion', args })),
+  querySpy: vi.fn((...args) => ({ type: 'query', args })),
+  whereSpy: vi.fn((field, op, val) => ({ type: 'where', field, op, val })),
 }));
 
 vi.mock('firebase/auth', () => ({
@@ -27,7 +31,7 @@ vi.mock('firebase/auth', () => ({
   createUserWithEmailAndPassword: vi.fn(),
   signOut: signOutSpy,
   deleteUser: vi.fn(),
-  updateProfile: vi.fn(),
+  updateProfile: updateProfileSpy,
 }));
 
 vi.mock('firebase/firestore', () => {
@@ -47,23 +51,30 @@ vi.mock('firebase/firestore', () => {
             return Promise.resolve({ exists: () => false });
         }),
         onSnapshot: vi.fn((ref, cb) => {
-            if (ref && ref.path === 'users/test-user') {
-                cb({ exists: () => true, data: () => ({ joinedBars: ['bar-1'] }) });
-            } else if (ref && ref.path === 'bars/bar-1') {
-                cb({ exists: () => true, data: () => ({ name: 'Bar One', buttons: [] }) });
-            } else if (ref && ref.path === 'bars/bar-1/users/test-user') {
-                cb({ exists: () => true, data: () => ({ role: 'Bartender', status: 'active', displayName: 'Test User' }) });
+            // Check if it's a document reference
+            if (ref && ref.type === 'doc') {
+                if (ref.path === 'users/test-user') {
+                    cb({ exists: () => true, data: () => ({ joinedBars: ['bar-1'] }), id: 'test-user' });
+                } else if (ref.path === 'bars/bar-1') {
+                    cb({ exists: () => true, data: () => ({ name: 'Bar One', buttons: [] }), id: 'bar-1' });
+                } else if (ref.path === 'bars/bar-1/users/test-user') {
+                    cb({ exists: () => true, data: () => ({ role: 'Bartender', status: 'active', displayName: 'Test User' }), id: 'test-user' });
+                } else {
+                    // Default fallback for other docs (e.g. unknown bar users)
+                    cb({ exists: () => false, data: () => undefined, id: 'unknown' });
+                }
             } else {
-                if (typeof cb === 'function') cb({ exists: () => false, docs: [] });
+                // Assume it's a query (collection)
+                cb({ docs: [] });
             }
             return () => {};
         }),
-        query: vi.fn(),
-        where: vi.fn(),
+        query: querySpy,
+        where: whereSpy,
         orderBy: vi.fn(),
         limit: vi.fn(),
         serverTimestamp: vi.fn(),
-        arrayUnion: vi.fn((...args) => ({ type: 'arrayUnion', args })),
+        arrayUnion: arrayUnionSpy,
         arrayRemove: arrayRemoveSpy,
         increment: vi.fn(),
     };
@@ -130,7 +141,7 @@ describe('Multi-Bar Features', () => {
         });
     });
 
-    it('clicking a bar in "My Bars" joins it', async () => {
+    it('clicking a bar in "My Bars" joins it and updates localStorage', async () => {
         render(<MemoryRouter><App /></MemoryRouter>);
         await waitFor(() => screen.getByText('Bar One'));
 
@@ -140,33 +151,113 @@ describe('Multi-Bar Features', () => {
             const headers = screen.getAllByText('Bar One');
             expect(headers.length).toBeGreaterThan(0);
         });
+
+        expect(localStorage.getItem('barId')).toBe('bar-1');
+    });
+
+    it('joining a bar adds it to global user document (joinedBars)', async () => {
+        // Use a new bar ID to ensure RoleSelector appears
+        localStorage.setItem('barId', 'new-bar-123');
+        render(<MemoryRouter><App /></MemoryRouter>);
+
+        // Wait for RoleSelector
+        await waitFor(() => screen.getByText('Identification'));
+
+        // Click role and Clock In
+        const role = screen.getByText('Bartender');
+        fireEvent.click(role);
+
+        const clockIn = screen.getByText('Clock In');
+        fireEvent.click(clockIn);
+
+        await waitFor(() => {
+            expect(setDocSpy).toHaveBeenCalledWith(
+                expect.objectContaining({ path: 'users/test-user' }),
+                expect.objectContaining({ joinedBars: expect.objectContaining({ type: 'arrayUnion', args: ['new-bar-123'] }) }),
+                { merge: true }
+            );
+        });
+    });
+
+    it('RoleSelector initializes with user.displayName', async () => {
+        localStorage.setItem('barId', 'bar-new');
+        const { container } = render(<MemoryRouter><App /></MemoryRouter>);
+
+        await waitFor(() => screen.getByText('Identification'));
+
+        const input = container.querySelector('md-filled-text-field') as any;
+        expect(input).toBeInTheDocument();
+        // Check value property
+        expect(input.value).toBe('Test User');
+    });
+
+    it('Edit Name updates profile and document', async () => {
+        // Mock prompt
+        vi.spyOn(window, 'prompt').mockReturnValue('New Name');
+        localStorage.setItem('barId', 'bar-1');
+        render(<MemoryRouter><App /></MemoryRouter>);
+
+        await waitFor(() => screen.getAllByText('Bar One'));
+
+        // Open Menu
+        const menuIcon = screen.getByText('menu');
+        fireEvent.click(menuIcon);
+
+        // Open Account Options - use getAllByText and pick the menu item (first one usually visible in menu)
+        const accountOpts = await screen.findAllByText('Account Options');
+        // The dialog is also in DOM, so we might have 2.
+        // The one in the menu is what we want.
+        fireEvent.click(accountOpts[0]);
+
+        // Click Edit Name
+        fireEvent.click(await screen.findByText('Edit Name'));
+
+        await waitFor(() => {
+            expect(updateProfileSpy).toHaveBeenCalledWith(expect.anything(), { displayName: 'New Name' });
+            expect(updateDocSpy).toHaveBeenCalledWith(
+                expect.objectContaining({ path: 'bars/bar-1/users/test-user' }),
+                { displayName: 'New Name' }
+            );
+        });
+    });
+
+    it('Queries active/pending users only (hides off_clock)', async () => {
+        localStorage.setItem('barId', 'bar-1');
+        render(<MemoryRouter><App /></MemoryRouter>);
+
+        await waitFor(() => screen.getAllByText('Bar One'));
+
+        const hasStatusFilter = querySpy.mock.calls.some(callArgs => {
+             return callArgs.some((arg: any) =>
+                 arg && arg.type === 'where' &&
+                 arg.field === 'status' &&
+                 arg.op === 'in' &&
+                 JSON.stringify(arg.val) === JSON.stringify(['active', 'pending'])
+             );
+        });
+
+        expect(hasStatusFilter).toBe(true);
     });
 
     it('Switch Bar returns to bar selection without signing out', async () => {
         localStorage.setItem('barId', 'bar-1');
         render(<MemoryRouter><App /></MemoryRouter>);
 
-        // Wait for dashboard to load (look for Bar Name)
         await waitFor(() => {
              const headers = screen.getAllByText('Bar One');
              expect(headers.length).toBeGreaterThan(0);
         });
 
-        // Open Menu
         const menuIcon = screen.getByText('menu');
         fireEvent.click(menuIcon);
 
-        // Click Switch Bar
-        // Use bubbles: true just in case
         const switchBtn = await screen.findByText('Switch Bar');
         fireEvent.click(switchBtn, { bubbles: true });
 
-        // Should return to Select Bar screen
         await waitFor(() => {
             expect(screen.getByText('Select Bar')).toBeInTheDocument();
         });
 
-        // Sign Out should NOT be called
         expect(signOutSpy).not.toHaveBeenCalled();
     });
 
@@ -175,18 +266,14 @@ describe('Multi-Bar Features', () => {
         localStorage.setItem('barId', 'bar-1');
         render(<MemoryRouter><App /></MemoryRouter>);
 
-        // Wait for dashboard
         await waitFor(() => {
              const headers = screen.getAllByText('Bar One');
              expect(headers.length).toBeGreaterThan(0);
         });
 
-        // Open Account Dialog by clicking user name/role area
-        // "Test User" is the name.
         const userDisplay = screen.getByText('Test User');
         fireEvent.click(userDisplay);
 
-        // Click Leave Bar
         const leaveBtn = await screen.findByText('Leave Bar');
         fireEvent.click(leaveBtn);
 
@@ -198,7 +285,6 @@ describe('Multi-Bar Features', () => {
             );
         });
 
-        // Should return to Select Bar
         await waitFor(() => {
             expect(screen.getByText('Select Bar')).toBeInTheDocument();
         });

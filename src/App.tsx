@@ -10,6 +10,7 @@ import {
   createUserWithEmailAndPassword, // Register with email/password.
   signOut, // Sign out function.
   deleteUser, // Function to delete the user account.
+  updateProfile, // Update user profile.
   User // Type definition for a Firebase User.
 } from 'firebase/auth';
 // Import Firestore functions.
@@ -28,6 +29,7 @@ import {
   getDoc,     // Fetch a single document once.
   deleteDoc,  // Delete a document.
   arrayUnion, // Add elements to an array field.
+  arrayRemove, // Remove elements from an array field.
   increment,  // Atomic increment of a numeric field.
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
@@ -94,6 +96,26 @@ import {
   arrayMove
 } from '@dnd-kit/sortable';
 
+// Helper component for listing joined bars.
+const BarListItem = ({ barId, onClick }: { barId: string, onClick: () => void }) => {
+    const [name, setName] = useState('Loading...');
+
+    useEffect(() => {
+        getDoc(doc(db, 'bars', barId)).then(d => {
+            if (d.exists()) setName((d.data() as Bar).name);
+            else setName('Unknown Bar');
+        });
+    }, [barId]);
+
+    return (
+        <md-list-item type="button" onClick={onClick}>
+            <div slot="headline" className="text-white">{name}</div>
+            <md-icon slot="start">store</md-icon>
+            <md-icon slot="end">arrow_forward</md-icon>
+        </md-list-item>
+    );
+};
+
 // --- MAIN APP COMPONENT ---
 function App() {
   // Ref to hold the Audio object for alerts. Persistence prevents memory leaks and glitches.
@@ -132,6 +154,8 @@ function App() {
   // --- Data State ---
   // Store the list of active requests.
   const [requests, setRequests] = useState<Request[]>([]);
+  // Store the list of joined bars.
+  const [myBars, setMyBars] = useState<string[]>([]);
   // Store the list of configured buttons.
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
   // Store the FCM token for push notifications.
@@ -364,6 +388,19 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // --- 1.5. User Data & Joined Bars ---
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(doc(db, 'users', user.uid), (d) => {
+        if (d.exists() && d.data().joinedBars) {
+            setMyBars(d.data().joinedBars);
+        } else {
+            setMyBars([]);
+        }
+    });
+    return () => unsub();
+  }, [user]);
+
   // --- 2. Bar Logic & Auto-Clock In ---
   useEffect(() => {
     // If no user or bar selected, do nothing.
@@ -459,8 +496,7 @@ function App() {
 
     // Listen for All Users (for "Who's On").
     // Query varies based on whether we are viewing the "Who's On" dialog (show off_clock users too).
-    const requiredStatuses = showWhoIsOn ? ['active', 'pending', 'off_clock'] : ['active', 'pending'];
-    const userQuery = query(collection(db, `bars/${barId}/users`), where('status', 'in', requiredStatuses));
+    const userQuery = query(collection(db, `bars/${barId}/users`), where('status', 'in', ['active', 'pending']));
 
     const unsubAllUsers = onSnapshot(userQuery, (s) => {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -785,6 +821,11 @@ function App() {
 
     const status = 'active';
 
+    // Update Global User Document with joined bar.
+    await setDoc(doc(db, 'users', user.uid), {
+        joinedBars: arrayUnion(barId)
+    }, { merge: true });
+
     // Update User Document.
     await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
       role: role,
@@ -819,7 +860,12 @@ function App() {
     setBarId(null);
     localStorage.removeItem('barId');
     setShowOffClockDialog(false);
-    await signOut(auth);
+  };
+
+  // Switch to another bar without clocking out (unless inactive).
+  const handleSwitchBar = async () => {
+    setBarId(null);
+    localStorage.removeItem('barId');
   };
 
   // Create a new request.
@@ -916,10 +962,13 @@ function App() {
     if (!user || !barId) return;
     if (!confirm('Are you sure you want to leave this bar? You will need to join again.')) return;
     await deleteDoc(doc(db, `bars/${barId}/users`, user.uid));
+    // Remove from joinedBars list.
+    await updateDoc(doc(db, 'users', user.uid), {
+        joinedBars: arrayRemove(barId)
+    }).catch(() => {});
     setBarId(null);
     localStorage.removeItem('barId');
     setShowAccountDialog(false);
-    await signOut(auth);
   };
 
   // Delete account entirely.
@@ -1018,6 +1067,20 @@ function App() {
           <p className="text-gray-500 text-sm">You are {user.email}</p>
         </div>
         <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
+
+        {myBars.length > 0 && (
+            <div className="w-[300px] mb-2">
+                <h3 className="text-gray-400 font-bold text-sm uppercase mb-2 pl-2">My Bars</h3>
+                <div className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800">
+                    <md-list className="bg-transparent">
+                    {myBars.map(bid => (
+                        <BarListItem key={bid} barId={bid} onClick={() => setBarId(bid)} />
+                    ))}
+                    </md-list>
+                </div>
+            </div>
+        )}
+
         <BarSearch onJoin={async (b) => {
           if(b.id) {
             const barRef = doc(db, 'bars', b.id);
@@ -1068,7 +1131,7 @@ function App() {
             <md-icon-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}><md-icon>arrow_back</md-icon></md-icon-button>
             <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
         </div>
-        <RoleSelector onSelect={confirmRole} />
+        <RoleSelector onSelect={confirmRole} initialName={user?.displayName || ''} />
       </div>
     );
   }
@@ -1273,6 +1336,10 @@ function App() {
                             <md-icon slot="start">account_circle</md-icon>
                             <div slot="headline">Account Options</div>
                         </md-menu-item>
+                        <md-menu-item onClick={handleSwitchBar}>
+                            <md-icon slot="start">sync_alt</md-icon>
+                            <div slot="headline">Switch Bar</div>
+                        </md-menu-item>
                         <md-menu-item onClick={() => setShowBarManager(true)}>
                             <md-icon slot="start">store</md-icon>
                             <div slot="headline">Manage Bar</div>
@@ -1328,6 +1395,20 @@ function App() {
         <div slot="headline">Account Options</div>
         <div slot="content" className="flex flex-col gap-4 pt-4">
             <p className="text-gray-300">Manage your account for <strong>{barName}</strong>.</p>
+            <md-outlined-button onClick={async () => {
+                const newName = prompt("Enter new display name:", displayName);
+                if (newName && newName.trim() !== '') {
+                    if (user) {
+                        await updateProfile(user, { displayName: newName });
+                        if (barId) {
+                            await updateDoc(doc(db, `bars/${barId}/users`, user.uid), { displayName: newName });
+                        }
+                    }
+                }
+            }}>
+                <md-icon slot="icon">edit</md-icon>
+                Edit Name
+            </md-outlined-button>
         </div>
         <div slot="actions">
             <div className="flex flex-col gap-2 w-full items-end">

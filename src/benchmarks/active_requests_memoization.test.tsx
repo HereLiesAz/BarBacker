@@ -171,6 +171,10 @@ vi.mock('../components/BarManager', () => ({
     default: () => <div data-testid="mock-bar-manager"></div>
 }));
 
+vi.mock('../hooks/useLatestRelease', () => ({
+  useLatestRelease: () => ({ downloadUrl: 'http://example.com/app.apk', loading: false }),
+}));
+
 describe('App Performance Benchmark: Active Requests', () => {
   beforeEach(() => {
     vi.clearAllMocks();

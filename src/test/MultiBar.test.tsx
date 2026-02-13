@@ -192,10 +192,8 @@ describe('Multi-Bar Features', () => {
     });
 
     it('Edit Name updates profile and document', async () => {
-        // Mock prompt
-        vi.spyOn(window, 'prompt').mockReturnValue('New Name');
         localStorage.setItem('barId', 'bar-1');
-        render(<MemoryRouter><App /></MemoryRouter>);
+        const { container } = render(<MemoryRouter><App /></MemoryRouter>);
 
         await waitFor(() => screen.getAllByText('Bar One'));
 
@@ -203,14 +201,28 @@ describe('Multi-Bar Features', () => {
         const menuIcon = screen.getByText('menu');
         fireEvent.click(menuIcon);
 
-        // Open Account Options - use getAllByText and pick the menu item (first one usually visible in menu)
+        // Open Account Options
         const accountOpts = await screen.findAllByText('Account Options');
-        // The dialog is also in DOM, so we might have 2.
-        // The one in the menu is what we want.
         fireEvent.click(accountOpts[0]);
 
-        // Click Edit Name
-        fireEvent.click(await screen.findByText('Edit Name'));
+        // Click Edit Name button (in Account Dialog)
+        const editBtns = await screen.findAllByText('Edit Name');
+        fireEvent.click(editBtns[0]);
+
+        // Find Input in Edit Name Dialog (wait for unique label)
+        const input = await waitFor(() => {
+             const fields = Array.from(container.querySelectorAll('md-filled-text-field'));
+             return fields.find((f: any) => f.label === 'Display Name');
+        }) as any;
+
+        // Update value directly on component instance
+        input.value = 'New Name';
+        fireEvent.input(input);
+
+        // Click Save (this button is in the new dialog)
+        const saveBtns = screen.getAllByText('Save');
+        const saveBtn = saveBtns[saveBtns.length - 1]; // Pick the last one (topmost)
+        fireEvent.click(saveBtn);
 
         await waitFor(() => {
             expect(updateProfileSpy).toHaveBeenCalledWith(expect.anything(), { displayName: 'New Name' });

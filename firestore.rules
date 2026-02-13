@@ -20,7 +20,10 @@ service cloud.firestore {
 
       // Users subcollection: Allow read/write for authenticated users
       match /users/{userId} {
-        allow read, write: if isAuthenticated();
+        // Allow write only if user is modifying their own document
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+        // Allow read if user is reading their own document OR the user is active/pending
+        allow read: if isAuthenticated() && (request.auth.uid == userId || resource.data.status in ['active', 'pending']);
       }
 
       // Tokens subcollection: Allow read/write for authenticated users

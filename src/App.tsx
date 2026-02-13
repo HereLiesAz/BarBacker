@@ -197,6 +197,9 @@ function App() {
   const [showBarManager, setShowBarManager] = useState(false);
   const [showAccountDialog, setShowAccountDialog] = useState(false);
   const [showWhoIsOn, setShowWhoIsOn] = useState(false);
+  const [showNameEditDialog, setShowNameEditDialog] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
+  const [editNameError, setEditNameError] = useState<string | null>(null);
 
   // List of request IDs the user has locally ignored/muted.
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
@@ -518,7 +521,7 @@ function App() {
 
     // Cleanup: Unsubscribe from all listeners when component unmounts or barId changes.
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
-  }, [user, barId, fcmToken, setSearchParams, showWhoIsOn]);
+  }, [user, barId, fcmToken, setSearchParams]);
 
 
   // --- Timer ---
@@ -1390,21 +1393,49 @@ function App() {
           </div>
       )}
 
-      {/* Account Dialog */}
-      <md-dialog open={showAccountDialog || undefined} onClose={() => setShowAccountDialog(false)}>
-        <div slot="headline">Account Options</div>
+      <md-dialog open={showNameEditDialog || undefined} onClose={() => { setShowNameEditDialog(false); setEditNameError(null); }}>
+        <div slot="headline">Edit Name</div>
         <div slot="content" className="flex flex-col gap-4 pt-4">
-            <p className="text-gray-300">Manage your account for <strong>{barName}</strong>.</p>
-            <md-outlined-button onClick={async () => {
-                const newName = prompt("Enter new display name:", displayName);
-                if (newName && newName.trim() !== '') {
+            <md-filled-text-field
+                label="Display Name"
+                value={editNameValue}
+                onInput={(e: any) => setEditNameValue(e.target.value)}
+                required
+                type="text"
+            />
+            {editNameError && <div className="text-red-500 text-sm">{editNameError}</div>}
+        </div>
+        <div slot="actions">
+            <md-text-button onClick={() => setShowNameEditDialog(false)}>Cancel</md-text-button>
+            <md-filled-button onClick={async () => {
+                const newName = editNameValue.trim();
+                if (!newName) return;
+                setEditNameError(null);
+                try {
                     if (user) {
                         await updateProfile(user, { displayName: newName });
                         if (barId) {
                             await updateDoc(doc(db, `bars/${barId}/users`, user.uid), { displayName: newName });
                         }
+                        setShowNameEditDialog(false);
                     }
+                } catch (e: any) {
+                    console.error("Error updating name:", e);
+                    setEditNameError("Failed to update name: " + (e.message || "Unknown error"));
                 }
+            }}>Save</md-filled-button>
+        </div>
+      </md-dialog>
+
+      {/* Account Dialog */}
+      <md-dialog open={showAccountDialog || undefined} onClose={() => setShowAccountDialog(false)}>
+        <div slot="headline">Account Options</div>
+        <div slot="content" className="flex flex-col gap-4 pt-4">
+            <p className="text-gray-300">Manage your account for <strong>{barName}</strong>.</p>
+            <md-outlined-button onClick={() => {
+                setEditNameValue(displayName);
+                setEditNameError(null);
+                setShowNameEditDialog(true);
             }}>
                 <md-icon slot="icon">edit</md-icon>
                 Edit Name

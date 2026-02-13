@@ -1,7 +1,7 @@
 name: Jules Branch Handler
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
   pull_request_review:
     types: [submitted]
   issue_comment:
@@ -12,7 +12,7 @@ jobs:
     if: |
       ((github.event_name == 'pull_request') ||
       (github.event_name == 'pull_request_review') ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, 'Jules'))) &&
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@google-labs-jules'))) &&
       github.actor != 'google-labs-jules[bot]' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:

@@ -5,6 +5,7 @@ on:
 
 jobs:
   handle_issue:
+    if: github.actor != 'google-labs-jules[bot]' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read

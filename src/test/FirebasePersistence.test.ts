@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 // Spies
-const { initializeFirestoreSpy, persistentLocalCacheSpy, persistentMultipleTabManagerSpy, getFirestoreSpy } = vi.hoisted(() => ({
-  initializeFirestoreSpy: vi.fn(() => ({ type: 'firestore-instance' })),
-  persistentLocalCacheSpy: vi.fn(() => ({ type: 'cache-config' })),
-  persistentMultipleTabManagerSpy: vi.fn(() => ({ type: 'tab-manager' })),
-  getFirestoreSpy: vi.fn(() => ({ type: 'firestore-default' })),
-}));
+const initializeFirestoreSpy = vi.fn(() => ({ type: 'firestore-instance' }));
+const persistentLocalCacheSpy = vi.fn(() => ({ type: 'cache-config' }));
+const persistentMultipleTabManagerSpy = vi.fn(() => ({ type: 'tab-manager' }));
+const getFirestoreSpy = vi.fn(() => ({ type: 'firestore-default' }));
 
 // Mock firebase/firestore
 vi.mock('firebase/firestore', () => ({

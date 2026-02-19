@@ -186,7 +186,7 @@ function App() {
   // Stack to navigate through nested button menus.
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
 
-  // Ref for the inactivity timer (auto-closes menus). Typed as 'number' for browser compatibility.
+  // Ref for the inactivity timer (auto-closes menus). Explicitly typed as 'number' for browser compatibility.
   const timerRef = useRef<number | null>(null);
   // Ref to track dragging state to prevent accidental clicks.
   const isDraggingRef = useRef(false);

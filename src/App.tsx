@@ -243,20 +243,47 @@ function App() {
     return map;
   }, [buttons]);
 
+  // Memoized index map for top-level buttons. Maps label -> index in `buttons`.
+  const topLevelIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    buttons.forEach((btn, index) => {
+        if (!map.has(btn.label)) {
+            map.set(btn.label, index);
+        }
+    });
+    return map;
+  }, [buttons]);
+
   // Helper: Find the Button ID given a Request Label string.
   const getButtonIdForLabel = useCallback((label: string): string | undefined => {
     // 1. Try exact match from the memoized map (O(1)).
     const exactMatch = buttonLookupMap.get(label);
     if (exactMatch) return exactMatch;
 
-    // 2. Check for partial matches (e.g. "ICE: Well 1" starts with "ICE") (O(Buttons)).
-    // We only iterate top-level buttons, avoiding nested child loops.
-    for (const btn of buttons) {
-        if (label.startsWith(btn.label)) return btn.id;
+    // 2. Check for partial matches using split logic (O(Parts) instead of O(Buttons)).
+    // We split by ": " and check if any prefix corresponds to a top-level button.
+    const parts = label.split(': ');
+    let bestIndex = -1;
+
+    // Construct candidates: "Part0", "Part0: Part1", etc.
+    let currentLabel = "";
+    for (let i = 0; i < parts.length; i++) {
+        currentLabel += (i > 0 ? ": " : "") + parts[i];
+        const idx = topLevelIndexMap.get(currentLabel);
+        if (idx !== undefined) {
+            // "First match wins" logic from original loop implies finding the matching button with lowest index.
+            if (bestIndex === -1 || idx < bestIndex) {
+                bestIndex = idx;
+            }
+        }
+    }
+
+    if (bestIndex !== -1) {
+        return buttons[bestIndex].id;
     }
 
     return undefined;
-  }, [buttons, buttonLookupMap]);
+  }, [buttons, buttonLookupMap, topLevelIndexMap]);
 
   // Compute the list of active requests relevant to the user.
   const activeRequests = useMemo(() => requests.filter(r => {

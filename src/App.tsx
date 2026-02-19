@@ -186,6 +186,9 @@ function App() {
   // Ref to track dragging state to prevent accidental clicks.
   const isDraggingRef = useRef(false);
 
+  // Ref to hold usage buffer for batching writes.
+  const usageBufferRef = useRef<Record<string, number>>({});
+
   // Dialog visibility states.
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
@@ -773,12 +776,42 @@ function App() {
     return btn.children || [];
   };
 
+  // Flush usage buffer to Firestore.
+  const flushUsage = useCallback(() => {
+    if (!barId) return;
+    const buffer = usageBufferRef.current;
+    if (Object.keys(buffer).length === 0) return;
+
+    // Reset buffer immediately.
+    usageBufferRef.current = {};
+
+    const updates: Record<string, any> = {};
+    for (const [btnId, count] of Object.entries(buffer)) {
+        updates[`buttonUsage.${btnId}`] = increment(count);
+    }
+
+    updateDoc(doc(db, 'bars', barId), updates)
+      .catch(e => console.error("Failed to flush usage", e));
+  }, [barId]);
+
+  // Periodic flush of usage stats.
+  useEffect(() => {
+    const interval = setInterval(flushUsage, 10000); // 10 seconds
+    // Also flush on page unload (refresh/close).
+    const onUnload = () => flushUsage();
+    window.addEventListener('beforeunload', onUnload);
+
+    return () => {
+        clearInterval(interval);
+        window.removeEventListener('beforeunload', onUnload);
+        flushUsage(); // Flush on unmount
+    };
+  }, [flushUsage]);
+
   // Track usage for sorting.
   const trackButtonUsage = (btnId: string) => {
     if (!barId) return;
-    updateDoc(doc(db, 'bars', barId), {
-        [`buttonUsage.${btnId}`]: increment(1)
-    }).catch(e => console.error("Failed to track usage", e));
+    usageBufferRef.current[btnId] = (usageBufferRef.current[btnId] || 0) + 1;
   };
 
   // Sort buttons based on custom order or usage.

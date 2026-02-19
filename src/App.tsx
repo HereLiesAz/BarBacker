@@ -27,10 +27,12 @@ import {
   serverTimestamp, // Generate a server-side timestamp.
   setDoc,     // Set (overwrite or create) a document.
   getDoc,     // Fetch a single document once.
+  getDocs,    // Fetch multiple documents.
   deleteDoc,  // Delete a document.
   arrayUnion, // Add elements to an array field.
   arrayRemove, // Remove elements from an array field.
   increment,  // Atomic increment of a numeric field.
+  documentId, // Sentinel for querying by document ID.
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
 import { 
@@ -97,16 +99,7 @@ import {
 } from '@dnd-kit/sortable';
 
 // Helper component for listing joined bars.
-const BarListItem = ({ barId, onClick }: { barId: string, onClick: () => void }) => {
-    const [name, setName] = useState('Loading...');
-
-    useEffect(() => {
-        getDoc(doc(db, 'bars', barId)).then(d => {
-            if (d.exists()) setName((d.data() as Bar).name);
-            else setName('Unknown Bar');
-        }).catch(() => setName('Error loading bar'));
-    }, [barId]);
-
+const BarListItem = ({ name, onClick }: { name: string, onClick: () => void }) => {
     return (
         <md-list-item type="button" onClick={onClick}>
             <div slot="headline" className="text-white">{name}</div>
@@ -156,6 +149,8 @@ function App() {
   const [requests, setRequests] = useState<Request[]>([]);
   // Store the list of joined bars.
   const [myBars, setMyBars] = useState<string[]>([]);
+  // Store cached bar details (names) to prevent N+1 fetches.
+  const [barDetails, setBarDetails] = useState<Record<string, string>>({});
   // Store the list of configured buttons.
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
   // Store the FCM token for push notifications.
@@ -430,6 +425,44 @@ function App() {
     });
     return () => unsub();
   }, [user]);
+
+  // --- 1.6. Fetch Bar Names Efficiently ---
+  useEffect(() => {
+    const fetchBarNames = async () => {
+        if (myBars.length === 0) return;
+
+        // Use chunks to respect Firestore 'in' query limit of 30.
+        const chunks = [];
+        for (let i = 0; i < myBars.length; i += 30) {
+            chunks.push(myBars.slice(i, i + 30));
+        }
+
+        const newDetails: Record<string, string> = {};
+
+        await Promise.all(chunks.map(async (chunk) => {
+            try {
+                const q = query(collection(db, 'bars'), where(documentId(), 'in', chunk));
+                const snapshot = await getDocs(q);
+                snapshot.forEach(d => {
+                    newDetails[d.id] = (d.data() as Bar).name;
+                });
+            } catch (e) {
+                console.error("Error fetching bar names", e);
+            }
+        }));
+
+       setBarDetails(prev => {
+            const updated = { ...prev, ...newDetails };
+            const finalDetails: Record<string, string> = {};
+            myBars.forEach(bid => {
+                finalDetails[bid] = updated[bid] || 'Unknown Bar';
+            });
+            return finalDetails;
+       });
+    };
+
+    fetchBarNames();
+  }, [myBars]);
 
   // --- 2. Bar Logic & Auto-Clock In ---
   useEffect(() => {
@@ -1104,7 +1137,7 @@ function App() {
                 <div className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800">
                     <md-list className="bg-transparent">
                     {myBars.map(bid => (
-                        <BarListItem key={bid} barId={bid} onClick={() => { setBarId(bid); localStorage.setItem('barId', bid); }} />
+                        <BarListItem key={bid} name={barDetails[bid] || 'Loading...'} onClick={() => { setBarId(bid); localStorage.setItem('barId', bid); }} />
                     ))}
                     </md-list>
                 </div>

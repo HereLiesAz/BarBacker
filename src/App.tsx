@@ -424,14 +424,14 @@ function App() {
             }
         }));
 
-        setBarDetails(prev => {
-             const updated = { ...prev, ...newDetails };
-             // Mark missing bars as Unknown
-             myBars.forEach(bid => {
-                 if (!updated[bid]) updated[bid] = 'Unknown Bar';
-             });
-             return updated;
-        });
+       setBarDetails(prev => {
+            const updated = { ...prev, ...newDetails };
+            const finalDetails: Record<string, string> = {};
+            myBars.forEach(bid => {
+                finalDetails[bid] = updated[bid] || 'Unknown Bar';
+            });
+            return finalDetails;
+       });
     };
 
     fetchBarNames();

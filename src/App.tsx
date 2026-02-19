@@ -1012,8 +1012,8 @@ function App() {
         }
     });
 
-    // Send the requests.
-    topics.forEach(topic => {
+    // Send the requests in parallel.
+    Promise.all(Array.from(topics).map(topic =>
         fetch(`https://ntfy.sh/${topic}`, {
             method: 'POST',
             body: `New Request: ${label} (by ${displayName})`,
@@ -1022,8 +1022,8 @@ function App() {
                 'Priority': 'high',
                 'Tags': 'bell,bar_chart'
             }
-        }).catch(err => console.error('Failed to send ntfy', err));
-    });
+        }).catch(err => console.error('Failed to send ntfy', err))
+    ));
   };
 
   // Mark a request as claimed.

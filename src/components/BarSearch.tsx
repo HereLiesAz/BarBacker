@@ -1,5 +1,5 @@
 // Import React hooks.
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 // Import Firestore functions for querying bars.
 import { collection, query, getDocs, limit, orderBy, startAt, endAt } from 'firebase/firestore';
 // Import the Firestore instance.
@@ -53,9 +53,20 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
   const [zip, setZip] = useState('');
   const [barType, setBarType] = useState<'bar' | 'restaurant'>('bar');
 
+  // Ref to track if the component is mounted.
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
   // Effect to handle the search logic with debouncing.
   useEffect(() => {
-    let isActive = true;
+    const controller = new AbortController();
+    const signal = controller.signal;
 
     // Only search if in search mode and query is long enough.
     if (mode === 'search' && queryText.length > 2) {
@@ -66,9 +77,13 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
           // Parallel Search: Query both OpenStreetMap and local Firestore.
 
           // 1. OSM Search
-          const osmPromise = fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`)
+          const osmPromise = fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`, { signal })
             .then(res => res.json())
-            .catch(() => []); // Fallback to empty array on error.
+            .catch((e) => {
+                // If aborted, rethrow to be caught by outer catch block
+                if (e.name === 'AbortError') throw e;
+                return []; // Fallback to empty array on other errors.
+            });
 
           // 2. Firestore Search (Prefix match)
           // Uses 'startAt' and 'endAt' to emulate SQL 'LIKE query%'.
@@ -97,19 +112,24 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
           const [osmData, fbData] = await Promise.all([osmPromise, fbPromise]);
 
           // Merge results: Prioritize Firebase results (existing bars) over OSM results.
-          if (isActive) {
+          if (!signal.aborted && isMounted.current) {
              setResults([...fbData, ...osmData]);
           }
 
-        } catch (e) {
-          console.error(e);
+        } catch (e: any) {
+          if (e.name !== 'AbortError') {
+              console.error(e);
+          }
         } finally {
-          if (isActive) setIsSearching(false);
+          if (isMounted.current) {
+              setIsSearching(false);
+          }
         }
       }, SEARCH_DEBOUNCE_MS);
+
       // Cleanup function to clear the timeout if query changes before execution (debounce).
       return () => {
-        isActive = false;
+        controller.abort();
         clearTimeout(timer);
       };
     } else {

@@ -77,6 +77,15 @@ vi.mock('firebase/firestore', () => {
         arrayUnion: arrayUnionSpy,
         arrayRemove: arrayRemoveSpy,
         increment: vi.fn(),
+        getDocs: vi.fn(async () => {
+             return {
+                 forEach: (cb: any) => {
+                     cb({ id: 'bar-1', data: () => ({ name: 'Bar One' }), exists: () => true });
+                 },
+                 docs: [{ id: 'bar-1', data: () => ({ name: 'Bar One' }), exists: () => true }]
+             };
+        }),
+        documentId: vi.fn(() => 'docId'),
     };
 });
 

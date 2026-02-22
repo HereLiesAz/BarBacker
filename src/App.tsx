@@ -48,6 +48,9 @@ import { Capacitor } from '@capacitor/core';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
 
+// Import Subscription Services
+import { adminManager, noticeManager, themeManager } from './services/subscription';
+
 // --- Material Web Imports ---
 // These imports register the custom elements with the browser's CustomElementRegistry.
 import '@material/web/button/filled-button.js';
@@ -172,7 +175,7 @@ function App() {
   // Track the ID of the button currently being dragged.
   const [activeId, setActiveId] = useState<string | null>(null);
   // Store the list of all users in the bar (for "Who's On" and managing).
-  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<BarUser[]>([]);
   // Control the Input Dialog state (Open/Close, Type, Context).
   const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well' | 'custom', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   // Control the Quantity Picker Dialog state.
@@ -432,7 +435,10 @@ function App() {
   // --- 1.6. Fetch Bar Names Efficiently ---
   useEffect(() => {
     const fetchBarNames = async () => {
-        if (myBars.length === 0) return;
+        if (myBars.length === 0) {
+            setBarDetails({});
+            return;
+        }
 
         // Use chunks to respect Firestore 'in' query limit of 30.
         const chunks = [];
@@ -454,14 +460,8 @@ function App() {
             }
         }));
 
-       setBarDetails(prev => {
-            const updated = { ...prev, ...newDetails };
-            const finalDetails: Record<string, string> = {};
-            myBars.forEach(bid => {
-                finalDetails[bid] = updated[bid] || 'Unknown Bar';
-            });
-            return finalDetails;
-       });
+        // Batch update state once.
+        setBarDetails(newDetails);
     };
 
     fetchBarNames();
@@ -586,6 +586,24 @@ function App() {
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
   }, [user, barId, fcmToken, setSearchParams]);
 
+
+  // --- Subscription & Theme Init ---
+  useEffect(() => {
+    // Check subscription status
+    const hasSub = adminManager.checkSubscription();
+    console.log("Subscription Active:", hasSub);
+
+    // Apply branding if available
+    themeManager.applyTheme('default');
+
+    // Fetch system notices
+    noticeManager.getNotices().then(msgs => {
+        if(msgs.length > 0) {
+            console.log("System Notices:", msgs);
+            // Could merge into local notices state if desired
+        }
+    });
+  }, []);
 
   // --- Timer ---
   // Inactivity timer to close menus after 60 seconds.
@@ -1069,11 +1087,24 @@ function App() {
 
   // Delete account entirely.
   const handleDeleteAccount = async () => {
-    if (!user || !barId) return;
+    if (!user) return;
     if (!confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
 
     try {
-      await deleteDoc(doc(db, `bars/${barId}/users`, user.uid));
+      // 1. Get all bars the user is part of.
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      const joinedBars = userDoc.exists() ? (userDoc.data().joinedBars || []) : [];
+
+      // 2. Remove user from all those bars.
+      await Promise.all(joinedBars.map((bid: string) =>
+          deleteDoc(doc(db, `bars/${bid}/users`, user.uid))
+      ));
+
+      // 3. Delete the global user document.
+      await deleteDoc(userDocRef);
+
+      // 4. Delete the Auth user.
       await deleteUser(user);
       setShowAccountDialog(false);
     } catch (error: any) {

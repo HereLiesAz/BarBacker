@@ -471,7 +471,7 @@ function App() {
     fetchBarNames();
   }, [myBars]);
 
-  // --- 2. Bar Logic & Auto-Clock In ---
+  // --- 2. Bar Logic (Listeners) ---
   useEffect(() => {
     // If no user or bar selected, do nothing.
     if (!user || !barId) return;
@@ -482,24 +482,6 @@ function App() {
 
     // References to Firestore documents.
     const userRef = doc(db, `bars/${barId}/users`, user.uid);
-    const tokenRef = doc(db, `bars/${barId}/tokens`, user.uid);
-
-    // Function to auto-update status and token.
-    const autoClockIn = async () => {
-      if (fcmToken) {
-        // Store FCM token.
-        await setDoc(tokenRef, {
-          token: fcmToken,
-          updated: serverTimestamp()
-        });
-        // Set status to active and update heartbeat.
-        await updateDoc(userRef, { 
-          status: 'active',
-          lastSeen: serverTimestamp()
-        }).catch(() => {});
-      }
-    };
-    autoClockIn();
 
     // Listen for changes to the User's profile.
     const unsubUser = onSnapshot(userRef, (snapshot) => {
@@ -588,7 +570,29 @@ function App() {
 
     // Cleanup: Unsubscribe from all listeners when component unmounts or barId changes.
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
-  }, [user, barId, fcmToken, setSearchParams]);
+  }, [user, barId, setSearchParams]);
+
+  // --- 2.5 Auto-Clock In (Token Update) ---
+  useEffect(() => {
+    if (!user || !barId || !fcmToken) return;
+
+    const userRef = doc(db, `bars/${barId}/users`, user.uid);
+    const tokenRef = doc(db, `bars/${barId}/tokens`, user.uid);
+
+    const autoClockIn = async () => {
+      // Store FCM token.
+      await setDoc(tokenRef, {
+        token: fcmToken,
+        updated: serverTimestamp()
+      });
+      // Set status to active and update heartbeat.
+      await updateDoc(userRef, {
+        status: 'active',
+        lastSeen: serverTimestamp()
+      }).catch(() => {});
+    };
+    autoClockIn();
+  }, [user, barId, fcmToken]);
 
 
   // --- Subscription & Theme Init ---

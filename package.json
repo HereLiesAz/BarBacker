@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm run generate-sw && vite",
     "generate-sw": "node scripts/generate-sw.js",
-    "build:subs": "cd barbacker-subscription && npm ci && npm run build",
+    "build:subs": "cd barbacker-subscription && npm install && npm run build",
     "postinstall": "npm run build:subs",
     "build": "npm run build:subs && npm run generate-sw && tsc && vite build",
     "preview": "vite preview",

@@ -23,4 +23,20 @@ describe('POSIntegration', () => {
     const result = await pos.connect('invalid', {});
     expect(result).toBe(false);
   });
+
+  it('instantiates TouchBistro adapter and connects', async () => {
+    const pos = new POSIntegration();
+    const result = await pos.connect('touchbistro', { apiKey: 'dummy' });
+    expect(result).toBe(true);
+    const orders = await pos.getOrders();
+    expect(orders[0].id).toBe('tb-1');
+  });
+
+  it('instantiates Aloha adapter and connects', async () => {
+    const pos = new POSIntegration();
+    const result = await pos.connect('aloha', { user: 'dummy' });
+    expect(result).toBe(true);
+    const orders = await pos.getOrders();
+    expect(orders[0].id).toBe('aloha-1');
+  });
 });

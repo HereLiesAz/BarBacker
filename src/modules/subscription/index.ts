@@ -30,6 +30,11 @@ import { SquareAdapter } from '../pos/SquareAdapter';
 import { CloverAdapter } from '../pos/CloverAdapter';
 import { LightspeedAdapter } from '../pos/LightspeedAdapter';
 import { SpotOnAdapter } from '../pos/SpotOnAdapter';
+import { TouchBistroAdapter } from '../pos/TouchBistroAdapter';
+import { RevelAdapter } from '../pos/RevelAdapter';
+import { LavuAdapter } from '../pos/LavuAdapter';
+import { TalechAdapter } from '../pos/TalechAdapter';
+import { AlohaAdapter } from '../pos/AlohaAdapter';
 
 export class NoticeManager {
   getNotices(): Promise<string[]> {
@@ -56,6 +61,21 @@ export class POSIntegration {
         break;
       case 'spoton':
         this.client = new SpotOnAdapter();
+        break;
+      case 'touchbistro':
+        this.client = new TouchBistroAdapter();
+        break;
+      case 'revel':
+        this.client = new RevelAdapter();
+        break;
+      case 'lavu':
+        this.client = new LavuAdapter();
+        break;
+      case 'talech':
+        this.client = new TalechAdapter();
+        break;
+      case 'aloha':
+        this.client = new AlohaAdapter();
         break;
       default:
         console.error(`Unknown POS provider: ${provider}`);

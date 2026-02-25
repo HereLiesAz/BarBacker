@@ -29,6 +29,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@material/web": "^2.4.1",
     "@tailwindcss/postcss": "^4.1.18",
+    "barbacker-subscription": "file:barbacker-subscription",
     "date-fns": "^4.1.0",
     "firebase": "^12.7.0",
     "lucide-react": "^0.562.0",

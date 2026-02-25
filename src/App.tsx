@@ -48,6 +48,9 @@ import { Capacitor } from '@capacitor/core';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
 
+// Import Subscription Services
+import { adminManager, noticeManager, themeManager } from './services/subscription';
+
 // --- Material Web Imports ---
 // These imports register the custom elements with the browser's CustomElementRegistry.
 import '@material/web/button/filled-button.js';
@@ -457,8 +460,12 @@ function App() {
             }
         }));
 
-        // Batch update state once.
-        setBarDetails(newDetails);
+        // Batch update state once, ensuring all bars have a display name.
+        const finalDetails: Record<string, string> = {};
+        myBars.forEach(bid => {
+            finalDetails[bid] = newDetails[bid] || 'Unknown Bar';
+        });
+        setBarDetails(finalDetails);
     };
 
     fetchBarNames();
@@ -583,6 +590,24 @@ function App() {
     return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
   }, [user, barId, fcmToken, setSearchParams]);
 
+
+  // --- Subscription & Theme Init ---
+  useEffect(() => {
+    // Check subscription status
+    const hasSub = adminManager.checkSubscription();
+    console.log("Subscription Active:", hasSub);
+
+    // Apply branding if available
+    themeManager.applyTheme('default');
+
+    // Fetch system notices
+    noticeManager.getNotices().then(msgs => {
+        if(msgs.length > 0) {
+            console.log("System Notices:", msgs);
+            // Could merge into local notices state if desired
+        }
+    });
+  }, []);
 
   // --- Timer ---
   // Inactivity timer to close menus after 60 seconds.
@@ -1088,7 +1113,9 @@ function App() {
       setShowAccountDialog(false);
     } catch (error: any) {
       console.error('Error deleting account:', error);
-      alert('Failed to delete account. You may need to re-login recently.');
+      // If error is auth/requires-recent-login, we could prompt for re-auth.
+      // But for now, we alert.
+      alert('Failed to delete account completely. Please log out and log back in, then try again.');
     }
   };
 

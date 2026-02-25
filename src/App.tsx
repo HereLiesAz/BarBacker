@@ -1046,7 +1046,7 @@ function App() {
                 'Tags': 'bell,bar_chart'
             }
         }).catch(err => console.error('Failed to send ntfy', err))
-    , 5);
+    , NTFY_DISPATCH_CONCURRENCY);
   };
 
   // Mark a request as claimed.

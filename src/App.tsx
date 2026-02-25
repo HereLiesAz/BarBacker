@@ -460,8 +460,12 @@ function App() {
             }
         }));
 
-        // Batch update state once.
-        setBarDetails(newDetails);
+        // Batch update state once, ensuring all bars have a display name.
+        const finalDetails: Record<string, string> = {};
+        myBars.forEach(bid => {
+            finalDetails[bid] = newDetails[bid] || 'Unknown Bar';
+        });
+        setBarDetails(finalDetails);
     };
 
     fetchBarNames();
@@ -1109,7 +1113,9 @@ function App() {
       setShowAccountDialog(false);
     } catch (error: any) {
       console.error('Error deleting account:', error);
-      alert('Failed to delete account. You may need to re-login recently.');
+      // If error is auth/requires-recent-login, we could prompt for re-auth.
+      // But for now, we alert.
+      alert('Failed to delete account completely. Please log out and log back in, then try again.');
     }
   };
 

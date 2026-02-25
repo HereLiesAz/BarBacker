@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "npm run generate-sw && vite",
     "generate-sw": "node scripts/generate-sw.js",
-    "postinstall": "node scripts/patch-tar.cjs",
     "build": "npm run generate-sw && tsc && vite build",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist",
@@ -60,6 +59,6 @@
     "vitest-mock-extended": "^3.1.0"
   },
   "overrides": {
-    "tar": "^6.2.1"
+    "tar": "^7.5.8"
   }
 }

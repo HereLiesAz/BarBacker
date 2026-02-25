@@ -1,5 +1,5 @@
 // Import the 'useState' hook for managing local state.
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 // Import Material Web components for UI elements.
 // Note: These must be imported to register the custom elements with the browser.
@@ -36,8 +36,14 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
   // State to track the ID of the button currently selected for deletion confirmation.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Create a Set for O(1) lookups of hidden IDs.
+  const hiddenButtonSet = useMemo(() => new Set(hiddenButtonIds), [hiddenButtonIds]);
+
   // Filter the list of all buttons to show only those that are NOT currently hidden.
-  const activeButtons = allButtons.filter(b => !hiddenButtonIds.includes(b.id));
+  // Memoized to prevent re-calculation when local state (like confirmDeleteId) changes.
+  const activeButtons = useMemo(() => {
+    return allButtons.filter(b => !hiddenButtonSet.has(b.id));
+  }, [allButtons, hiddenButtonSet]);
 
   // Handler for the delete icon click. Sets the ID to confirm.
   const handleDeleteClick = (id: string) => {

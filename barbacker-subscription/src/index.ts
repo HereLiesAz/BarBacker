@@ -1,6 +1,6 @@
 export class AdminManager {
   checkSubscription(): boolean {
-    // Placeholder logic
+    // Logic for subscription check
     return true;
   }
 }

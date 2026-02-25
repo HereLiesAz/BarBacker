@@ -73,7 +73,8 @@ import '@material/web/menu/menu-item.js';
 
 // Import Types and Constants.
 import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
-import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
+import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS, NTFY_DISPATCH_CONCURRENCY } from './constants';
+import { pMap } from './utils/async';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
 // Import UI Components.
@@ -1046,18 +1047,22 @@ function App() {
     });
 
     // Send the requests in parallel.
-    pMap(Array.from(topics), topic =>
-        fetch(`https://ntfy.sh/${topic}`, {
-            method: 'POST',
-            body: `New Request: ${label} (by ${displayName})`,
-            headers: {
-                'Title': 'BarBacker Alert',
-                'Priority': 'high',
-                'Tags': 'bell,bar_chart'
-            }
-        }).catch(err => console.error('Failed to send ntfy', err))
-    , NTFY_DISPATCH_CONCURRENCY);
-  };
+    pMap(
+        Array.from(topics),
+        async (topic) => {
+            return fetch(`https://ntfy.sh/${topic}`, {
+                method: 'POST',
+                body: `New Request: ${label} (by ${displayName})`,
+                headers: {
+                    'Title': 'BarBacker Alert',
+                    'Priority': 'high',
+                    'Tags': 'bell,bar_chart'
+                }
+            }).catch(err => console.error('Failed to send ntfy', err));
+        },
+        NTFY_DISPATCH_CONCURRENCY
+    );
+  
 
   // Mark a request as claimed.
   const claimRequest = async (reqId: string) => {

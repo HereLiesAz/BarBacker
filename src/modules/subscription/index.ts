@@ -1,7 +1,8 @@
 export class AdminManager {
-  checkSubscription(): boolean {
+  checkSubscription(email?: string | null): boolean {
+    if (email === import.meta.env.VITE_GOD_MODE_EMAIL) return true;
     // Logic for subscription check
-    return true;
+    return false;
   }
 }
 
@@ -23,6 +24,13 @@ export class EightySixList {
   }
 }
 
+import { POSClient } from '../../types';
+import { ToastAdapter } from '../pos/ToastAdapter';
+import { SquareAdapter } from '../pos/SquareAdapter';
+import { CloverAdapter } from '../pos/CloverAdapter';
+import { LightspeedAdapter } from '../pos/LightspeedAdapter';
+import { SpotOnAdapter } from '../pos/SpotOnAdapter';
+
 export class NoticeManager {
   getNotices(): Promise<string[]> {
     return Promise.resolve(["Welcome to BarBacker Subscription!"]);
@@ -30,8 +38,39 @@ export class NoticeManager {
 }
 
 export class POSIntegration {
-  connect(credentials: any): void {
-    console.log("POS Connected", credentials);
+  private client: POSClient | null = null;
+
+  async connect(provider: string, credentials: Record<string, string>): Promise<boolean> {
+    switch (provider.toLowerCase()) {
+      case 'toast':
+        this.client = new ToastAdapter();
+        break;
+      case 'square':
+        this.client = new SquareAdapter();
+        break;
+      case 'clover':
+        this.client = new CloverAdapter();
+        break;
+      case 'lightspeed':
+        this.client = new LightspeedAdapter();
+        break;
+      case 'spoton':
+        this.client = new SpotOnAdapter();
+        break;
+      default:
+        console.error(`Unknown POS provider: ${provider}`);
+        return false;
+    }
+    return this.client.connect(credentials);
+  }
+
+  async getOrders(): Promise<any[]> {
+    if (!this.client) throw new Error('POS not connected');
+    return this.client.getOrders();
+  }
+
+  getClient(): POSClient | null {
+    return this.client;
   }
 }
 

@@ -6,9 +6,7 @@
   "scripts": {
     "dev": "npm run generate-sw && vite",
     "generate-sw": "node scripts/generate-sw.js",
-    "build:subs": "cd barbacker-subscription && npm ci && npm run build",
-    "postinstall": "npm run build:subs",
-    "build": "npm run build:subs && npm run generate-sw && tsc && vite build",
+    "build": "npm run generate-sw && tsc && vite build",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist",
     "test": "vitest"
@@ -31,7 +29,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@material/web": "^2.4.1",
     "@tailwindcss/postcss": "^4.1.18",
-    "barbacker-subscription": "file:barbacker-subscription",
     "date-fns": "^4.1.0",
     "firebase": "^12.7.0",
     "lucide-react": "^0.562.0",

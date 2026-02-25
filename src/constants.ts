@@ -1,6 +1,8 @@
 // Import the 'ButtonConfig' interface to type the default button structures.
 import { ButtonConfig } from './types';
 
+export const NTFY_DISPATCH_CONCURRENCY = 5;
+
 // Define the list of available roles in the application.
 // These are used for role selection and permission logic.
 export const ROLES = ['Owner', 'Bartender', 'Barback', 'Server', 'Manager', 'Security', 'Runner'];

@@ -88,6 +88,8 @@ jobs:
         run: npm ci
 
       - name: Build Web App
+        env:
+          VITE_GOD_MODE_EMAIL: ${{ secrets.GOD_MODE_EMAIL }}
         run: npm run build
 
       - name: Sync Capacitor

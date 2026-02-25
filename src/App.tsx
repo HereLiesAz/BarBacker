@@ -74,7 +74,6 @@ import '@material/web/menu/menu-item.js';
 // Import Types and Constants.
 import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS, NTFY_DISPATCH_CONCURRENCY } from './constants';
-import { pMap } from './utils/async';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
 // Import UI Components.
@@ -186,7 +185,6 @@ function App() {
   // Stack to navigate through nested button menus.
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
 
-  // FIX 1: Use proper return type for browser environment
   // Ref for the inactivity timer. The type is `number | null` to be compatible with the return value of `window.setTimeout` in browsers.
   const timerRef = useRef<number | null>(null);
   // Ref to track dragging state to prevent accidental clicks.
@@ -830,13 +828,13 @@ function App() {
 
   // Periodic flush of usage stats.
   useEffect(() => {
-    const interval = setInterval(flushUsage, 10000); // 10 seconds
+    const interval = window.setInterval(flushUsage, 10000); // 10 seconds
     // Also flush on page unload (refresh/close).
     const onUnload = () => flushUsage();
     window.addEventListener('beforeunload', onUnload);
 
     return () => {
-        clearInterval(interval);
+        window.clearInterval(interval);
         window.removeEventListener('beforeunload', onUnload);
         flushUsage(); // Flush on unmount
     };
@@ -1058,7 +1056,8 @@ function App() {
                     'Priority': 'high',
                     'Tags': 'bell,bar_chart'
                 }
-            }).catch(err => console.error('Failed to send ntfy', err)),
+            }).catch(err => console.error('Failed to send ntfy', err));
+        },
         NTFY_DISPATCH_CONCURRENCY
     );
   };

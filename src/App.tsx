@@ -184,7 +184,8 @@ function App() {
   // Stack to navigate through nested button menus.
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
 
-// Ref for the inactivity timer. The type is `number | null` to be compatible with the return value of `window.setTimeout` in browsers.
+  // FIX 1: Use proper return type for browser environment
+  // Ref for the inactivity timer. The type is `number | null` to be compatible with the return value of `window.setTimeout` in browsers.
   const timerRef = useRef<number | null>(null);
   // Ref to track dragging state to prevent accidental clicks.
   const isDraggingRef = useRef(false);

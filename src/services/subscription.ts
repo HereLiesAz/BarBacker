@@ -7,7 +7,7 @@ import {
   CalendarIntegration,
   ThemeManager,
   PublicMenu
-} from 'barbacker-subscription';
+} from '../modules/subscription';
 
 // Instantiate managers for usage in the application.
 export const adminManager = new AdminManager();

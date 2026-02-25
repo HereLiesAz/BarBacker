@@ -107,5 +107,3 @@ export const ROLE_NOTIFICATION_DEFAULTS: Record<string, string[]> = {
   'Security': ['security', 'manager', 'break']
 };
 
-// Define the concurrency limit for ntfy.sh notification dispatch.
-export const NTFY_DISPATCH_CONCURRENCY = 5;

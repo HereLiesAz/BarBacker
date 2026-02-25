@@ -47,6 +47,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
+import { pMap } from './utils/async';
 
 // Import Subscription Services
 import { adminManager, noticeManager, themeManager } from './services/subscription';
@@ -1035,7 +1036,7 @@ function App() {
     });
 
     // Send the requests in parallel.
-    Promise.all(Array.from(topics).map(topic =>
+    pMap(Array.from(topics), topic =>
         fetch(`https://ntfy.sh/${topic}`, {
             method: 'POST',
             body: `New Request: ${label} (by ${displayName})`,
@@ -1045,7 +1046,7 @@ function App() {
                 'Tags': 'bell,bar_chart'
             }
         }).catch(err => console.error('Failed to send ntfy', err))
-    ));
+    , 5);
   };
 
   // Mark a request as claimed.

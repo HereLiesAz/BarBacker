@@ -75,13 +75,21 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
         setIsSearching(true);
         try {
           // Parallel Search: Query both OpenStreetMap and local Firestore.
+          let fetchedFb: OSMResult[] = [];
+          let fetchedOsm: OSMResult[] = [];
 
           // 1. OSM Search
           const osmPromise = fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`, { signal })
             .then(res => res.json())
+            .then(data => {
+              if (signal.aborted || !isMounted.current) return data;
+              fetchedOsm = data;
+              setResults([...fetchedFb, ...fetchedOsm]);
+              return data;
+            })
             .catch((e) => {
-                // If aborted, rethrow to be caught by outer catch block
-                if (e.name === 'AbortError') throw e;
+                // If aborted, return empty array to prevent unhandled rejections
+                if (e.name === 'AbortError') return [];
                 return []; // Fallback to empty array on other errors.
             });
 
@@ -106,15 +114,16 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                     isFirebase: true
                 } as any;
             }))
+            .then(data => {
+              if (signal.aborted || !isMounted.current) return data;
+              fetchedFb = data;
+              setResults([...fetchedFb, ...fetchedOsm]);
+              return data;
+            })
             .catch(() => []);
 
-          // Await both promises.
-          const [osmData, fbData] = await Promise.all([osmPromise, fbPromise]);
-
-          // Merge results: Prioritize Firebase results (existing bars) over OSM results.
-          if (!signal.aborted && isMounted.current) {
-             setResults([...fbData, ...osmData]);
-          }
+          // Await both promises only to handle loading state
+          await Promise.all([osmPromise, fbPromise]);
 
         } catch (e: any) {
           if (e.name !== 'AbortError') {

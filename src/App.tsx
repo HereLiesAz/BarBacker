@@ -292,31 +292,36 @@ function App() {
   }, [buttons, buttonLookupMap, topLevelIndexMap]);
 
   // Compute the list of active requests relevant to the user.
-  const activeRequests = useMemo(() => requests.filter(r => {
-      // Only show pending requests.
-      if (r.status !== 'pending') return false;
+  const activeRequests = useMemo(() => {
+      const ignoredSet = new Set(ignoredIds);
+      const prefsSet = new Set(notificationPreferences);
 
-      const btnId = getButtonIdForLabel(r.label);
+      return requests.filter(r => {
+          // Only show pending requests.
+          if (r.status !== 'pending') return false;
 
-      // Special Logic: ALWAYS show BREAK requests.
-      if (btnId === 'break' || r.label.includes('BREAK')) {
-         return true;
-      }
+          const btnId = getButtonIdForLabel(r.label);
 
-      // If we can't identify the button type, show it by default (safety).
-      if (!btnId) return true;
+          // Special Logic: ALWAYS show BREAK requests.
+          if (btnId === 'break' || r.label.includes('BREAK')) {
+             return true;
+          }
 
-      // Otherwise, check if the user has subscribed to this notification type.
-      return notificationPreferences.includes(btnId);
-  }).sort((a, b) => {
-      // Sort Logic: Ignored requests go to the bottom.
-      const aIgnored = ignoredIds.includes(a.id);
-      const bIgnored = ignoredIds.includes(b.id);
-      if (aIgnored === bIgnored) {
-          return 0;
-      }
-      return aIgnored ? 1 : -1;
-  }), [requests, getButtonIdForLabel, notificationPreferences, ignoredIds]);
+          // If we can't identify the button type, show it by default (safety).
+          if (!btnId) return true;
+
+          // Otherwise, check if the user has subscribed to this notification type.
+          return prefsSet.has(btnId);
+      }).sort((a, b) => {
+          // Sort Logic: Ignored requests go to the bottom.
+          const aIgnored = ignoredSet.has(a.id);
+          const bIgnored = ignoredSet.has(b.id);
+          if (aIgnored === bIgnored) {
+              return 0;
+          }
+          return aIgnored ? 1 : -1;
+      });
+  }, [requests, getButtonIdForLabel, notificationPreferences, ignoredIds]);
 
   // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);

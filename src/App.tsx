@@ -1058,11 +1058,10 @@ function App() {
                     'Priority': 'high',
                     'Tags': 'bell,bar_chart'
                 }
-            }).catch(err => console.error('Failed to send ntfy', err));
-        },
+            }).catch(err => console.error('Failed to send ntfy', err)),
         NTFY_DISPATCH_CONCURRENCY
     );
-  
+  };
 
   // Mark a request as claimed.
   const claimRequest = async (reqId: string) => {

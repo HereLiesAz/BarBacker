@@ -172,6 +172,9 @@ function App() {
   // Store custom sort orders.
   const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
 
+  // Store god mode status.
+  const [isGodMode, setIsGodMode] = useState(false);
+
   // --- UI State ---
   // Track the ID of the button currently being dragged.
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -603,9 +606,12 @@ function App() {
 
   // --- Subscription & Theme Init ---
   useEffect(() => {
-    // Check subscription status
-    const hasSub = adminManager.checkSubscription();
-    console.log("Subscription Active:", hasSub);
+    if (user) {
+        // Check subscription status
+        const hasSub = adminManager.checkSubscription(user.email);
+        console.log("Subscription Active:", hasSub);
+        setIsGodMode(hasSub);
+    }
 
     // Apply branding if available
     themeManager.applyTheme('default');
@@ -617,7 +623,7 @@ function App() {
             // Could merge into local notices state if desired
         }
     });
-  }, []);
+  }, [user]);
 
   // --- Timer ---
   // Inactivity timer to close menus after 60 seconds.
@@ -730,6 +736,15 @@ function App() {
         hiddenButtonIds: arrayUnion(btnId)
     });
     setHiddenButtonIds(prev => [...prev, btnId]);
+  };
+
+  // Unhide a button (God Mode only).
+  const unhideButton = async (btnId: string) => {
+    if (!user || !barId) return;
+    await updateDoc(doc(db, 'bars', barId), {
+        hiddenButtonIds: arrayRemove(btnId)
+    });
+    setHiddenButtonIds(prev => prev.filter(id => id !== btnId));
   };
 
   // Save a notice to the bulletin board.
@@ -1333,6 +1348,8 @@ function App() {
         allButtons={sortedAllButtons}
         hiddenButtonIds={hiddenButtonIds}
         onHideButton={hideButton}
+        godMode={isGodMode}
+        onUnhideButton={unhideButton}
       />
 
       <WhoIsOnDialog

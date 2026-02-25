@@ -28,11 +28,15 @@ interface BarManagerProps {
   hiddenButtonIds: string[];
   // Callback function to hide a button.
   onHideButton: (id: string) => void;
+  // Boolean indicating if God Mode (paid features) is enabled.
+  godMode?: boolean;
+  // Callback function to unhide/restore a button.
+  onUnhideButton?: (id: string) => void;
 }
 
 // The BarManager component provides an interface for managers to configure which buttons are visible on the dashboard.
 // Currently, it only supports "hiding" (soft deleting) buttons.
-const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHideButton }: BarManagerProps) => {
+const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHideButton, godMode, onUnhideButton }: BarManagerProps) => {
   // State to track the ID of the button currently selected for deletion confirmation.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -43,6 +47,11 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
   // Memoized to prevent re-calculation when local state (like confirmDeleteId) changes.
   const activeButtons = useMemo(() => {
     return allButtons.filter(b => !hiddenButtonSet.has(b.id));
+  }, [allButtons, hiddenButtonSet]);
+
+  // Compute the list of hidden buttons (for God Mode restoration).
+  const hiddenButtons = useMemo(() => {
+    return allButtons.filter(b => hiddenButtonSet.has(b.id));
   }, [allButtons, hiddenButtonSet]);
 
   // Handler for the delete icon click. Sets the ID to confirm.
@@ -94,6 +103,24 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
                 )}
                 </md-list>
            </div>
+
+           {/* Hidden Buttons (God Mode Only) */}
+           {godMode && hiddenButtons.length > 0 && (
+               <div className="mt-4 border border-red-800 rounded overflow-y-auto max-h-[30vh]">
+                   <div className="bg-red-900/20 p-2 text-xs font-bold text-red-400 uppercase">Restorable Buttons (God Mode)</div>
+                   <md-list>
+                       {hiddenButtons.map(btn => (
+                           <md-list-item key={btn.id}>
+                               <div slot="headline">{btn.label}</div>
+                               <md-icon slot="start">{btn.icon || 'circle'}</md-icon>
+                               <md-icon-button slot="end" onClick={() => onUnhideButton && onUnhideButton(btn.id)}>
+                                   <md-icon>restore</md-icon>
+                               </md-icon-button>
+                           </md-list-item>
+                       ))}
+                   </md-list>
+               </div>
+           )}
         </div>
 
         {/* Dialog Actions */}

@@ -121,3 +121,15 @@ export interface BarUser {
   // Optional: The ntfy topic ID for iOS notifications.
   ntfyTopic?: string;
 }
+
+// Define the standard interface for Point of Sale (POS) system integration.
+export interface POSClient {
+  // Connect to the POS system with provided credentials.
+  connect(credentials: Record<string, string>): Promise<boolean>;
+  // Fetch active orders from the POS.
+  getOrders(): Promise<any[]>;
+  // Sync menu items from the POS to the local system.
+  syncMenu(): Promise<any[]>;
+  // Fetch sales data for a given date range.
+  getSales(startDate: Date, endDate: Date): Promise<any>;
+}

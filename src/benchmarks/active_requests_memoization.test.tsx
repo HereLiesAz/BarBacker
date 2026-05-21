@@ -9,7 +9,7 @@ import { MemoryRouter } from 'react-router-dom';
 let buttonAccessCount = 0;
 
 // Mock User
-const mockUser = { uid: 'test-user', email: 'test@example.com' };
+const mockUser = { uid: 'test-user', email: 'test@example.com', getIdTokenResult: () => Promise.resolve({ claims: {} }) };
 
 // Mock Firestore
 const { collectionSpy, querySpy, whereSpy, orderBySpy, limitSpy } = vi.hoisted(() => ({

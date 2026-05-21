@@ -7,12 +7,19 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Admin claim. Set via `scripts/set-admin-claim.js`. Admins bypass
+    // membership checks for moderation and cross-bar operations.
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
     // A user is a "member" of a bar if they have a profile document in
     // that bar's users subcollection. Membership is established by the
     // join flow in App.tsx (confirmRole writes to bars/{barId}/users/{uid}).
+    // Admins are treated as members of every bar.
     function isMember(barId) {
-      return isAuthenticated()
-        && exists(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid));
+      return isAdmin() || (isAuthenticated()
+        && exists(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)));
     }
 
     // Global per-user document — self only. Holds joinedBars and other

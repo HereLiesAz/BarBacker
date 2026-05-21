@@ -11,7 +11,7 @@ vi.mock('firebase/auth', () => ({
   OAuthProvider: vi.fn(),
   onAuthStateChanged: vi.fn((auth, callback) => {
     // Simulate logged in user
-    callback({ uid: 'test-user', email: 'test@example.com' });
+    callback({ uid: 'test-user', email: 'test@example.com', getIdTokenResult: () => Promise.resolve({ claims: {} }) });
     return () => {};
   }),
   signInWithEmailAndPassword: vi.fn(),

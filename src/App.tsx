@@ -1206,7 +1206,7 @@ function App() {
             <md-filled-text-field
                 label="Display Name"
                 value={editNameValue}
-                onInput={(e: Event) => setEditNameValue((e.target as HTMLInputElement).value)}
+                onInput={(e: React.FormEvent<HTMLElement>) => setEditNameValue((e.currentTarget as HTMLElement & { value: string }).value)}
                 required
                 type="text"
             />

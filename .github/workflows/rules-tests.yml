@@ -21,11 +21,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install dependencies
+      - name: Install firebase-tools globally
+        run: npm install -g firebase-tools
+
+      - name: Install project dependencies
         run: npm ci
 
+      - name: Print versions
+        run: |
+          node --version
+          npm --version
+          firebase --version
+          java -version
+
       - name: Pre-download Firestore emulator JAR
-        run: npx --no-install firebase-tools setup:emulators:firestore
+        run: firebase setup:emulators:firestore
 
       - name: Run Firestore rules tests
-        run: npm run test:rules
+        run: firebase emulators:exec --only firestore --project barbacker-rules-test "npx vitest --run --config vitest.rules.config.ts"

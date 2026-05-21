@@ -2,16 +2,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 // Import 'useSearchParams' to read/write URL query parameters.
 import { useSearchParams } from 'react-router-dom';
-// Import Firebase Auth functions.
-import { 
-  onAuthStateChanged, // Listener for auth state changes (login/logout).
-  signInWithPopup,    // Sign in using a popup window (for Google).
-  signInWithEmailAndPassword, // Sign in with email/password.
-  createUserWithEmailAndPassword, // Register with email/password.
-  signOut, // Sign out function.
-  deleteUser, // Function to delete the user account.
-  updateProfile, // Update user profile.
-  User // Type definition for a Firebase User.
+// Import Firebase Auth functions still used directly (handlers below
+// that touch deleteUser / updateProfile). Login/logout/google sign-in
+// are handled via useAuth().
+import {
+  deleteUser,
+  updateProfile,
 } from 'firebase/auth';
 // Import Firestore functions.
 import { 
@@ -33,9 +29,7 @@ import {
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
 import {
-  auth,
   db,
-  googleProvider,
   requestNotificationPermission,
   onForegroundMessage
 } from './firebase';
@@ -49,6 +43,7 @@ import { useGodMode } from './hooks/useGodMode';
 import { useMyBars } from './hooks/useMyBars';
 import { useUsageBatching } from './hooks/useUsageBatching';
 import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
+import { useAuth } from './hooks/useAuth';
 import { pMap } from './utils/async';
 
 
@@ -118,13 +113,16 @@ function App() {
   // Ref to hold the Audio object for alerts. Persistence prevents memory leaks and glitches.
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // --- Authentication State ---
-  // Store the current logged-in Firebase User.
-  const [user, setUser] = useState<User | null>(null);
-  // Store any authentication error messages (e.g., "Wrong password").
-  const [authError, setAuthError] = useState<string | null>(null);
-  // Toggle between Login and Register modes in the auth form.
-  const [isRegistering, setIsRegistering] = useState(false);
+  // Auth state + actions (sign in, sign up, sign out, google).
+  const {
+    user,
+    authError,
+    isRegistering,
+    setIsRegistering,
+    signInEmail,
+    signInGoogle,
+    signOut,
+  } = useAuth();
   
   // --- Routing & Bar State ---
   // Access URL query parameters.
@@ -329,12 +327,6 @@ function App() {
 
   // Admin / god-mode gate. Currently client-side only — see hook doc.
   const isGodMode = useGodMode(user);
-
-  // --- 1. Auth state ---
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
-    return () => unsubscribe();
-  }, []);
 
   // --- 1a. Push notification setup (device-scoped, runs once) ---
   // Separated from auth so listeners are not re-registered on every auth
@@ -999,9 +991,9 @@ function App() {
     }, { merge: true });
   };
 
-  // Sign out.
+  // Sign out — also closes the account dialog that triggered it.
   const handleLogout = async () => {
-    await signOut(auth);
+    await signOut();
     setShowAccountDialog(false);
   };
 
@@ -1062,12 +1054,13 @@ function App() {
 
   // Handle email login/register form submission.
   const handleEmailAuth = async (e: any) => {
-    e.preventDefault(); const fd = new FormData(e.target);
-    try { isRegistering ? await createUserWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string) : await signInWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string); } catch (e: any) { setAuthError(e.message); }
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    await signInEmail(fd.get('email') as string, fd.get('password') as string);
   };
 
   // Handle Google Login.
-  const handleGoogle = async () => { try { await signInWithPopup(auth, googleProvider); } catch (e: any) { setAuthError(e.message); } };
+  const handleGoogle = () => signInGoogle();
 
   // Handle PWA install click — delegated to the hook.
   const handleInstall = promptInstall;
@@ -1129,7 +1122,7 @@ function App() {
           <h2 className="text-2xl font-bold text-white mb-1">Select Bar</h2>
           <p className="text-gray-500 text-sm">You are {user.email}</p>
         </div>
-        <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
+        <md-text-button onClick={signOut}>Sign Out</md-text-button>
 
         {myBars.length > 0 && (
             <div className="w-[300px] mb-2">
@@ -1192,7 +1185,7 @@ function App() {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black">
         <div className="flex w-full justify-between items-center max-w-[300px]">
             <md-icon-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}><md-icon>arrow_back</md-icon></md-icon-button>
-            <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
+            <md-text-button onClick={signOut}>Sign Out</md-text-button>
         </div>
         <RoleSelector onSelect={confirmRole} initialName={user?.displayName || ''} key={user?.displayName || 'default'} />
       </div>

@@ -19,7 +19,7 @@ export class TouchBistroAdapter implements POSClient {
     return [{ id: 'tb-item-1', name: 'Classic Burger', price: 16.00 }];
   }
 
-  async getSales(startDate: Date, endDate: Date): Promise<any> {
+  async getSales(_startDate: Date, _endDate: Date): Promise<any> {
     if (!this.connected) throw new Error('Not connected to TouchBistro');
     return { grossSales: 2000.00, checkCount: 45 };
   }

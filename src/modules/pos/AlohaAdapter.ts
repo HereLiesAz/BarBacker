@@ -20,7 +20,7 @@ export class AlohaAdapter implements POSClient {
     return [{ id: 'aloha-item-1', name: 'Filet Mignon', price: 45.00 }];
   }
 
-  async getSales(startDate: Date, endDate: Date): Promise<any> {
+  async getSales(_startDate: Date, _endDate: Date): Promise<any> {
     if (!this.connected) throw new Error('Not connected to Aloha');
     return { gross: 5000.00, guests: 80 };
   }

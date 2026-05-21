@@ -19,7 +19,7 @@ export class TalechAdapter implements POSClient {
     return [{ id: 'talech-item-1', name: 'Caesar Salad', price: 11.00 }];
   }
 
-  async getSales(startDate: Date, endDate: Date): Promise<any> {
+  async getSales(_startDate: Date, _endDate: Date): Promise<any> {
     if (!this.connected) throw new Error('Not connected to Talech');
     return { sales: 600.00, transactions: 25 };
   }

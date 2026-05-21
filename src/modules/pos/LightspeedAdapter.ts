@@ -19,7 +19,7 @@ export class LightspeedAdapter implements POSClient {
     return [{ id: 'ls-item-1', name: 'Lightspeed Carbonara', price: 18.00 }];
   }
 
-  async getSales(startDate: Date, endDate: Date): Promise<any> {
+  async getSales(_startDate: Date, _endDate: Date): Promise<any> {
     if (!this.connected) throw new Error('Not connected to Lightspeed');
     return { totalSales: 1800.00, transactionCount: 100 };
   }

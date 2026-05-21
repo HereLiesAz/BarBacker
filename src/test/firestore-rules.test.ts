@@ -15,9 +15,14 @@ import {
   addDoc,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PROJECT_ID = 'barbacker-rules-test';
+
+// Resolve the rules file relative to this test via import.meta.url so
+// it works under vitest's ESM mode in CI, where `__dirname` is not
+// reliably defined for projects with type=module.
+const RULES_PATH = fileURLToPath(new URL('../../firestore.rules', import.meta.url));
 
 let env: RulesTestEnvironment;
 
@@ -51,7 +56,7 @@ describe('Firestore security rules', () => {
     env = await initializeTestEnvironment({
       projectId: PROJECT_ID,
       firestore: {
-        rules: readFileSync(resolve(__dirname, '../../firestore.rules'), 'utf8'),
+        rules: readFileSync(RULES_PATH, 'utf8'),
         host: '127.0.0.1',
         port: 8080,
       },

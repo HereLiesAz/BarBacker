@@ -7,30 +7,49 @@ import {
   getDocs,
   onSnapshot,
   query,
+  setDoc,
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Bar } from '../types';
 
-// Resolves the current user's list of joined bars (subscribed via the
-// global users/{uid}.joinedBars array) and their display names.
-// Returns:
-//   - myBars: the live array of bar IDs the user has joined
-//   - barDetails: a map of barId -> bar name, lazily populated via
-//     chunked `in` queries (30-id limit per query)
-// "Unknown Bar" is used as a fallback for any bar id that fails to
-// resolve, so the UI always shows something for every entry in myBars.
+// Generate a 128-bit hex suffix for ntfy topic IDs. ntfy.sh is an
+// unauthenticated pub-sub — anyone who knows the topic can subscribe,
+// so we use a high-entropy random value instead of deriving from the
+// Firebase UID (which leaks into every Request/Notice document).
+function generateRandomTopicSuffix(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Subscribes to the global users/{uid} document and exposes:
+//   - myBars: live array of bar IDs the user has joined
+//   - barDetails: map of barId -> bar name, lazily populated via
+//     chunked `in` queries (Firestore's 30-id limit). Fallback
+//     "Unknown Bar" so the UI always has something to render.
+//   - globalNtfyTopic: account-level ntfy topic. Generated once per
+//     account and persisted back to users/{uid}.ntfyTopic if missing;
+//     pre-existing accounts keep whatever topic they have stored.
 export function useMyBars(user: User | null) {
   const [myBars, setMyBars] = useState<string[]>([]);
   const [barDetails, setBarDetails] = useState<Record<string, string>>({});
+  const [globalNtfyTopic, setGlobalNtfyTopic] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
-    const unsub = onSnapshot(doc(db, 'users', user.uid), (d) => {
-      if (d.exists() && d.data().joinedBars) {
-        setMyBars(d.data().joinedBars);
+    const userRef = doc(db, 'users', user.uid);
+    const unsub = onSnapshot(userRef, (d) => {
+      const data = d.exists() ? d.data() : {};
+      setMyBars(data.joinedBars || []);
+
+      if (data.ntfyTopic) {
+        setGlobalNtfyTopic(data.ntfyTopic);
       } else {
-        setMyBars([]);
+        const newTopic = `barbacker-${generateRandomTopicSuffix()}`;
+        setGlobalNtfyTopic(newTopic);
+        setDoc(userRef, { ntfyTopic: newTopic }, { merge: true })
+          .catch(e => console.warn('Failed to persist ntfy topic', e));
       }
     });
     return () => unsub();
@@ -71,5 +90,5 @@ export function useMyBars(user: User | null) {
     fetchBarNames();
   }, [myBars]);
 
-  return { myBars, barDetails };
+  return { myBars, barDetails, globalNtfyTopic };
 }

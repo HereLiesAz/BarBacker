@@ -2,16 +2,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 // Import 'useSearchParams' to read/write URL query parameters.
 import { useSearchParams } from 'react-router-dom';
-// Import Firebase Auth functions.
-import { 
-  onAuthStateChanged, // Listener for auth state changes (login/logout).
-  signInWithPopup,    // Sign in using a popup window (for Google).
-  signInWithEmailAndPassword, // Sign in with email/password.
-  createUserWithEmailAndPassword, // Register with email/password.
-  signOut, // Sign out function.
-  deleteUser, // Function to delete the user account.
-  updateProfile, // Update user profile.
-  User // Type definition for a Firebase User.
+// Import Firebase Auth functions still used directly (handlers below
+// that touch deleteUser / updateProfile). Login/logout/google sign-in
+// are handled via useAuth().
+import {
+  deleteUser,
+  updateProfile,
 } from 'firebase/auth';
 // Import Firestore functions.
 import { 
@@ -27,27 +23,26 @@ import {
   serverTimestamp, // Generate a server-side timestamp.
   setDoc,     // Set (overwrite or create) a document.
   getDoc,     // Fetch a single document once.
-  getDocs,    // Fetch multiple documents.
   deleteDoc,  // Delete a document.
   arrayUnion, // Add elements to an array field.
   arrayRemove, // Remove elements from an array field.
-  increment,  // Atomic increment of a numeric field.
-  documentId, // Sentinel for querying by document ID.
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
 import {
-  auth,
   db,
-  googleProvider,
   requestNotificationPermission,
-  onForegroundMessage
 } from './firebase';
-// Import Capacitor plugins for native functionality.
-import { PushNotifications } from '@capacitor/push-notifications';
-import { Capacitor } from '@capacitor/core';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
+import { usePwaInstallPrompt } from './hooks/usePwaInstallPrompt';
+import { useGodMode } from './hooks/useGodMode';
+import { useMyBars } from './hooks/useMyBars';
+import { useUsageBatching } from './hooks/useUsageBatching';
+import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
+import { useAuth } from './hooks/useAuth';
+import { usePushNotifications } from './hooks/usePushNotifications';
 import { pMap } from './utils/async';
+
 
 // --- Material Web Imports ---
 // These imports register the custom elements with the browser's CustomElementRegistry.
@@ -124,16 +119,16 @@ const BarListItem = ({ name, onClick }: { name: string, onClick: () => void }) =
 
 // --- MAIN APP COMPONENT ---
 function App() {
-  // Ref to hold the Audio object for alerts. Persistence prevents memory leaks and glitches.
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // --- Authentication State ---
-  // Store the current logged-in Firebase User.
-  const [user, setUser] = useState<User | null>(null);
-  // Store any authentication error messages (e.g., "Wrong password").
-  const [authError, setAuthError] = useState<string | null>(null);
-  // Toggle between Login and Register modes in the auth form.
-  const [isRegistering, setIsRegistering] = useState(false);
+  // Auth state + actions (sign in, sign up, sign out, google).
+  const {
+    user,
+    authError,
+    isRegistering,
+    setIsRegistering,
+    signInEmail,
+    signInGoogle,
+    signOut,
+  } = useAuth();
   
   // --- Routing & Bar State ---
   // Access URL query parameters.
@@ -165,14 +160,8 @@ function App() {
   // --- Data State ---
   // Store the list of active requests.
   const [requests, setRequests] = useState<Request[]>([]);
-  // Store the list of joined bars.
-  const [myBars, setMyBars] = useState<string[]>([]);
-  // Store cached bar details (names) to prevent N+1 fetches.
-  const [barDetails, setBarDetails] = useState<Record<string, string>>({});
   // Store the list of configured buttons.
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
-  // Store the FCM token for push notifications.
-  const [fcmToken, setFcmToken] = useState<string | null>(null);
 
   // --- Bar Configuration State ---
   // Store inventory mapping for beers (Brand -> Types).
@@ -186,8 +175,6 @@ function App() {
   // Store custom sort orders.
   const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
 
-  // Store god mode status.
-  const [isGodMode, setIsGodMode] = useState(false);
 
   // --- UI State ---
   // Track the ID of the button currently being dragged.
@@ -202,13 +189,9 @@ function App() {
   // Stack to navigate through nested button menus.
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
 
-  // Ref for the inactivity timer. The type is `number | null` to be compatible with the return value of `window.setTimeout` in browsers.
-  const timerRef = useRef<number | null>(null);
   // Ref to track dragging state to prevent accidental clicks.
   const isDraggingRef = useRef(false);
 
-  // Ref to hold usage buffer for batching writes.
-  const usageBufferRef = useRef<Record<string, number>>({});
 
   // Dialog visibility states.
   const [showOffClockDialog, setShowOffClockDialog] = useState(false);
@@ -229,8 +212,6 @@ function App() {
   const [noticeText, setNoticeText] = useState('');
   const [noticeError, setNoticeError] = useState<string | null>(null);
 
-  // Store the PWA install prompt event.
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
   // Control the main menu dropdown.
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -344,92 +325,22 @@ function App() {
   // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);
 
-  // Effect: Capture the PWA 'beforeinstallprompt' event.
-  useEffect(() => {
-    const handler = (e: any) => {
-      e.preventDefault(); // Prevent the mini-infobar from appearing.
-      setInstallPrompt(e); // Stash the event so it can be triggered later.
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+  // Push notification setup (Capacitor + web FCM). Returns the
+  // device FCM token; the per-bar auto-clock-in effect below copies it
+  // into bars/{barId}/tokens/{uid}.
+  const { fcmToken, setFcmToken } = usePushNotifications();
 
-  // --- 1. Auth state ---
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
-    return () => unsubscribe();
-  }, []);
-
-  // --- 1a. Push notification setup (device-scoped, runs once) ---
-  // Separated from auth so listeners are not re-registered on every auth
-  // state change — previously each login/logout cycle stacked another
-  // pushNotificationReceived handler, multiplying vibrations and audio
-  // plays per incoming notification.
-  useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
-      let cancelled = false;
-
-      const setup = async () => {
-        try {
-          // Clear any handlers from a previous mount (StrictMode, hot
-          // reload) and on first mount as a defensive no-op. We rely on
-          // removeAllListeners for both setup and teardown rather than
-          // tracking per-handle remove callbacks — Capacitor's plugin
-          // listener registry is the source of truth here, and mixing
-          // both strategies makes cleanup ordering ambiguous.
-          await PushNotifications.removeAllListeners();
-
-          await PushNotifications.addListener('registration', token => {
-            setFcmToken(token.value);
-          });
-
-          await PushNotifications.addListener('registrationError', err => {
-            console.error('Registration error: ', err.error);
-          });
-
-          await PushNotifications.addListener('pushNotificationReceived', () => {
-            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-            if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
-            const audio = audioRef.current;
-            audio.pause();
-            audio.onended = null;
-            audio.currentTime = 0;
-            audio.play().catch(() => {});
-          });
-
-          await PushNotifications.addListener('pushNotificationActionPerformed', () => {
-            // Future: open specific request from tap.
-          });
-
-          if (cancelled) return;
-
-          let permStatus = await PushNotifications.checkPermissions();
-          if (permStatus.receive === 'prompt') {
-            permStatus = await PushNotifications.requestPermissions();
-          }
-          if (permStatus.receive === 'granted') {
-            await PushNotifications.register();
-          }
-        } catch (e) {
-          console.error("Native push setup failed", e);
-        }
-      };
-
-      setup();
-
-      return () => {
-        cancelled = true;
-        PushNotifications.removeAllListeners().catch(() => {});
-      };
-    }
-
-    // Web (PWA) push path.
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || (window.navigator as any).standalone;
-    if (isStandalone) {
+  // PWA install prompt — capture beforeinstallprompt and expose a
+  // trigger. On accept, re-request notification permission so newly
+  // installed PWAs don't sit silently without push.
+  const { installPrompt, promptInstall } = usePwaInstallPrompt(() => {
+    if (user) {
       requestNotificationPermission().then(t => t && setFcmToken(t));
     }
+  });
 
+  // Admin / god-mode gate. Currently client-side only — see hook doc.
+  const isGodMode = useGodMode(user);
     // Subscribe to foreground messages with a callback we can detach on
     // unmount. The previous one-shot Promise API only fired for the
     // first message of the session.
@@ -530,8 +441,8 @@ function App() {
         setBarDetails(finalDetails);
     };
 
-    fetchBarNames();
-  }, [myBars]);
+  // Joined bars + their display names — driven by users/{uid}.joinedBars.
+  const { myBars, barDetails } = useMyBars(user);
 
   // --- 2. Bar Logic (Listeners) ---
   useEffect(() => {
@@ -659,6 +570,8 @@ function App() {
   }, [user, barId, fcmToken]);
 
 
+  // Auto-submit an "(Ask Me)" request if a sub-menu sits open for 60s.
+  useInactivityAutoSubmit(navStack, (label) => submitRequest(label), () => setNavStack([]));
   // --- Admin / god-mode gate ---
   // Reads the `admin` custom claim off the user's ID token. Claims are
   // signed by Firebase so they cannot be spoofed from the client, and
@@ -880,43 +793,8 @@ function App() {
     return btn.children || [];
   };
 
-  // Flush usage buffer to Firestore.
-  const flushUsage = useCallback(() => {
-    if (!barId) return;
-    const buffer = usageBufferRef.current;
-    if (Object.keys(buffer).length === 0) return;
-
-    // Reset buffer immediately.
-    usageBufferRef.current = {};
-
-    const updates: Record<string, any> = {};
-    for (const [btnId, count] of Object.entries(buffer)) {
-        updates[`buttonUsage.${btnId}`] = increment(count);
-    }
-
-    updateDoc(doc(db, 'bars', barId), updates)
-      .catch(e => console.error("Failed to flush usage", e));
-  }, [barId]);
-
-  // Periodic flush of usage stats.
-  useEffect(() => {
-    const interval = window.setInterval(flushUsage, 10000); // 10 seconds
-    // Also flush on page unload (refresh/close).
-    const onUnload = () => flushUsage();
-    window.addEventListener('beforeunload', onUnload);
-
-    return () => {
-        window.clearInterval(interval);
-        window.removeEventListener('beforeunload', onUnload);
-        flushUsage(); // Flush on unmount
-    };
-  }, [flushUsage]);
-
-  // Track usage for sorting.
-  const trackButtonUsage = (btnId: string) => {
-    if (!barId) return;
-    usageBufferRef.current[btnId] = (usageBufferRef.current[btnId] || 0) + 1;
-  };
+  // Buffered button-usage writes (10s flush interval).
+  const { trackButtonUsage } = useUsageBatching(barId);
 
   // Sort buttons based on custom order or usage.
   const sortButtons = (btns: ButtonConfig[], contextId: string) => {
@@ -1163,9 +1041,9 @@ function App() {
     }, { merge: true });
   };
 
-  // Sign out.
+  // Sign out — also closes the account dialog that triggered it.
   const handleLogout = async () => {
-    await signOut(auth);
+    await signOut();
     setShowAccountDialog(false);
   };
 
@@ -1226,26 +1104,16 @@ function App() {
 
   // Handle email login/register form submission.
   const handleEmailAuth = async (e: any) => {
-    e.preventDefault(); const fd = new FormData(e.target);
-    try { isRegistering ? await createUserWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string) : await signInWithEmailAndPassword(auth, fd.get('email') as string, fd.get('password') as string); } catch (e: any) { setAuthError(e.message); }
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    await signInEmail(fd.get('email') as string, fd.get('password') as string);
   };
 
   // Handle Google Login.
-  const handleGoogle = async () => { try { await signInWithPopup(auth, googleProvider); } catch (e: any) { setAuthError(e.message); } };
+  const handleGoogle = () => signInGoogle();
 
-  // Handle PWA install click.
-  const handleInstall = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setInstallPrompt(null);
-      // Request permissions after install.
-      if (user) {
-         requestNotificationPermission().then(t => t && setFcmToken(t));
-      }
-    }
-  };
+  // Handle PWA install click — delegated to the hook.
+  const handleInstall = promptInstall;
 
   // Share the app URL.
   const handleShare = async () => {
@@ -1304,7 +1172,7 @@ function App() {
           <h2 className="text-2xl font-bold text-white mb-1">Select Bar</h2>
           <p className="text-gray-500 text-sm">You are {user.email}</p>
         </div>
-        <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
+        <md-text-button onClick={signOut}>Sign Out</md-text-button>
 
         {myBars.length > 0 && (
             <div className="w-[300px] mb-2">
@@ -1368,7 +1236,7 @@ function App() {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black">
         <div className="flex w-full justify-between items-center max-w-[300px]">
             <md-icon-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}><md-icon>arrow_back</md-icon></md-icon-button>
-            <md-text-button onClick={() => signOut(auth)}>Sign Out</md-text-button>
+            <md-text-button onClick={signOut}>Sign Out</md-text-button>
         </div>
         <RoleSelector onSelect={confirmRole} initialName={user?.displayName || ''} key={user?.displayName || 'default'} />
       </div>

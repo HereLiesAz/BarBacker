@@ -100,7 +100,7 @@ vi.mock('../firebase', () => ({
   db: {},
   googleProvider: {},
   requestNotificationPermission: vi.fn(() => Promise.resolve('mock-token')),
-  onMessageListener: vi.fn(() => Promise.resolve()),
+  onForegroundMessage: vi.fn(() => () => {}),
 }));
 
 vi.mock('../hooks/useLatestRelease', () => ({

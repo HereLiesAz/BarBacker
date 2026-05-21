@@ -35,12 +35,12 @@ import {
   documentId, // Sentinel for querying by document ID.
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
-import { 
-  auth, 
-  db, 
-  googleProvider, 
-  requestNotificationPermission, 
-  onMessageListener 
+import {
+  auth,
+  db,
+  googleProvider,
+  requestNotificationPermission,
+  onForegroundMessage
 } from './firebase';
 // Import Capacitor plugins for native functionality.
 import { PushNotifications } from '@capacitor/push-notifications';
@@ -50,7 +50,7 @@ import { useLatestRelease } from './hooks/useLatestRelease';
 import { pMap } from './utils/async';
 
 // Import Subscription Services
-import { adminManager, noticeManager, themeManager } from './services/subscription';
+import { adminManager } from './services/subscription';
 
 // --- Material Web Imports ---
 // These imports register the custom elements with the browser's CustomElementRegistry.
@@ -340,92 +340,105 @@ function App() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  // --- 1. Auth & Token Sync ---
+  // --- 1. Auth state ---
   useEffect(() => {
-    // Listen for auth state changes.
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      if (u) {
-        // User is logged in. Setup notifications.
-        if (Capacitor.isNativePlatform()) {
-          // Native (Android/iOS) Push Logic using Capacitor.
-          try {
-             // Listen for registration success to get the token.
-             await PushNotifications.addListener('registration', token => {
-                setFcmToken(token.value);
-             });
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsubscribe();
+  }, []);
 
-             // Listen for registration errors.
-             await PushNotifications.addListener('registrationError', err => {
-                console.error('Registration error: ', err.error);
-             });
+  // --- 1a. Push notification setup (device-scoped, runs once) ---
+  // Separated from auth so listeners are not re-registered on every auth
+  // state change — previously each login/logout cycle stacked another
+  // pushNotificationReceived handler, multiplying vibrations and audio
+  // plays per incoming notification.
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      let cancelled = false;
+      const handles: { remove: () => Promise<void> }[] = [];
 
-             // Listen for incoming notifications (foreground).
-             await PushNotifications.addListener('pushNotificationReceived', () => {
-                // Vibrate.
-                if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-                // Play sound.
-                if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
-                const audio = audioRef.current;
-                audio.pause();
-                audio.onended = null;
-                audio.currentTime = 0;
-                audio.play().catch(() => {});
-             });
+      const setup = async () => {
+        try {
+          // Clear any handlers from a previous mount (StrictMode, hot reload).
+          await PushNotifications.removeAllListeners();
 
-             // Listen for notification taps.
-             await PushNotifications.addListener('pushNotificationActionPerformed', () => {
-                 // Future: Handle tap action (e.g., open specific request).
-             });
+          handles.push(await PushNotifications.addListener('registration', token => {
+            setFcmToken(token.value);
+          }));
 
-             // Request permissions.
-             let permStatus = await PushNotifications.checkPermissions();
-             if (permStatus.receive === 'prompt') {
-               permStatus = await PushNotifications.requestPermissions();
-             }
-             if (permStatus.receive === 'granted') {
-               await PushNotifications.register();
-             }
-          } catch (e) {
-             console.error("Native push setup failed", e);
-          }
-        } else {
-          // Web (PWA) Push Logic.
-          const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
-          // Only request permission if installed as PWA (to avoid annoying web visitors).
-          if (isStandalone) {
-              requestNotificationPermission().then(t => t && setFcmToken(t));
-          }
+          handles.push(await PushNotifications.addListener('registrationError', err => {
+            console.error('Registration error: ', err.error);
+          }));
 
-          // Listen for foreground messages.
-          onMessageListener().then((payload: any) => {
+          handles.push(await PushNotifications.addListener('pushNotificationReceived', () => {
             if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-
-            // Show system notification if supported.
-            if (payload && payload.notification) {
-              new Notification(payload.notification.title, {
-                body: payload.notification.body,
-                icon: '/icon-192x192.png',
-              });
-            }
-
-            // Play alert sound (looped 8 times for urgency).
             if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
             const audio = audioRef.current;
-            let plays = 0;
-            audio.onended = () => {
-                plays++;
-                if (plays < 8) {
-                    audio.currentTime = 0;
-                    audio.play().catch(() => {});
-                }
-            };
+            audio.pause();
+            audio.onended = null;
+            audio.currentTime = 0;
             audio.play().catch(() => {});
-          });
+          }));
+
+          handles.push(await PushNotifications.addListener('pushNotificationActionPerformed', () => {
+            // Future: open specific request from tap.
+          }));
+
+          if (cancelled) return;
+
+          let permStatus = await PushNotifications.checkPermissions();
+          if (permStatus.receive === 'prompt') {
+            permStatus = await PushNotifications.requestPermissions();
+          }
+          if (permStatus.receive === 'granted') {
+            await PushNotifications.register();
+          }
+        } catch (e) {
+          console.error("Native push setup failed", e);
         }
+      };
+
+      setup();
+
+      return () => {
+        cancelled = true;
+        PushNotifications.removeAllListeners().catch(() => {});
+      };
+    }
+
+    // Web (PWA) push path.
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || (window.navigator as any).standalone;
+    if (isStandalone) {
+      requestNotificationPermission().then(t => t && setFcmToken(t));
+    }
+
+    // Subscribe to foreground messages with a callback we can detach on
+    // unmount. The previous one-shot Promise API only fired for the
+    // first message of the session.
+    const unsubscribeMessages = onForegroundMessage((payload: any) => {
+      if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+
+      if (payload && payload.notification) {
+        new Notification(payload.notification.title, {
+          body: payload.notification.body,
+          icon: '/icon-192x192.png',
+        });
       }
+
+      if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
+      const audio = audioRef.current;
+      let plays = 0;
+      audio.onended = () => {
+        plays++;
+        if (plays < 8) {
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
+        }
+      };
+      audio.play().catch(() => {});
     });
-    return () => unsubscribe();
+
+    return () => unsubscribeMessages();
   }, []);
 
   // --- 1.5. User Data & Joined Bars ---
@@ -604,25 +617,18 @@ function App() {
   }, [user, barId, fcmToken]);
 
 
-  // --- Subscription & Theme Init ---
+  // --- Subscription gate ---
+  // NOTE: This is currently a client-side env-var match (VITE_GOD_MODE_EMAIL)
+  // and is NOT enforced by Firestore rules. Anything gated by `isGodMode`
+  // should be treated as UI affordance only. Replace with Firebase Auth
+  // custom claims + rule-side checks before relying on this for access
+  // control.
   useEffect(() => {
-    if (user) {
-        // Check subscription status
-        const hasSub = adminManager.checkSubscription(user.email);
-        console.log("Subscription Active:", hasSub);
-        setIsGodMode(hasSub);
+    if (!user) {
+      setIsGodMode(false);
+      return;
     }
-
-    // Apply branding if available
-    themeManager.applyTheme('default');
-
-    // Fetch system notices
-    noticeManager.getNotices().then(msgs => {
-        if(msgs.length > 0) {
-            console.log("System Notices:", msgs);
-            // Could merge into local notices state if desired
-        }
-    });
+    setIsGodMode(adminManager.checkSubscription(user.email));
   }, [user]);
 
   // --- Timer ---
@@ -1059,8 +1065,11 @@ function App() {
         }
     });
 
-    // Send the requests in parallel.
-    pMap(
+    // Send the requests in parallel. Await so the request submission
+    // completes only once notifications have been dispatched; per-topic
+    // failures are swallowed inside the worker so one bad topic doesn't
+    // abort the fanout.
+    await pMap(
         Array.from(topics),
         async (topic) => {
             return fetch(`https://ntfy.sh/${topic}`, {
@@ -1127,12 +1136,16 @@ function App() {
       // 1. Get all bars the user is part of.
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
-      const joinedBars = userDoc.exists() ? (userDoc.data().joinedBars || []) : [];
+      const joinedBars: string[] = userDoc.exists() ? (userDoc.data().joinedBars || []) : [];
 
-      // 2. Remove user from all those bars.
-      await Promise.all(joinedBars.map((bid: string) =>
-          deleteDoc(doc(db, `bars/${bid}/users`, user.uid))
-      ));
+      // 2. For each joined bar, drop the per-bar user profile AND the
+      // FCM token. Previously tokens were left behind — they're now
+      // restricted to the owning user by Firestore rules, so an
+      // orphaned token would never be cleaned up.
+      await Promise.all(joinedBars.flatMap((bid) => [
+          deleteDoc(doc(db, `bars/${bid}/users`, user.uid)).catch(() => {}),
+          deleteDoc(doc(db, `bars/${bid}/tokens`, user.uid)).catch(() => {}),
+      ]));
 
       // 3. Delete the global user document.
       await deleteDoc(userDocRef);

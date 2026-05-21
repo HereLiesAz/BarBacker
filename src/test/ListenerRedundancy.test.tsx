@@ -126,7 +126,7 @@ vi.mock('../firebase', async (importOriginal) => {
       await delay(100);
       return 'mock-fcm-token';
     }),
-    onMessageListener: vi.fn(() => Promise.resolve()),
+    onForegroundMessage: vi.fn(() => () => {}),
   };
 });
 

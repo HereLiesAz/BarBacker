@@ -1,5 +1,5 @@
 // Import React hooks for managing state and side effects.
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 // Import 'useSearchParams' to read/write URL query parameters.
 import { useSearchParams } from 'react-router-dom';
 // Import Firebase Auth functions still used directly (handlers below
@@ -11,12 +11,6 @@ import {
 } from 'firebase/auth';
 // Import Firestore functions.
 import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-  orderBy,
-  limit,
   updateDoc,
   doc,
   serverTimestamp,
@@ -43,6 +37,7 @@ import { usePushNotifications } from './hooks/usePushNotifications';
 import { useBarNoticeBoard } from './hooks/useBarNoticeBoard';
 import { useDragAndDrop } from './hooks/useDragAndDrop';
 import { useRequestActions } from './hooks/useRequestActions';
+import { useBarListeners } from './hooks/useBarListeners';
 
 
 // --- Material Web Imports ---
@@ -65,8 +60,8 @@ import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
 
 // Import Types and Constants.
-import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
-import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
+import { ButtonConfig, BarUser } from './types';
+import { ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
 // Import UI Components.
@@ -120,44 +115,7 @@ function App() {
   // Store the current Bar ID.
   const [barId, setBarId] = useState<string | null>(initialBarId);
   
-  // --- User Context in Bar ---
-  // Store the name of the current bar.
-  const [barName, setBarName] = useState('');
-  // Store the user's role in this bar (e.g., 'Bartender').
-  const [userRole, setUserRole] = useState<string | null>(null);
-  // Store the user's status (active/off_clock/pending).
-  const [userStatus, setUserStatus] = useState<string>('active');
-  // Store the user's display name.
-  const [displayName, setDisplayName] = useState<string>('');
-  // Store the user's notification preferences (list of button IDs).
-  const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
-  // Store the ntfy topic ID for iOS notifications (per-bar snapshot
-  // of the global topic, kept in sync via the bar listener).
-  const [ntfyTopic, setNtfyTopic] = useState<string | null>(null);
-
-  // --- Data State ---
-  // Store the list of active requests.
-  const [requests, setRequests] = useState<Request[]>([]);
-  // Store the list of configured buttons.
-  const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
-
-  // --- Bar Configuration State ---
-  // Store inventory mapping for beers (Brand -> Types).
-  const [beerInventory, setBeerInventory] = useState<Record<string, string[]>>({});
-  // Store list of well names.
-  const [wells, setWells] = useState<string[]>([]);
-  // Store IDs of buttons that should be hidden.
-  const [hiddenButtonIds, setHiddenButtonIds] = useState<string[]>([]);
-  // Store usage counts for sorting.
-  const [buttonUsage, setButtonUsage] = useState<Record<string, number>>({});
-  // Store custom sort orders.
-  const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
-
-
   // --- UI State ---
-  // Track the ID of the button currently being dragged.
-  // Store the list of all users in the bar (for "Who's On" and managing).
-  const [allUsers, setAllUsers] = useState<BarUser[]>([]);
   // Control the Input Dialog state (Open/Close, Type, Context).
   const [inputDialog, setInputDialog] = useState<{ type: 'brand' | 'type' | 'well' | 'custom', open: boolean, parentContext?: string, searchTerm: string }>({ type: 'brand', open: false, searchTerm: '' });
   // Control the Quantity Picker Dialog state.
@@ -180,14 +138,53 @@ function App() {
   // List of request IDs the user has locally ignored/muted.
   const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
 
-  // Notice Board State.
-  const [notices, setNotices] = useState<Notice[]>([]);
-
   // Control the main menu dropdown.
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Fetch latest APK info using custom hook.
   const { downloadUrl: apkUrl, loading: apkLoading } = useLatestRelease();
+
+  // Push notification setup (Capacitor + web FCM). Returns the
+  // device FCM token; the bar-listener hook below mirrors it into
+  // bars/{barId}/tokens/{uid} via its auto-clock-in effect.
+  const { fcmToken, setFcmToken } = usePushNotifications();
+
+  // PWA install prompt — capture beforeinstallprompt and expose a
+  // trigger. On accept, re-request notification permission so newly
+  // installed PWAs don't sit silently without push.
+  const { installPrompt, promptInstall } = usePwaInstallPrompt(() => {
+    if (user) {
+      requestNotificationPermission().then(t => t && setFcmToken(t));
+    }
+  });
+
+  // Admin / god-mode gate.
+  const isGodMode = useGodMode(user);
+
+  // Joined bars + their display names + the account-level ntfy topic
+  // — all driven by the global users/{uid} document.
+  const { myBars, barDetails, globalNtfyTopic } = useMyBars(user);
+
+  // Per-bar real-time data + auto-clock-in. Owns the 5 onSnapshot
+  // subscriptions (user profile, bar config, requests, who's on,
+  // notices) and the FCM-token-arrives-→ write tokens/{uid} effect.
+  const {
+    userRole,
+    userStatus,
+    displayName,
+    notificationPreferences, setNotificationPreferences,
+    ntfyTopic, setNtfyTopic,
+    barName,
+    buttons,
+    beerInventory, setBeerInventory,
+    wells, setWells,
+    hiddenButtonIds, setHiddenButtonIds,
+    buttonUsage,
+    customOrders, setCustomOrders,
+    requests,
+    allUsers,
+    notices,
+  } = useBarListeners({ user, barId, fcmToken, globalNtfyTopic, setSearchParams });
 
   // Drag-and-drop sensors + handlers (dnd-kit). Persistence of
   // customOrders happens inside the hook on drag end.
@@ -285,152 +282,6 @@ function App() {
 
   // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);
-
-  // Push notification setup (Capacitor + web FCM). Returns the
-  // device FCM token; the per-bar auto-clock-in effect below copies it
-  // into bars/{barId}/tokens/{uid}.
-  const { fcmToken, setFcmToken } = usePushNotifications();
-
-  // PWA install prompt — capture beforeinstallprompt and expose a
-  // trigger. On accept, re-request notification permission so newly
-  // installed PWAs don't sit silently without push.
-  const { installPrompt, promptInstall } = usePwaInstallPrompt(() => {
-    if (user) {
-      requestNotificationPermission().then(t => t && setFcmToken(t));
-    }
-  });
-
-  // Admin / god-mode gate.
-  const isGodMode = useGodMode(user);
-
-  // Joined bars + their display names + the account-level ntfy topic
-  // — all driven by the global users/{uid} document.
-  const { myBars, barDetails, globalNtfyTopic } = useMyBars(user);
-
-  // --- 2. Bar Logic (Listeners) ---
-  useEffect(() => {
-    // If no user or bar selected, do nothing.
-    if (!user || !barId) return;
-
-    // Persist Bar ID to URL and LocalStorage.
-    setSearchParams({ bar: barId });
-    localStorage.setItem('barId', barId);
-
-    // References to Firestore documents.
-    const userRef = doc(db, `bars/${barId}/users`, user.uid);
-
-    // Listen for changes to the User's profile.
-    const unsubUser = onSnapshot(userRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        setUserRole(data.role);
-        setUserStatus(data.status || 'active');
-        setDisplayName(data.displayName || 'Unknown');
-
-        // Load notification preferences or set defaults.
-        if (data.notificationPreferences) {
-          setNotificationPreferences(data.notificationPreferences);
-        } else if (data.role) {
-          // If no preferences saved, use defaults for role.
-          setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[data.role] || []);
-        }
-
-        // Auto-coordinate ntfy topic. Mirror the global topic from
-        // users/{uid} into this bar's user profile so the fanout
-        // (which reads ntfyTopic off the per-bar user docs) stays in
-        // sync. If the global topic hasn't loaded yet, leave the
-        // per-bar value alone and pick it up on the next snapshot.
-        if (globalNtfyTopic && data.ntfyTopic !== globalNtfyTopic) {
-            updateDoc(userRef, { ntfyTopic: globalNtfyTopic }).catch(console.error);
-            setNtfyTopic(globalNtfyTopic);
-        } else {
-            setNtfyTopic(data.ntfyTopic || globalNtfyTopic);
-        }
-      } else {
-        // User document doesn't exist (new user).
-        setUserRole(null);
-      }
-    });
-
-    // Listen for changes to the Bar configuration.
-    const unsubBar = onSnapshot(doc(db, 'bars', barId), (d) => {
-      if (d.exists()) {
-        const data = d.data() as Bar;
-        setBarName(data.name);
-
-        // Merge default buttons with custom bar buttons.
-        if (data.buttons) {
-            // Deduplicate buttons by ID, preferring custom (data.buttons) over default.
-            const customMap = new Map(data.buttons.map(b => [b.id, b]));
-            const combined = [...DEFAULT_BUTTONS.filter(b => !customMap.has(b.id)), ...data.buttons];
-            setButtons(combined);
-        } else {
-            setButtons(DEFAULT_BUTTONS);
-        }
-
-        // Update local state with bar data.
-        if (data.beerInventory) setBeerInventory(data.beerInventory);
-        if (data.wells) setWells(data.wells);
-        if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
-        if (data.buttonUsage) setButtonUsage(data.buttonUsage);
-        if (data.customOrders) setCustomOrders(data.customOrders);
-      }
-    });
-
-    // Listen for Requests.
-    // Query: Last 24 hours, matching Bar ID, ordered by time. Limit to 100 for performance.
-    const unsubReq = onSnapshot(
-      query(collection(db, 'requests'), where('barId', '==', barId), where('timestamp', '>=', new Date(Date.now() - 24 * 60 * 60 * 1000)), orderBy('timestamp', 'desc'), limit(100)),
-      (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
-    );
-
-    // Listen for All Users (for "Who's On").
-    // Query varies based on whether we are viewing the "Who's On" dialog (show off_clock users too).
-    const userQuery = query(collection(db, `bars/${barId}/users`), where('status', 'in', ['active', 'pending']));
-
-    const unsubAllUsers = onSnapshot(userQuery, (s) => {
-        setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    // Listen for Notices (Bulletin Board).
-    // Query: Last 3 days.
-    const unsubNotices = onSnapshot(
-      query(
-        collection(db, `bars/${barId}/notices`),
-        where('timestamp', '>=', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
-        orderBy('timestamp', 'desc'), limit(100)
-      ),
-      (s) => {
-        const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice));
-        setNotices(validNotices);
-      }
-    );
-
-    // Cleanup: Unsubscribe from all listeners when component unmounts or barId changes.
-    return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
-  }, [user, barId, setSearchParams]);
-
-  // --- 2.5 Auto-Clock In (Token Update) ---
-  useEffect(() => {
-    if (!user || !barId || !fcmToken) return;
-
-    const userRef = doc(db, `bars/${barId}/users`, user.uid);
-    const tokenRef = doc(db, `bars/${barId}/tokens`, user.uid);
-
-    const autoClockIn = async () => {
-      // Store FCM token.
-      await setDoc(tokenRef, {
-        token: fcmToken,
-        updated: serverTimestamp()
-      });
-      // Set status to active and update heartbeat.
-      await updateDoc(userRef, {
-        status: 'active',
-        lastSeen: serverTimestamp()
-      }).catch(() => {});
-    };
-    autoClockIn();
-  }, [user, barId, fcmToken]);
 
 
   // Auto-submit an "(Ask Me)" request if a sub-menu sits open for 60s.

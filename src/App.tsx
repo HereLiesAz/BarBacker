@@ -31,11 +31,7 @@ import {
 import {
   db,
   requestNotificationPermission,
-  onForegroundMessage
 } from './firebase';
-// Import Capacitor plugins for native functionality.
-import { PushNotifications } from '@capacitor/push-notifications';
-import { Capacitor } from '@capacitor/core';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
 import { usePwaInstallPrompt } from './hooks/usePwaInstallPrompt';
@@ -44,6 +40,7 @@ import { useMyBars } from './hooks/useMyBars';
 import { useUsageBatching } from './hooks/useUsageBatching';
 import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
 import { useAuth } from './hooks/useAuth';
+import { usePushNotifications } from './hooks/usePushNotifications';
 import { pMap } from './utils/async';
 
 
@@ -110,9 +107,6 @@ const BarListItem = ({ name, onClick }: { name: string, onClick: () => void }) =
 
 // --- MAIN APP COMPONENT ---
 function App() {
-  // Ref to hold the Audio object for alerts. Persistence prevents memory leaks and glitches.
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   // Auth state + actions (sign in, sign up, sign out, google).
   const {
     user,
@@ -151,8 +145,6 @@ function App() {
   const [requests, setRequests] = useState<Request[]>([]);
   // Store the list of configured buttons.
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
-  // Store the FCM token for push notifications.
-  const [fcmToken, setFcmToken] = useState<string | null>(null);
 
   // --- Bar Configuration State ---
   // Store inventory mapping for beers (Brand -> Types).
@@ -316,6 +308,11 @@ function App() {
   // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);
 
+  // Push notification setup (Capacitor + web FCM). Returns the
+  // device FCM token; the per-bar auto-clock-in effect below copies it
+  // into bars/{barId}/tokens/{uid}.
+  const { fcmToken, setFcmToken } = usePushNotifications();
+
   // PWA install prompt — capture beforeinstallprompt and expose a
   // trigger. On accept, re-request notification permission so newly
   // installed PWAs don't sit silently without push.
@@ -327,115 +324,6 @@ function App() {
 
   // Admin / god-mode gate. Currently client-side only — see hook doc.
   const isGodMode = useGodMode(user);
-
-  // --- 1a. Push notification setup (device-scoped, runs once) ---
-  // Separated from auth so listeners are not re-registered on every auth
-  // state change — previously each login/logout cycle stacked another
-  // pushNotificationReceived handler, multiplying vibrations and audio
-  // plays per incoming notification.
-  useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
-      let cancelled = false;
-
-      const setup = async () => {
-        try {
-          // Clear any handlers from a previous mount (StrictMode, hot
-          // reload) and on first mount as a defensive no-op. We rely on
-          // removeAllListeners for both setup and teardown rather than
-          // tracking per-handle remove callbacks — Capacitor's plugin
-          // listener registry is the source of truth here, and mixing
-          // both strategies makes cleanup ordering ambiguous.
-          await PushNotifications.removeAllListeners();
-
-          await PushNotifications.addListener('registration', token => {
-            setFcmToken(token.value);
-          });
-
-          await PushNotifications.addListener('registrationError', err => {
-            console.error('Registration error: ', err.error);
-          });
-
-          await PushNotifications.addListener('pushNotificationReceived', () => {
-            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-            if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
-            const audio = audioRef.current;
-            audio.pause();
-            audio.onended = null;
-            audio.currentTime = 0;
-            audio.play().catch(() => {});
-          });
-
-          await PushNotifications.addListener('pushNotificationActionPerformed', () => {
-            // Future: open specific request from tap.
-          });
-
-          if (cancelled) return;
-
-          let permStatus = await PushNotifications.checkPermissions();
-          if (permStatus.receive === 'prompt') {
-            permStatus = await PushNotifications.requestPermissions();
-          }
-          if (permStatus.receive === 'granted') {
-            await PushNotifications.register();
-          }
-        } catch (e) {
-          console.error("Native push setup failed", e);
-        }
-      };
-
-      setup();
-
-      return () => {
-        cancelled = true;
-        PushNotifications.removeAllListeners().catch(() => {});
-      };
-    }
-
-    // Web (PWA) push path.
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || (window.navigator as any).standalone;
-    if (isStandalone) {
-      requestNotificationPermission().then(t => t && setFcmToken(t));
-    }
-
-    // Subscribe to foreground messages with a callback we can detach on
-    // unmount. The previous one-shot Promise API only fired for the
-    // first message of the session.
-    const unsubscribeMessages = onForegroundMessage((payload: any) => {
-      if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-
-      // The Notification constructor throws under denied permission and
-      // is undefined in some embedded webviews / JSDOM, so guard both.
-      if (
-        payload?.notification
-        && typeof Notification !== 'undefined'
-        && Notification.permission === 'granted'
-      ) {
-        try {
-          new Notification(payload.notification.title, {
-            body: payload.notification.body,
-            icon: '/icon-192x192.png',
-          });
-        } catch (e) {
-          console.warn('Notification display failed', e);
-        }
-      }
-
-      if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
-      const audio = audioRef.current;
-      let plays = 0;
-      audio.onended = () => {
-        plays++;
-        if (plays < 8) {
-          audio.currentTime = 0;
-          audio.play().catch(() => {});
-        }
-      };
-      audio.play().catch(() => {});
-    });
-
-    return () => unsubscribeMessages();
-  }, []);
 
   // Joined bars + their display names — driven by users/{uid}.joinedBars.
   const { myBars, barDetails } = useMyBars(user);

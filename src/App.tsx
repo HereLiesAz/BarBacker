@@ -47,6 +47,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
+import { usePwaInstallPrompt } from './hooks/usePwaInstallPrompt';
 import { pMap } from './utils/async';
 
 // Import Subscription Services
@@ -215,8 +216,6 @@ function App() {
   const [noticeText, setNoticeText] = useState('');
   const [noticeError, setNoticeError] = useState<string | null>(null);
 
-  // Store the PWA install prompt event.
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
   // Control the main menu dropdown.
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -330,15 +329,14 @@ function App() {
   // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);
 
-  // Effect: Capture the PWA 'beforeinstallprompt' event.
-  useEffect(() => {
-    const handler = (e: any) => {
-      e.preventDefault(); // Prevent the mini-infobar from appearing.
-      setInstallPrompt(e); // Stash the event so it can be triggered later.
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+  // PWA install prompt — capture beforeinstallprompt and expose a
+  // trigger. On accept, re-request notification permission so newly
+  // installed PWAs don't sit silently without push.
+  const { installPrompt, promptInstall } = usePwaInstallPrompt(() => {
+    if (user) {
+      requestNotificationPermission().then(t => t && setFcmToken(t));
+    }
+  });
 
   // --- 1. Auth state ---
   useEffect(() => {
@@ -1196,19 +1194,8 @@ function App() {
   // Handle Google Login.
   const handleGoogle = async () => { try { await signInWithPopup(auth, googleProvider); } catch (e: any) { setAuthError(e.message); } };
 
-  // Handle PWA install click.
-  const handleInstall = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setInstallPrompt(null);
-      // Request permissions after install.
-      if (user) {
-         requestNotificationPermission().then(t => t && setFcmToken(t));
-      }
-    }
-  };
+  // Handle PWA install click — delegated to the hook.
+  const handleInstall = promptInstall;
 
   // Share the app URL.
   const handleShare = async () => {

@@ -27,12 +27,10 @@ import {
   serverTimestamp, // Generate a server-side timestamp.
   setDoc,     // Set (overwrite or create) a document.
   getDoc,     // Fetch a single document once.
-  getDocs,    // Fetch multiple documents.
   deleteDoc,  // Delete a document.
   arrayUnion, // Add elements to an array field.
   arrayRemove, // Remove elements from an array field.
   increment,  // Atomic increment of a numeric field.
-  documentId, // Sentinel for querying by document ID.
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
 import {
@@ -49,6 +47,7 @@ import { Capacitor } from '@capacitor/core';
 import { useLatestRelease } from './hooks/useLatestRelease';
 import { usePwaInstallPrompt } from './hooks/usePwaInstallPrompt';
 import { useGodMode } from './hooks/useGodMode';
+import { useMyBars } from './hooks/useMyBars';
 import { pMap } from './utils/async';
 
 
@@ -151,10 +150,6 @@ function App() {
   // --- Data State ---
   // Store the list of active requests.
   const [requests, setRequests] = useState<Request[]>([]);
-  // Store the list of joined bars.
-  const [myBars, setMyBars] = useState<string[]>([]);
-  // Store cached bar details (names) to prevent N+1 fetches.
-  const [barDetails, setBarDetails] = useState<Record<string, string>>({});
   // Store the list of configured buttons.
   const [buttons, setButtons] = useState<ButtonConfig[]>(DEFAULT_BUTTONS);
   // Store the FCM token for push notifications.
@@ -453,57 +448,8 @@ function App() {
     return () => unsubscribeMessages();
   }, []);
 
-  // --- 1.5. User Data & Joined Bars ---
-  useEffect(() => {
-    if (!user) return;
-    const unsub = onSnapshot(doc(db, 'users', user.uid), (d) => {
-        if (d.exists() && d.data().joinedBars) {
-            setMyBars(d.data().joinedBars);
-        } else {
-            setMyBars([]);
-        }
-    });
-    return () => unsub();
-  }, [user]);
-
-  // --- 1.6. Fetch Bar Names Efficiently ---
-  useEffect(() => {
-    const fetchBarNames = async () => {
-        if (myBars.length === 0) {
-            setBarDetails({});
-            return;
-        }
-
-        // Use chunks to respect Firestore 'in' query limit of 30.
-        const chunks = [];
-        for (let i = 0; i < myBars.length; i += 30) {
-            chunks.push(myBars.slice(i, i + 30));
-        }
-
-        const newDetails: Record<string, string> = {};
-
-        await Promise.all(chunks.map(async (chunk) => {
-            try {
-                const q = query(collection(db, 'bars'), where(documentId(), 'in', chunk));
-                const snapshot = await getDocs(q);
-                snapshot.forEach(d => {
-                    newDetails[d.id] = (d.data() as Bar).name;
-                });
-            } catch (e) {
-                console.error("Error fetching bar names", e);
-            }
-        }));
-
-        // Batch update state once, ensuring all bars have a display name.
-        const finalDetails: Record<string, string> = {};
-        myBars.forEach(bid => {
-            finalDetails[bid] = newDetails[bid] || 'Unknown Bar';
-        });
-        setBarDetails(finalDetails);
-    };
-
-    fetchBarNames();
-  }, [myBars]);
+  // Joined bars + their display names — driven by users/{uid}.joinedBars.
+  const { myBars, barDetails } = useMyBars(user);
 
   // --- 2. Bar Logic (Listeners) ---
   useEffect(() => {

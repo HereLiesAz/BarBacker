@@ -949,7 +949,7 @@ function App() {
   const formatTime = (ts: unknown) => {
     if (!ts || typeof ts !== 'object') return '';
     const t = ts as { toDate?: () => Date; seconds?: number };
-    if (t.toDate) return t.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (typeof t.toDate === 'function') return t.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     if (typeof t.seconds === 'number') {
       return new Date(t.seconds * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     }

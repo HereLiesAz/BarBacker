@@ -73,7 +73,7 @@ vi.mock('firebase/auth', () => {
     OAuthProvider,
     onAuthStateChanged: vi.fn((auth, callback) => {
         // Immediate login
-        callback({ uid: 'user123', email: 'test@example.com' });
+        callback({ uid: 'user123', email: 'test@example.com', getIdTokenResult: () => Promise.resolve({ claims: {} }) });
         return () => {};
     }),
     signInWithEmailAndPassword: vi.fn(),

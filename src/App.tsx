@@ -10,22 +10,21 @@ import {
   updateProfile,
 } from 'firebase/auth';
 // Import Firestore functions.
-import { 
-  collection, // Reference a collection.
-  addDoc,     // Add a new document with an auto-generated ID.
-  query,      // Create a query.
-  where,      // Add a filter to a query.
-  onSnapshot, // Listen for real-time updates.
-  orderBy,    // Sort query results.
-  limit,      // Limit the number of results.
-  updateDoc,  // Update specific fields in a document.
-  doc,        // Reference a specific document.
-  serverTimestamp, // Generate a server-side timestamp.
-  setDoc,     // Set (overwrite or create) a document.
-  getDoc,     // Fetch a single document once.
-  deleteDoc,  // Delete a document.
-  arrayUnion, // Add elements to an array field.
-  arrayRemove, // Remove elements from an array field.
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  orderBy,
+  limit,
+  updateDoc,
+  doc,
+  serverTimestamp,
+  setDoc,
+  getDoc,
+  deleteDoc,
+  arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
 import {
@@ -43,7 +42,7 @@ import { useAuth } from './hooks/useAuth';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { useBarNoticeBoard } from './hooks/useBarNoticeBoard';
 import { useDragAndDrop } from './hooks/useDragAndDrop';
-import { pMap } from './utils/async';
+import { useRequestActions } from './hooks/useRequestActions';
 
 
 // --- Material Web Imports ---
@@ -67,7 +66,7 @@ import '@material/web/menu/menu-item.js';
 
 // Import Types and Constants.
 import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
-import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS, NTFY_DISPATCH_CONCURRENCY } from './constants';
+import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
 // Import UI Components.
@@ -719,89 +718,10 @@ function App() {
     localStorage.removeItem('barId');
   };
 
-  // Create a new request.
-  const submitRequest = async (label: string) => {
-    if (!user || !barId) return;
-    // Vibrate feedback.
-    if (navigator.vibrate) navigator.vibrate(100);
-
-    // Add to Firestore.
-    await addDoc(collection(db, 'requests'), {
-      barId,
-      label: label,
-      requesterId: user.uid,
-      requesterName: displayName,
-      requesterRole: userRole,
-      status: 'pending',
-      timestamp: serverTimestamp(),
-      lastNotification: serverTimestamp()
-    });
-
-    // Send ntfy notifications (iOS/external).
-
-    const btnId = getButtonIdForLabel(label);
-
-    const topics = new Set<string>();
-
-    allUsers.forEach(u => {
-        // Treat undefined status as active.
-        const isActive = u.status === 'active' || u.status === undefined;
-        // Skip inactive users, self, or those without topics.
-        if (!isActive || u.id === user.uid || !u.ntfyTopic) return;
-
-        let prefs = u.notificationPreferences;
-        // Fallback to role defaults.
-        if (!prefs && u.role) {
-            prefs = ROLE_NOTIFICATION_DEFAULTS[u.role] || [];
-        }
-
-        // Special BREAK logic: Everyone gets BREAK alerts if configured.
-        if (label.includes('BREAK') || btnId === 'break') {
-             topics.add(u.ntfyTopic);
-             return;
-        }
-
-        // Normal check: Does user's prefs include this button?
-        if (prefs && btnId && prefs.includes(btnId)) {
-            topics.add(u.ntfyTopic);
-        }
-    });
-
-    // Send the requests in parallel. The mapper catches its own errors
-    // and resolves to undefined on failure, so pMap never rejects and
-    // one bad topic cannot abort the fanout. We await the result so
-    // submitRequest only resolves once dispatch attempts are complete.
-    await pMap(
-        Array.from(topics),
-        async (topic) => {
-            try {
-                return await fetch(`https://ntfy.sh/${topic}`, {
-                    method: 'POST',
-                    body: `New Request: ${label} (by ${displayName})`,
-                    headers: {
-                        'Title': 'BarBacker Alert',
-                        'Priority': 'high',
-                        'Tags': 'bell,bar_chart'
-                    }
-                });
-            } catch (err) {
-                console.error('Failed to send ntfy', err);
-                return undefined;
-            }
-        },
-        NTFY_DISPATCH_CONCURRENCY
-    );
-  };
-
-  // Mark a request as claimed.
-  const claimRequest = async (reqId: string) => {
-    await updateDoc(doc(db, 'requests', reqId), {
-      status: 'claimed',
-      claimedBy: user?.uid,
-      claimerName: displayName,
-      claimedAt: serverTimestamp()
-    });
-  };
+  // Request mutations: submit (+ ntfy fanout), claim, cancel.
+  const { submitRequest, claimRequest, cancelRequest } = useRequestActions({
+    user, barId, displayName, userRole, allUsers, getButtonIdForLabel,
+  });
 
   // Save new notification settings.
   const saveNotificationPreferences = async (prefs: string[], topic: string) => {
@@ -1482,8 +1402,8 @@ function App() {
                              <md-outlined-button
                                 onClick={async (e: any) => {
                                     e.stopPropagation();
-                                    if(confirm('Cancel this request?')) {
-                                        await deleteDoc(doc(db, 'requests', req.id));
+                                    if (confirm('Cancel this request?')) {
+                                        await cancelRequest(req.id);
                                     }
                                 }}
                                 style={{ height: '48px', minWidth: '100px', '--md-outlined-button-label-text-color': '#EF4444', '--md-sys-color-outline': '#EF4444' } as React.CSSProperties}

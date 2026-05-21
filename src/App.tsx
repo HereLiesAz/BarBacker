@@ -946,7 +946,7 @@ function App() {
   // on read they're always Timestamps. Accept the union and handle
   // each shape; FieldValue has no toDate/seconds, so it falls through
   // to ''.
-  const formatTime = (ts: { toDate?: () => Date; seconds?: number } | unknown) => {
+  const formatTime = (ts: unknown) => {
     if (!ts || typeof ts !== 'object') return '';
     const t = ts as { toDate?: () => Date; seconds?: number };
     if (t.toDate) return t.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });

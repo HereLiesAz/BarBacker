@@ -107,7 +107,7 @@ export function NotificationFooter({
               ) : (
                 !isIgnored && (
                   <md-outlined-button
-                    onClick={(e: any) => {
+                    onClick={(e: React.MouseEvent) => {
                       e.stopPropagation();
                       onIgnore(req.id);
                     }}

@@ -48,6 +48,7 @@ import { usePwaInstallPrompt } from './hooks/usePwaInstallPrompt';
 import { useGodMode } from './hooks/useGodMode';
 import { useMyBars } from './hooks/useMyBars';
 import { useUsageBatching } from './hooks/useUsageBatching';
+import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
 import { pMap } from './utils/async';
 
 
@@ -181,8 +182,6 @@ function App() {
   // Stack to navigate through nested button menus.
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
 
-  // Ref for the inactivity timer. The type is `number | null` to be compatible with the return value of `window.setTimeout` in browsers.
-  const timerRef = useRef<number | null>(null);
   // Ref to track dragging state to prevent accidental clicks.
   const isDraggingRef = useRef(false);
 
@@ -573,27 +572,8 @@ function App() {
   }, [user, barId, fcmToken]);
 
 
-  // --- Timer ---
-  // Inactivity timer to close menus after 60 seconds.
-  useEffect(() => {
-    // Clear existing timer.
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-
-    // If a menu is open (navStack > 0)...
-    if (navStack.length > 0) {
-      // Set a timeout.
-      timerRef.current = window.setTimeout(() => {
-        // Construct label from the path (e.g. "SERVICE ITEMS: PINT").
-        const trail = navStack.map(b => b.label).join(': ');
-        // Auto-submit as an "Ask Me" request.
-        submitRequest(`${trail} (Ask Me)`);
-        // Reset stack.
-        setNavStack([]);
-      }, 60000);
-    }
-    // Cleanup.
-    return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
-  }, [navStack]);
+  // Auto-submit an "(Ask Me)" request if a sub-menu sits open for 60s.
+  useInactivityAutoSubmit(navStack, (label) => submitRequest(label), () => setNavStack([]));
 
   // --- Actions ---
 

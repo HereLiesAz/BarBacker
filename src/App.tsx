@@ -1,5 +1,5 @@
 // Import React hooks for managing state and side effects.
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 // Import 'useSearchParams' to read/write URL query parameters.
 import { useSearchParams } from 'react-router-dom';
 // Import Firebase Auth functions still used directly (handlers below
@@ -42,6 +42,7 @@ import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
 import { useAuth } from './hooks/useAuth';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { useBarNoticeBoard } from './hooks/useBarNoticeBoard';
+import { useDragAndDrop } from './hooks/useDragAndDrop';
 import { pMap } from './utils/async';
 
 
@@ -81,18 +82,11 @@ import { SortableButton } from './components/SortableButton';
 import {
   DndContext,
   closestCenter,
-  TouchSensor,
-  MouseSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
   DragOverlay,
-  DragStartEvent
 } from '@dnd-kit/core';
 import {
   SortableContext,
   rectSortingStrategy,
-  arrayMove
 } from '@dnd-kit/sortable';
 
 // Helper component for listing joined bars.
@@ -163,7 +157,6 @@ function App() {
 
   // --- UI State ---
   // Track the ID of the button currently being dragged.
-  const [activeId, setActiveId] = useState<string | null>(null);
   // Store the list of all users in the bar (for "Who's On" and managing).
   const [allUsers, setAllUsers] = useState<BarUser[]>([]);
   // Control the Input Dialog state (Open/Close, Type, Context).
@@ -173,9 +166,6 @@ function App() {
 
   // Stack to navigate through nested button menus.
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
-
-  // Ref to track dragging state to prevent accidental clicks.
-  const isDraggingRef = useRef(false);
 
 
   // Dialog visibility states.
@@ -200,20 +190,10 @@ function App() {
   // Fetch latest APK info using custom hook.
   const { downloadUrl: apkUrl, loading: apkLoading } = useLatestRelease();
 
-  // Configure sensors for Drag and Drop (Mouse and Touch).
-  const sensors = useSensors(
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250, // Require a long press to start dragging on touch.
-        tolerance: 5,
-      },
-    }),
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 10, // Require movement to start dragging on mouse.
-      },
-    })
-  );
+  // Drag-and-drop sensors + handlers (dnd-kit). Persistence of
+  // customOrders happens inside the hook on drag end.
+  const { sensors, activeId, handleDragStart, handleDragOver, handleDragEnd } =
+    useDragAndDrop({ barId, customOrders, setCustomOrders });
 
   // Memoized lookup map for button IDs. Maps both top-level and child labels to top-level button ID.
   const buttonLookupMap = useMemo(() => {
@@ -640,35 +620,6 @@ function App() {
     });
   };
 
-  // Drag handlers for dnd-kit.
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-    isDraggingRef.current = true;
-  };
-
-  const handleDragOver = (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIndex = items.findIndex(i => i.id === active.id);
-      const newIndex = items.findIndex(i => i.id === over.id);
-
-      // Reorder items locally.
-      const newOrder = arrayMove(items, oldIndex, newIndex).map(i => i.id);
-      setCustomOrders(prev => ({ ...prev, [contextId]: newOrder }));
-    }
-  };
-
-  const handleDragEnd = async (_event: DragEndEvent, contextId: string) => {
-    setActiveId(null);
-    isDraggingRef.current = false;
-
-    // Persist new order to Firestore.
-    if (barId && customOrders[contextId]) {
-       await updateDoc(doc(db, 'bars', barId), {
-          [`customOrders.${contextId}`]: customOrders[contextId]
-       });
-    }
-  };
 
   // Main button click handler.
   const handleButtonClick = (btn: ButtonConfig) => {

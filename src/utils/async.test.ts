@@ -34,7 +34,6 @@ describe('pMap', () => {
             return item;
         }, 2)).rejects.toThrow('Failed');
     });
-    });
 
     it('throws when concurrency is less than 1', async () => {
         const items = [1, 2, 3];
@@ -42,3 +41,4 @@ describe('pMap', () => {
         await expect(pMap(items, mapper, 0)).rejects.toThrow('pMap: concurrency must be at least 1.');
         await expect(pMap(items, mapper, -1)).rejects.toThrow('pMap: concurrency must be at least 1.');
     });
+});

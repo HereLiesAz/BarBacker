@@ -34,8 +34,19 @@ jobs:
           firebase --version
           java -version
 
+      - name: Inspect workspace
+        run: |
+          pwd
+          ls -la
+          ls -la src/test/
+          cat firebase.json
+          head -20 firestore.rules
+
       - name: Pre-download Firestore emulator JAR
         run: firebase setup:emulators:firestore
+
+      - name: Smoke test emulator (no-op exec)
+        run: firebase emulators:exec --only firestore --project barbacker-rules-test "echo emulator-up-ok"
 
       - name: Run Firestore rules tests
         run: firebase emulators:exec --only firestore --project barbacker-rules-test "npx vitest --run --config vitest.rules.config.ts"

@@ -73,6 +73,7 @@ import InputDialog from './components/InputDialog';
 import { WhoIsOnDialog } from './components/WhoIsOnDialog';
 import { SortableButton } from './components/SortableButton';
 import { NotificationFooter } from './components/NotificationFooter';
+import { SubMenuOverlay } from './components/SubMenuOverlay';
 // Import dnd-kit for drag-and-drop functionality.
 import {
   DndContext,
@@ -1109,54 +1110,18 @@ function App() {
       {/* --- Main Content Area --- */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden w-full relative pb-[35vh]">
 
-      {/* Sub-menu Overlay (NavStack) */}
-      {navStack.length > 0 && (
-        <div className="fixed inset-0 top-[88px] z-50 bg-black/95 flex items-start justify-center p-4 pt-10 animate-in fade-in duration-200 backdrop-blur-sm">
-          <div className="bg-[#121212] w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 rounded-2xl border border-gray-800 shadow-2xl flex flex-col relative animate-in zoom-in-95 duration-200">
-            {/* Breadcrumbs */}
-            <div className="flex items-center gap-3 mb-4 flex-none border-b border-gray-800 pb-4">
-              <md-icon-button onClick={() => setNavStack([])}><md-icon>arrow_back</md-icon></md-icon-button>
-              <span className="text-lg font-bold text-white uppercase tracking-wide truncate flex-1">
-                {navStack.map(b => b.label).join(' > ')}
-              </span>
-            </div>
-
-            {/* Draggable Sub-buttons */}
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
-              onDragOver={(e) => handleDragOver(e, currentContextId, currentButtons)}
-              onDragEnd={(e) => handleDragEnd(e, currentContextId)}
-            >
-              <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
-                <div className="grid grid-cols-2 gap-4 mb-auto">
-                  {currentButtons.map(btn => (
-                    <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
-                      <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', border: '8px solid #000000', boxSizing: 'border-box' }}>
-                        <span className="text-red-500 font-bold text-3xl">{btn.label}</span>
-                      </md-filled-tonal-button>
-                    </SortableButton>
-                  ))}
-                </div>
-              </SortableContext>
-              <DragOverlay>
-                {activeId ? (
-                   <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', opacity: 0.9 }}>
-                      {currentButtons.find(b => b.id === activeId)?.label}
-                   </md-filled-tonal-button>
-                ) : null}
-              </DragOverlay>
-            </DndContext>
-
-            <div className="mt-6 flex-none">
-              <md-outlined-button className="w-full" onClick={() => setNavStack([])} style={{ height: '56px' }}>
-                 Cancel
-              </md-outlined-button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SubMenuOverlay
+        navStack={navStack}
+        currentButtons={currentButtons}
+        currentContextId={currentContextId}
+        activeId={activeId}
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onButtonClick={handleButtonClick}
+        onClose={() => setNavStack([])}
+      />
 
       {/* Main Grid Buttons */}
       <DndContext

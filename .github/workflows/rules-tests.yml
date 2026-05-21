@@ -22,7 +22,9 @@ jobs:
           java-version: '17'
 
       - name: Install firebase-tools globally
-        run: npm install -g firebase-tools
+        # Pin to a known-stable major. Newer firebase-tools releases
+        # have occasionally shipped Firestore-emulator startup regressions.
+        run: npm install -g firebase-tools@13
 
       - name: Install project dependencies
         run: npm ci
@@ -38,15 +40,40 @@ jobs:
         run: |
           pwd
           ls -la
-          ls -la src/test/
           cat firebase.json
           head -20 firestore.rules
 
       - name: Pre-download Firestore emulator JAR
         run: firebase setup:emulators:firestore
 
-      - name: Smoke test emulator (no-op exec)
-        run: firebase emulators:exec --only firestore --project barbacker-rules-test "echo emulator-up-ok"
+      - name: Start Firestore emulator
+        # Background the emulator and wait for the port to open so we
+        # can see startup output in its own log file if it dies.
+        shell: bash
+        run: |
+          firebase emulators:start --only firestore --project barbacker-rules-test \
+            > emulator.log 2>&1 &
+          echo $! > emulator.pid
+          for i in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/8080) 2>/dev/null; then
+              echo "emulator up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "emulator did not come up; tail of emulator.log:"
+          tail -200 emulator.log
+          exit 1
 
       - name: Run Firestore rules tests
-        run: firebase emulators:exec --only firestore --project barbacker-rules-test "npx vitest --run --config vitest.rules.config.ts"
+        run: npx vitest --run --config vitest.rules.config.ts
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: |
+          if [ -f emulator.pid ]; then
+            kill "$(cat emulator.pid)" 2>/dev/null || true
+          fi
+          echo "--- emulator.log tail ---"
+          tail -200 emulator.log || true

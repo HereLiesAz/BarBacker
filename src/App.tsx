@@ -1,5 +1,5 @@
 // Import React hooks for managing state and side effects.
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 // Import 'useSearchParams' to read/write URL query parameters.
 import { useSearchParams } from 'react-router-dom';
 // Import Firebase Auth functions still used directly (handlers below
@@ -10,22 +10,21 @@ import {
   updateProfile,
 } from 'firebase/auth';
 // Import Firestore functions.
-import { 
-  collection, // Reference a collection.
-  addDoc,     // Add a new document with an auto-generated ID.
-  query,      // Create a query.
-  where,      // Add a filter to a query.
-  onSnapshot, // Listen for real-time updates.
-  orderBy,    // Sort query results.
-  limit,      // Limit the number of results.
-  updateDoc,  // Update specific fields in a document.
-  doc,        // Reference a specific document.
-  serverTimestamp, // Generate a server-side timestamp.
-  setDoc,     // Set (overwrite or create) a document.
-  getDoc,     // Fetch a single document once.
-  deleteDoc,  // Delete a document.
-  arrayUnion, // Add elements to an array field.
-  arrayRemove, // Remove elements from an array field.
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  orderBy,
+  limit,
+  updateDoc,
+  doc,
+  serverTimestamp,
+  setDoc,
+  getDoc,
+  deleteDoc,
+  arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
 import {
@@ -41,7 +40,9 @@ import { useUsageBatching } from './hooks/useUsageBatching';
 import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
 import { useAuth } from './hooks/useAuth';
 import { usePushNotifications } from './hooks/usePushNotifications';
-import { pMap } from './utils/async';
+import { useBarNoticeBoard } from './hooks/useBarNoticeBoard';
+import { useDragAndDrop } from './hooks/useDragAndDrop';
+import { useRequestActions } from './hooks/useRequestActions';
 
 
 // --- Material Web Imports ---
@@ -65,7 +66,7 @@ import '@material/web/menu/menu-item.js';
 
 // Import Types and Constants.
 import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
-import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS, NTFY_DISPATCH_CONCURRENCY } from './constants';
+import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
 // Import UI Components.
@@ -80,18 +81,11 @@ import { SortableButton } from './components/SortableButton';
 import {
   DndContext,
   closestCenter,
-  TouchSensor,
-  MouseSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
   DragOverlay,
-  DragStartEvent
 } from '@dnd-kit/core';
 import {
   SortableContext,
   rectSortingStrategy,
-  arrayMove
 } from '@dnd-kit/sortable';
 
 // Helper component for listing joined bars.
@@ -162,7 +156,6 @@ function App() {
 
   // --- UI State ---
   // Track the ID of the button currently being dragged.
-  const [activeId, setActiveId] = useState<string | null>(null);
   // Store the list of all users in the bar (for "Who's On" and managing).
   const [allUsers, setAllUsers] = useState<BarUser[]>([]);
   // Control the Input Dialog state (Open/Close, Type, Context).
@@ -172,9 +165,6 @@ function App() {
 
   // Stack to navigate through nested button menus.
   const [navStack, setNavStack] = useState<ButtonConfig[]>([]);
-
-  // Ref to track dragging state to prevent accidental clicks.
-  const isDraggingRef = useRef(false);
 
 
   // Dialog visibility states.
@@ -192,9 +182,6 @@ function App() {
 
   // Notice Board State.
   const [notices, setNotices] = useState<Notice[]>([]);
-  const [isAddingNotice, setIsAddingNotice] = useState(false);
-  const [noticeText, setNoticeText] = useState('');
-  const [noticeError, setNoticeError] = useState<string | null>(null);
 
   // Control the main menu dropdown.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -202,20 +189,10 @@ function App() {
   // Fetch latest APK info using custom hook.
   const { downloadUrl: apkUrl, loading: apkLoading } = useLatestRelease();
 
-  // Configure sensors for Drag and Drop (Mouse and Touch).
-  const sensors = useSensors(
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250, // Require a long press to start dragging on touch.
-        tolerance: 5,
-      },
-    }),
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 10, // Require movement to start dragging on mouse.
-      },
-    })
-  );
+  // Drag-and-drop sensors + handlers (dnd-kit). Persistence of
+  // customOrders happens inside the hook on drag end.
+  const { sensors, activeId, handleDragStart, handleDragOver, handleDragEnd } =
+    useDragAndDrop({ barId, customOrders, setCustomOrders });
 
   // Memoized lookup map for button IDs. Maps both top-level and child labels to top-level button ID.
   const buttonLookupMap = useMemo(() => {
@@ -559,31 +536,13 @@ function App() {
     setHiddenButtonIds(prev => prev.filter(id => id !== btnId));
   };
 
-  // Save a notice to the bulletin board.
-  const saveNotice = async (text: string) => {
-    if (!user || !barId || !text.trim()) return;
-    try {
-      await addDoc(collection(db, `bars/${barId}/notices`), {
-          text,
-          authorId: user.uid,
-          authorName: displayName,
-          timestamp: serverTimestamp()
-      });
-      setNoticeText('');
-      setIsAddingNotice(false);
-    } catch (e: any) {
-      console.error("Error saving notice:", e);
-      setNoticeError("Failed to save notice: " + (e.message || "Unknown error"));
-    }
-  };
-
-  // Delete a notice.
-  const deleteNotice = async (noticeId: string) => {
-    if (!user || !barId) return;
-    if (confirm("Delete this notice?")) {
-        await deleteDoc(doc(db, `bars/${barId}/notices`, noticeId));
-    }
-  };
+  // Notice-board write actions + dialog form state.
+  const {
+    isAddingNotice, setIsAddingNotice,
+    noticeText, setNoticeText,
+    noticeError, setNoticeError,
+    saveNotice, deleteNotice,
+  } = useBarNoticeBoard({ user, barId, displayName });
 
   // Determine children for dynamic buttons (ICE, BEER, etc.).
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
@@ -660,35 +619,6 @@ function App() {
     });
   };
 
-  // Drag handlers for dnd-kit.
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-    isDraggingRef.current = true;
-  };
-
-  const handleDragOver = (event: DragEndEvent, contextId: string, items: ButtonConfig[]) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIndex = items.findIndex(i => i.id === active.id);
-      const newIndex = items.findIndex(i => i.id === over.id);
-
-      // Reorder items locally.
-      const newOrder = arrayMove(items, oldIndex, newIndex).map(i => i.id);
-      setCustomOrders(prev => ({ ...prev, [contextId]: newOrder }));
-    }
-  };
-
-  const handleDragEnd = async (_event: DragEndEvent, contextId: string) => {
-    setActiveId(null);
-    isDraggingRef.current = false;
-
-    // Persist new order to Firestore.
-    if (barId && customOrders[contextId]) {
-       await updateDoc(doc(db, 'bars', barId), {
-          [`customOrders.${contextId}`]: customOrders[contextId]
-       });
-    }
-  };
 
   // Main button click handler.
   const handleButtonClick = (btn: ButtonConfig) => {
@@ -788,89 +718,10 @@ function App() {
     localStorage.removeItem('barId');
   };
 
-  // Create a new request.
-  const submitRequest = async (label: string) => {
-    if (!user || !barId) return;
-    // Vibrate feedback.
-    if (navigator.vibrate) navigator.vibrate(100);
-
-    // Add to Firestore.
-    await addDoc(collection(db, 'requests'), {
-      barId,
-      label: label,
-      requesterId: user.uid,
-      requesterName: displayName,
-      requesterRole: userRole,
-      status: 'pending',
-      timestamp: serverTimestamp(),
-      lastNotification: serverTimestamp()
-    });
-
-    // Send ntfy notifications (iOS/external).
-
-    const btnId = getButtonIdForLabel(label);
-
-    const topics = new Set<string>();
-
-    allUsers.forEach(u => {
-        // Treat undefined status as active.
-        const isActive = u.status === 'active' || u.status === undefined;
-        // Skip inactive users, self, or those without topics.
-        if (!isActive || u.id === user.uid || !u.ntfyTopic) return;
-
-        let prefs = u.notificationPreferences;
-        // Fallback to role defaults.
-        if (!prefs && u.role) {
-            prefs = ROLE_NOTIFICATION_DEFAULTS[u.role] || [];
-        }
-
-        // Special BREAK logic: Everyone gets BREAK alerts if configured.
-        if (label.includes('BREAK') || btnId === 'break') {
-             topics.add(u.ntfyTopic);
-             return;
-        }
-
-        // Normal check: Does user's prefs include this button?
-        if (prefs && btnId && prefs.includes(btnId)) {
-            topics.add(u.ntfyTopic);
-        }
-    });
-
-    // Send the requests in parallel. The mapper catches its own errors
-    // and resolves to undefined on failure, so pMap never rejects and
-    // one bad topic cannot abort the fanout. We await the result so
-    // submitRequest only resolves once dispatch attempts are complete.
-    await pMap(
-        Array.from(topics),
-        async (topic) => {
-            try {
-                return await fetch(`https://ntfy.sh/${topic}`, {
-                    method: 'POST',
-                    body: `New Request: ${label} (by ${displayName})`,
-                    headers: {
-                        'Title': 'BarBacker Alert',
-                        'Priority': 'high',
-                        'Tags': 'bell,bar_chart'
-                    }
-                });
-            } catch (err) {
-                console.error('Failed to send ntfy', err);
-                return undefined;
-            }
-        },
-        NTFY_DISPATCH_CONCURRENCY
-    );
-  };
-
-  // Mark a request as claimed.
-  const claimRequest = async (reqId: string) => {
-    await updateDoc(doc(db, 'requests', reqId), {
-      status: 'claimed',
-      claimedBy: user?.uid,
-      claimerName: displayName,
-      claimedAt: serverTimestamp()
-    });
-  };
+  // Request mutations: submit (+ ntfy fanout), claim, cancel.
+  const { submitRequest, claimRequest, cancelRequest } = useRequestActions({
+    user, barId, displayName, userRole, allUsers, getButtonIdForLabel,
+  });
 
   // Save new notification settings.
   const saveNotificationPreferences = async (prefs: string[], topic: string) => {
@@ -1551,8 +1402,8 @@ function App() {
                              <md-outlined-button
                                 onClick={async (e: any) => {
                                     e.stopPropagation();
-                                    if(confirm('Cancel this request?')) {
-                                        await deleteDoc(doc(db, 'requests', req.id));
+                                    if (confirm('Cancel this request?')) {
+                                        await cancelRequest(req.id);
                                     }
                                 }}
                                 style={{ height: '48px', minWidth: '100px', '--md-outlined-button-label-text-color': '#EF4444', '--md-sys-color-outline': '#EF4444' } as React.CSSProperties}

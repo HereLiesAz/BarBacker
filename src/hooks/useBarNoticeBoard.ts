@@ -38,9 +38,10 @@ export function useBarNoticeBoard({ user, barId, displayName }: UseBarNoticeBoar
       });
       setNoticeText('');
       setIsAddingNotice(false);
-    } catch (e: any) {
+    } catch (e) {
       console.error('Error saving notice:', e);
-      setNoticeError('Failed to save notice: ' + (e.message || 'Unknown error'));
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      setNoticeError('Failed to save notice: ' + msg);
     }
   };
 

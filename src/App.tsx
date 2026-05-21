@@ -49,9 +49,6 @@ import { Capacitor } from '@capacitor/core';
 import { useLatestRelease } from './hooks/useLatestRelease';
 import { pMap } from './utils/async';
 
-// Import Subscription Services
-import { adminManager } from './services/subscription';
-
 // --- Material Web Imports ---
 // These imports register the custom elements with the browser's CustomElementRegistry.
 import '@material/web/button/filled-button.js';
@@ -631,18 +628,27 @@ function App() {
   }, [user, barId, fcmToken]);
 
 
-  // --- Subscription gate ---
-  // NOTE: This is currently a client-side env-var match (VITE_GOD_MODE_EMAIL)
-  // and is NOT enforced by Firestore rules. Anything gated by `isGodMode`
-  // should be treated as UI affordance only. Replace with Firebase Auth
-  // custom claims + rule-side checks before relying on this for access
-  // control.
+  // --- Admin / god-mode gate ---
+  // Reads the `admin` custom claim off the user's ID token. Claims are
+  // signed by Firebase so they cannot be spoofed from the client, and
+  // Firestore rules can check the same claim via request.auth.token.admin.
+  // Set the claim with `node scripts/set-admin-claim.js --email ...`.
   useEffect(() => {
+    let cancelled = false;
     if (!user) {
       setIsGodMode(false);
       return;
     }
-    setIsGodMode(adminManager.checkSubscription(user.email));
+    user.getIdTokenResult()
+      .then(result => {
+        if (cancelled) return;
+        setIsGodMode(result.claims.admin === true);
+      })
+      .catch(err => {
+        console.warn('Failed to read admin claim', err);
+        if (!cancelled) setIsGodMode(false);
+      });
+    return () => { cancelled = true; };
   }, [user]);
 
   // --- Timer ---

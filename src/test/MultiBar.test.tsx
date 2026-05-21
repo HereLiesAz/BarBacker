@@ -4,7 +4,7 @@ import App from '../App';
 import { MemoryRouter } from 'react-router-dom';
 
 // Mocks
-const mockUser = { uid: 'test-user', email: 'test@example.com', displayName: 'Test User' };
+const mockUser = { uid: 'test-user', email: 'test@example.com', displayName: 'Test User', getIdTokenResult: () => Promise.resolve({ claims: {} }) };
 
 const { setDocSpy, updateDocSpy, deleteDocSpy, signOutSpy, arrayRemoveSpy, updateProfileSpy, arrayUnionSpy, querySpy, whereSpy } = vi.hoisted(() => ({
   setDocSpy: vi.fn(() => Promise.resolve()),

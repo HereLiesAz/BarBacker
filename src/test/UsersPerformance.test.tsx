@@ -4,7 +4,7 @@ import App from '../App';
 import { MemoryRouter } from 'react-router-dom';
 
 // Mocks
-const mockUser = { uid: 'test-user', email: 'test@example.com' };
+const mockUser = { uid: 'test-user', email: 'test@example.com', getIdTokenResult: () => Promise.resolve({ claims: {} }) };
 
 const { collectionSpy, querySpy, whereSpy, orderBySpy, limitSpy, onSnapshotSpy } = vi.hoisted(() => ({
   collectionSpy: vi.fn((db, name) => ({ type: 'collection', name, path: name })),

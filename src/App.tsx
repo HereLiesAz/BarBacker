@@ -1422,7 +1422,7 @@ function App() {
                         ) : (
                             !isIgnored && (
                                 <md-outlined-button
-                                    onClick={(e: Event) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
+                                    onClick={(e: React.MouseEvent<HTMLElement>) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
                                     style={{ height: '48px', minWidth: '100px' }}
                                 >
                                     Ignore

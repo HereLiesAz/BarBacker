@@ -19,7 +19,7 @@ export class RevelAdapter implements POSClient {
     return [{ id: 'revel-item-1', name: 'Margherita Pizza', price: 12.00 }];
   }
 
-  async getSales(startDate: Date, endDate: Date): Promise<any> {
+  async getSales(_startDate: Date, _endDate: Date): Promise<any> {
     if (!this.connected) throw new Error('Not connected to Revel');
     return { net_sales: 1200.00, orders: 30 };
   }

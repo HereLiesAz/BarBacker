@@ -19,7 +19,7 @@ export class LavuAdapter implements POSClient {
     return [{ id: 'lavu-item-1', name: 'House Margarita', price: 10.00 }];
   }
 
-  async getSales(startDate: Date, endDate: Date): Promise<any> {
+  async getSales(_startDate: Date, _endDate: Date): Promise<any> {
     if (!this.connected) throw new Error('Not connected to Lavu');
     return { total_revenue: 800.00 };
   }

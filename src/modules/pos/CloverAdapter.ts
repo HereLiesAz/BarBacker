@@ -19,7 +19,7 @@ export class CloverAdapter implements POSClient {
     return [{ id: 'cl-item-1', name: 'Clover Ribeye', price: 35.00 }];
   }
 
-  async getSales(startDate: Date, endDate: Date): Promise<any> {
+  async getSales(_startDate: Date, _endDate: Date): Promise<any> {
     if (!this.connected) throw new Error('Not connected to Clover');
     return { gross: 3500.00, net: 3200.00 };
   }

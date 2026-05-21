@@ -91,13 +91,8 @@ export const requestNotificationPermission = async () => {
   return null;
 };
 
-// Define a function that returns a Promise which resolves when a foreground message is received.
-// This wraps the callback-based 'onMessage' function in a Promise for easier usage.
-export const onMessageListener = () =>
-  new Promise((resolve) => {
-    // Listen for incoming messages using the 'onMessage' function.
-    onMessage(messaging, (payload) => {
-      // Resolve the promise with the message payload when a message arrives.
-      resolve(payload);
-    });
-  });
+// Subscribe to FCM foreground messages. Returns an unsubscribe function so
+// callers can detach the listener on unmount. Replaces the previous
+// one-shot Promise API, which only fired for the first message.
+export const onForegroundMessage = (callback: (payload: any) => void) =>
+  onMessage(messaging, callback);

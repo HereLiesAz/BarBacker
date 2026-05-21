@@ -102,6 +102,18 @@ import {
   arrayMove
 } from '@dnd-kit/sortable';
 
+// Generate a 128-bit hex suffix for ntfy topic IDs. ntfy.sh is an
+// unauthenticated pub-sub: anyone who knows the topic can subscribe to
+// it. Topics used to be `barbacker-${uid}`, which meant a leaked UID
+// (visible in every Request and Notice document a user authors) let
+// anyone subscribe to that user's push stream. Random suffixes break
+// that link without changing how the topic is used downstream.
+function generateRandomTopicSuffix(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // Helper component for listing joined bars.
 const BarListItem = ({ name, onClick }: { name: string, onClick: () => void }) => {
     return (
@@ -145,8 +157,13 @@ function App() {
   const [displayName, setDisplayName] = useState<string>('');
   // Store the user's notification preferences (list of button IDs).
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
-  // Store the ntfy topic ID for iOS notifications.
+  // Store the ntfy topic ID for iOS notifications (per-bar snapshot
+  // of the global topic, kept in sync via the bar listener).
   const [ntfyTopic, setNtfyTopic] = useState<string | null>(null);
+  // Store the account-level ntfy topic. Source of truth for the
+  // subscribe link on the bar-select screen and what gets written into
+  // each per-bar user profile.
+  const [globalNtfyTopic, setGlobalNtfyTopic] = useState<string | null>(null);
   
   // --- Data State ---
   // Store the list of active requests.
@@ -458,11 +475,23 @@ function App() {
   // --- 1.5. User Data & Joined Bars ---
   useEffect(() => {
     if (!user) return;
-    const unsub = onSnapshot(doc(db, 'users', user.uid), (d) => {
-        if (d.exists() && d.data().joinedBars) {
-            setMyBars(d.data().joinedBars);
-        } else {
-            setMyBars([]);
+    const userRef = doc(db, 'users', user.uid);
+    const unsub = onSnapshot(userRef, (d) => {
+        const data = d.exists() ? d.data() : {};
+        setMyBars(data.joinedBars || []);
+
+        // Global ntfy topic. Generated once per account with a high
+        // entropy random suffix so the topic is not derivable from a
+        // leaked UID — ntfy.sh is unauthenticated, so anyone who knows
+        // the topic can subscribe. Pre-existing users keep whatever
+        // topic they already have stored.
+        if (data.ntfyTopic) {
+            setGlobalNtfyTopic(data.ntfyTopic);
+        } else if (user) {
+            const newTopic = `barbacker-${generateRandomTopicSuffix()}`;
+            setGlobalNtfyTopic(newTopic);
+            setDoc(userRef, { ntfyTopic: newTopic }, { merge: true })
+              .catch(e => console.warn('Failed to persist ntfy topic', e));
         }
     });
     return () => unsub();
@@ -535,14 +564,16 @@ function App() {
           setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[data.role] || []);
         }
 
-        // Auto-coordinate ntfy topic (e.g., 'barbacker-uid').
-        const autoTopic = `barbacker-${user.uid}`;
-        if (data.ntfyTopic !== autoTopic) {
-            // If topic is missing or wrong, update it.
-            updateDoc(userRef, { ntfyTopic: autoTopic }).catch(console.error);
-            setNtfyTopic(autoTopic);
+        // Auto-coordinate ntfy topic. Mirror the global topic from
+        // users/{uid} into this bar's user profile so the fanout
+        // (which reads ntfyTopic off the per-bar user docs) stays in
+        // sync. If the global topic hasn't loaded yet, leave the
+        // per-bar value alone and pick it up on the next snapshot.
+        if (globalNtfyTopic && data.ntfyTopic !== globalNtfyTopic) {
+            updateDoc(userRef, { ntfyTopic: globalNtfyTopic }).catch(console.error);
+            setNtfyTopic(globalNtfyTopic);
         } else {
-            setNtfyTopic(data.ntfyTopic);
+            setNtfyTopic(data.ntfyTopic || globalNtfyTopic);
         }
       } else {
         // User document doesn't exist (new user).
@@ -1311,8 +1342,9 @@ function App() {
             </p>
             <div className="flex flex-col items-center gap-1 mt-2">
                  <a
-                    href={`ntfy://subscribe/barbacker-${user.uid}`}
-                    className="text-blue-400 underline font-bold"
+                    href={globalNtfyTopic ? `ntfy://subscribe/${globalNtfyTopic}` : '#'}
+                    aria-disabled={!globalNtfyTopic}
+                    className={`text-blue-400 underline font-bold ${!globalNtfyTopic ? 'opacity-50 pointer-events-none' : ''}`}
                  >
                     Subscribe to iOS Alerts
                  </a>

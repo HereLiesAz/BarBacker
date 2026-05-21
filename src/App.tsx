@@ -1409,7 +1409,7 @@ function App() {
                         {/* Actions: Cancel (if own) or Ignore */}
                         {isMyRequest ? (
                              <md-outlined-button
-                                onClick={async (e: Event) => {
+                                onClick={async (e: React.MouseEvent<HTMLElement>) => {
                                     e.stopPropagation();
                                     if (confirm('Cancel this request?')) {
                                         await cancelRequest(req.id);

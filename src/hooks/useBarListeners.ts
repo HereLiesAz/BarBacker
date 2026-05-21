@@ -83,6 +83,17 @@ export function useBarListeners({
   const globalNtfyTopicRef = useRef(globalNtfyTopic);
   useEffect(() => { globalNtfyTopicRef.current = globalNtfyTopic; }, [globalNtfyTopic]);
 
+  // Time-window epoch: bump every hour so the requests/notices
+  // listeners re-subscribe with a fresh "now" lower bound. Without
+  // this, the 24h / 3-day windows are pinned at the moment the
+  // listener was first set up, and a long-running PWA tab would
+  // accumulate days/weeks of data in the listener result set.
+  const [windowEpoch, setWindowEpoch] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setWindowEpoch(e => e + 1), 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (!user || !barId) return;
 
@@ -146,7 +157,29 @@ export function useBarListeners({
       }
     });
 
-    // Requests: last 24h, ordered by time, capped at 100.
+    // Who's On: active + pending users.
+    const userQuery = query(
+      collection(db, `bars/${barId}/users`),
+      where('status', 'in', ['active', 'pending']),
+    );
+    const unsubAllUsers = onSnapshot(userQuery, (s) => {
+      setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => {
+      unsubUser();
+      unsubBar();
+      unsubAllUsers();
+    };
+  }, [user, barId, setSearchParams]);
+
+  // Time-windowed listeners (requests + notices). Split off so they
+  // can re-subscribe on the hourly windowEpoch tick without tearing
+  // down the user/bar/allUsers listeners above. The "last 24h" /
+  // "last 3 days" windows are recomputed at subscribe time.
+  useEffect(() => {
+    if (!user || !barId) return;
+
     const unsubReq = onSnapshot(
       query(
         collection(db, 'requests'),
@@ -158,16 +191,6 @@ export function useBarListeners({
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request))),
     );
 
-    // Who's On: active + pending users.
-    const userQuery = query(
-      collection(db, `bars/${barId}/users`),
-      where('status', 'in', ['active', 'pending']),
-    );
-    const unsubAllUsers = onSnapshot(userQuery, (s) => {
-      setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    // Notices: last 3 days, capped at 100.
     const unsubNotices = onSnapshot(
       query(
         collection(db, `bars/${barId}/notices`),
@@ -179,13 +202,24 @@ export function useBarListeners({
     );
 
     return () => {
-      unsubUser();
-      unsubBar();
       unsubReq();
-      unsubAllUsers();
       unsubNotices();
     };
-  }, [user, barId, setSearchParams]);
+  }, [user, barId, windowEpoch]);
+
+  // Mirror globalNtfyTopic into the per-bar user doc whenever the
+  // account-level topic changes. The per-bar user snapshot handler
+  // above also handles this on its own update, but if the global
+  // topic changes while the per-bar user doc is otherwise quiet
+  // (no role change, status flip, etc.) the snapshot wouldn't fire
+  // and the mirror would stay stale. This effect fills that gap
+  // without re-subscribing any of the 5 listeners.
+  useEffect(() => {
+    if (!user || !barId || !globalNtfyTopic) return;
+    const userRef = doc(db, `bars/${barId}/users`, user.uid);
+    updateDoc(userRef, { ntfyTopic: globalNtfyTopic }).catch(console.error);
+    setNtfyTopic(globalNtfyTopic);
+  }, [user, barId, globalNtfyTopic]);
 
   // Auto-clock-in: separate effect, runs when fcmToken arrives.
   useEffect(() => {

@@ -34,16 +34,16 @@ export function useAuth() {
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
-    } catch (e: any) {
-      setAuthError(e.message);
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : 'Unknown error');
     }
   };
 
   const signInGoogle = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (e: any) {
-      setAuthError(e.message);
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : 'Unknown error');
     }
   };
 

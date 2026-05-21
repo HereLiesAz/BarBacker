@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { doc, increment, updateDoc } from 'firebase/firestore';
+import { doc, FieldValue, increment, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 // Buffers per-button click counts and flushes them to the bar's
@@ -20,7 +20,7 @@ export function useUsageBatching(barId: string | null) {
 
     bufferRef.current = {};
 
-    const updates: Record<string, any> = {};
+    const updates: Record<string, FieldValue> = {};
     for (const [btnId, count] of Object.entries(buffer)) {
       updates[`buttonUsage.${btnId}`] = increment(count);
     }

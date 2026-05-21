@@ -787,7 +787,7 @@ function App() {
       // 4. Delete the Auth user.
       await deleteUser(user);
       setShowAccountDialog(false);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting account:', error);
       // If error is auth/requires-recent-login, we could prompt for re-auth.
       // But for now, we alert.
@@ -796,9 +796,9 @@ function App() {
   };
 
   // Handle email login/register form submission.
-  const handleEmailAuth = async (e: any) => {
+  const handleEmailAuth = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.target);
+    const fd = new FormData(e.currentTarget);
     await signInEmail(fd.get('email') as string, fd.get('password') as string);
   };
 
@@ -941,11 +941,19 @@ function App() {
   // History log: active requests are already filtered out.
   const logRequests = requests.filter(r => r.status !== 'pending').slice(0, 20); 
 
-  // Time formatter.
-  const formatTime = (ts: any) => {
-    if (!ts) return '';
-    const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  // Time formatter. Firestore timestamp fields are typed as
+  // FieldValue | Timestamp because writes use serverTimestamp(), but
+  // on read they're always Timestamps. Accept the union and handle
+  // each shape; FieldValue has no toDate/seconds, so it falls through
+  // to ''.
+  const formatTime = (ts: unknown) => {
+    if (!ts || typeof ts !== 'object') return '';
+    const t = ts as { toDate?: () => Date; seconds?: number };
+    if (typeof t.toDate === 'function') return t.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (typeof t.seconds === 'number') {
+      return new Date(t.seconds * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+    return '';
   };
 
   // Determine which buttons to show based on nav stack.
@@ -1062,7 +1070,7 @@ function App() {
             <md-filled-text-field
                 label="Notice Message"
                 value={noticeText}
-                onInput={(e: any) => setNoticeText(e.target.value)}
+                onInput={(e: React.FormEvent<HTMLElement>) => setNoticeText((e.currentTarget as HTMLElement & { value: string }).value)}
                 required
                 type="text"
             />
@@ -1198,7 +1206,7 @@ function App() {
             <md-filled-text-field
                 label="Display Name"
                 value={editNameValue}
-                onInput={(e: any) => setEditNameValue(e.target.value)}
+                onInput={(e: React.FormEvent<HTMLElement>) => setEditNameValue((e.currentTarget as HTMLElement & { value: string }).value)}
                 required
                 type="text"
             />
@@ -1218,9 +1226,10 @@ function App() {
                         }
                         setShowNameEditDialog(false);
                     }
-                } catch (e: any) {
+                } catch (e) {
                     console.error("Error updating name:", e);
-                    setEditNameError("Failed to update name: " + (e.message || "Unknown error"));
+                    const msg = e instanceof Error ? e.message : 'Unknown error';
+                    setEditNameError("Failed to update name: " + msg);
                 }
             }}>Save</md-filled-button>
         </div>
@@ -1400,7 +1409,7 @@ function App() {
                         {/* Actions: Cancel (if own) or Ignore */}
                         {isMyRequest ? (
                              <md-outlined-button
-                                onClick={async (e: any) => {
+                                onClick={async (e: React.MouseEvent<HTMLElement>) => {
                                     e.stopPropagation();
                                     if (confirm('Cancel this request?')) {
                                         await cancelRequest(req.id);
@@ -1413,7 +1422,7 @@ function App() {
                         ) : (
                             !isIgnored && (
                                 <md-outlined-button
-                                    onClick={(e: any) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
+                                    onClick={(e: React.MouseEvent<HTMLElement>) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
                                     style={{ height: '48px', minWidth: '100px' }}
                                 >
                                     Ignore

@@ -139,8 +139,12 @@ jobs:
       # ------------------------------------------------------------------
       # FAILURE HANDLING
       # ------------------------------------------------------------------
+      # Only file a failure issue on push-to-main. PR-side failures
+      # already surface in the PR's Checks tab; opening an issue per
+      # PR-build attempt produces a new issue on every retry and
+      # spams the tracker with duplicates.
       - name: Report Failure to Jules
-        if: failure() && steps.gradle-build.outcome == 'failure'
+        if: failure() && steps.gradle-build.outcome == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

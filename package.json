@@ -63,6 +63,7 @@
     "vitest-mock-extended": "^3.1.0"
   },
   "overrides": {
-    "tar": "^7.5.8"
+    "tar": "^7.5.8",
+    "@tootallnate/once": "^3.0.1"
   }
 }

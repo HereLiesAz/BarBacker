@@ -83,12 +83,13 @@ export function usePushNotifications() {
     // Web (PWA) push path. Only request permission when running as a
     // standalone PWA so casual visitors don't see a permission popup.
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || (window.navigator as any).standalone;
+      // Safari iOS sets navigator.standalone but it's not in lib.dom.
+      || (window.navigator as Navigator & { standalone?: boolean }).standalone;
     if (isStandalone) {
       requestNotificationPermission().then(t => t && setFcmToken(t));
     }
 
-    const unsubscribeMessages = onForegroundMessage((payload: any) => {
+    const unsubscribeMessages = onForegroundMessage((payload: { notification?: { title: string; body: string } }) => {
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
 
       // The Notification constructor throws under denied permission and

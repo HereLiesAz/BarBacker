@@ -89,7 +89,7 @@ export function NotificationFooter({
 
               {isMyRequest ? (
                 <md-outlined-button
-                  onClick={async (e: any) => {
+                  onClick={async (e: React.MouseEvent) => {
                     e.stopPropagation();
                     if (confirm('Cancel this request?')) {
                       await onCancel(req.id);

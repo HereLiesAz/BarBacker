@@ -48,10 +48,9 @@ import { Capacitor } from '@capacitor/core';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
 import { usePwaInstallPrompt } from './hooks/usePwaInstallPrompt';
+import { useGodMode } from './hooks/useGodMode';
 import { pMap } from './utils/async';
 
-// Import Subscription Services
-import { adminManager } from './services/subscription';
 
 // --- Material Web Imports ---
 // These imports register the custom elements with the browser's CustomElementRegistry.
@@ -173,8 +172,6 @@ function App() {
   // Store custom sort orders.
   const [customOrders, setCustomOrders] = useState<Record<string, string[]>>({});
 
-  // Store god mode status.
-  const [isGodMode, setIsGodMode] = useState(false);
 
   // --- UI State ---
   // Track the ID of the button currently being dragged.
@@ -337,6 +334,9 @@ function App() {
       requestNotificationPermission().then(t => t && setFcmToken(t));
     }
   });
+
+  // Admin / god-mode gate. Currently client-side only — see hook doc.
+  const isGodMode = useGodMode(user);
 
   // --- 1. Auth state ---
   useEffect(() => {
@@ -628,20 +628,6 @@ function App() {
     autoClockIn();
   }, [user, barId, fcmToken]);
 
-
-  // --- Subscription gate ---
-  // NOTE: This is currently a client-side env-var match (VITE_GOD_MODE_EMAIL)
-  // and is NOT enforced by Firestore rules. Anything gated by `isGodMode`
-  // should be treated as UI affordance only. Replace with Firebase Auth
-  // custom claims + rule-side checks before relying on this for access
-  // control.
-  useEffect(() => {
-    if (!user) {
-      setIsGodMode(false);
-      return;
-    }
-    setIsGodMode(adminManager.checkSubscription(user.email));
-  }, [user]);
 
   // --- Timer ---
   // Inactivity timer to close menus after 60 seconds.

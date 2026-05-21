@@ -1070,7 +1070,7 @@ function App() {
             <md-filled-text-field
                 label="Notice Message"
                 value={noticeText}
-                onInput={(e: Event) => setNoticeText((e.target as HTMLInputElement).value)}
+                onInput={(e: React.FormEvent<HTMLElement>) => setNoticeText((e.currentTarget as HTMLElement & { value: string }).value)}
                 required
                 type="text"
             />

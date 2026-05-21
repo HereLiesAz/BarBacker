@@ -94,6 +94,18 @@ import {
   arrayMove
 } from '@dnd-kit/sortable';
 
+// Generate a 128-bit hex suffix for ntfy topic IDs. ntfy.sh is an
+// unauthenticated pub-sub: anyone who knows the topic can subscribe to
+// it. Topics used to be `barbacker-${uid}`, which meant a leaked UID
+// (visible in every Request and Notice document a user authors) let
+// anyone subscribe to that user's push stream. Random suffixes break
+// that link without changing how the topic is used downstream.
+function generateRandomTopicSuffix(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // Helper component for listing joined bars.
 const BarListItem = ({ name, onClick }: { name: string, onClick: () => void }) => {
     return (
@@ -137,8 +149,13 @@ function App() {
   const [displayName, setDisplayName] = useState<string>('');
   // Store the user's notification preferences (list of button IDs).
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
-  // Store the ntfy topic ID for iOS notifications.
+  // Store the ntfy topic ID for iOS notifications (per-bar snapshot
+  // of the global topic, kept in sync via the bar listener).
   const [ntfyTopic, setNtfyTopic] = useState<string | null>(null);
+  // Store the account-level ntfy topic. Source of truth for the
+  // subscribe link on the bar-select screen and what gets written into
+  // each per-bar user profile.
+  const [globalNtfyTopic, setGlobalNtfyTopic] = useState<string | null>(null);
   
   // --- Data State ---
   // Store the list of active requests.
@@ -324,6 +341,105 @@ function App() {
 
   // Admin / god-mode gate. Currently client-side only — see hook doc.
   const isGodMode = useGodMode(user);
+    // Subscribe to foreground messages with a callback we can detach on
+    // unmount. The previous one-shot Promise API only fired for the
+    // first message of the session.
+    const unsubscribeMessages = onForegroundMessage((payload: any) => {
+      if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+
+      // The Notification constructor throws under denied permission and
+      // is undefined in some embedded webviews / JSDOM, so guard both.
+      if (
+        payload?.notification
+        && typeof Notification !== 'undefined'
+        && Notification.permission === 'granted'
+      ) {
+        try {
+          new Notification(payload.notification.title, {
+            body: payload.notification.body,
+            icon: '/icon-192x192.png',
+          });
+        } catch (e) {
+          console.warn('Notification display failed', e);
+        }
+      }
+
+      if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
+      const audio = audioRef.current;
+      let plays = 0;
+      audio.onended = () => {
+        plays++;
+        if (plays < 8) {
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
+        }
+      };
+      audio.play().catch(() => {});
+    });
+
+    return () => unsubscribeMessages();
+  }, []);
+
+  // --- 1.5. User Data & Joined Bars ---
+  useEffect(() => {
+    if (!user) return;
+    const userRef = doc(db, 'users', user.uid);
+    const unsub = onSnapshot(userRef, (d) => {
+        const data = d.exists() ? d.data() : {};
+        setMyBars(data.joinedBars || []);
+
+        // Global ntfy topic. Generated once per account with a high
+        // entropy random suffix so the topic is not derivable from a
+        // leaked UID — ntfy.sh is unauthenticated, so anyone who knows
+        // the topic can subscribe. Pre-existing users keep whatever
+        // topic they already have stored.
+        if (data.ntfyTopic) {
+            setGlobalNtfyTopic(data.ntfyTopic);
+        } else if (user) {
+            const newTopic = `barbacker-${generateRandomTopicSuffix()}`;
+            setGlobalNtfyTopic(newTopic);
+            setDoc(userRef, { ntfyTopic: newTopic }, { merge: true })
+              .catch(e => console.warn('Failed to persist ntfy topic', e));
+        }
+    });
+    return () => unsub();
+  }, [user]);
+
+  // --- 1.6. Fetch Bar Names Efficiently ---
+  useEffect(() => {
+    const fetchBarNames = async () => {
+        if (myBars.length === 0) {
+            setBarDetails({});
+            return;
+        }
+
+        // Use chunks to respect Firestore 'in' query limit of 30.
+        const chunks = [];
+        for (let i = 0; i < myBars.length; i += 30) {
+            chunks.push(myBars.slice(i, i + 30));
+        }
+
+        const newDetails: Record<string, string> = {};
+
+        await Promise.all(chunks.map(async (chunk) => {
+            try {
+                const q = query(collection(db, 'bars'), where(documentId(), 'in', chunk));
+                const snapshot = await getDocs(q);
+                snapshot.forEach(d => {
+                    newDetails[d.id] = (d.data() as Bar).name;
+                });
+            } catch (e) {
+                console.error("Error fetching bar names", e);
+            }
+        }));
+
+        // Batch update state once, ensuring all bars have a display name.
+        const finalDetails: Record<string, string> = {};
+        myBars.forEach(bid => {
+            finalDetails[bid] = newDetails[bid] || 'Unknown Bar';
+        });
+        setBarDetails(finalDetails);
+    };
 
   // Joined bars + their display names — driven by users/{uid}.joinedBars.
   const { myBars, barDetails } = useMyBars(user);
@@ -356,14 +472,16 @@ function App() {
           setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[data.role] || []);
         }
 
-        // Auto-coordinate ntfy topic (e.g., 'barbacker-uid').
-        const autoTopic = `barbacker-${user.uid}`;
-        if (data.ntfyTopic !== autoTopic) {
-            // If topic is missing or wrong, update it.
-            updateDoc(userRef, { ntfyTopic: autoTopic }).catch(console.error);
-            setNtfyTopic(autoTopic);
+        // Auto-coordinate ntfy topic. Mirror the global topic from
+        // users/{uid} into this bar's user profile so the fanout
+        // (which reads ntfyTopic off the per-bar user docs) stays in
+        // sync. If the global topic hasn't loaded yet, leave the
+        // per-bar value alone and pick it up on the next snapshot.
+        if (globalNtfyTopic && data.ntfyTopic !== globalNtfyTopic) {
+            updateDoc(userRef, { ntfyTopic: globalNtfyTopic }).catch(console.error);
+            setNtfyTopic(globalNtfyTopic);
         } else {
-            setNtfyTopic(data.ntfyTopic);
+            setNtfyTopic(data.ntfyTopic || globalNtfyTopic);
         }
       } else {
         // User document doesn't exist (new user).
@@ -454,6 +572,50 @@ function App() {
 
   // Auto-submit an "(Ask Me)" request if a sub-menu sits open for 60s.
   useInactivityAutoSubmit(navStack, (label) => submitRequest(label), () => setNavStack([]));
+  // --- Admin / god-mode gate ---
+  // Reads the `admin` custom claim off the user's ID token. Claims are
+  // signed by Firebase so they cannot be spoofed from the client, and
+  // Firestore rules can check the same claim via request.auth.token.admin.
+  // Set the claim with `node scripts/set-admin-claim.js --email ...`.
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) {
+      setIsGodMode(false);
+      return;
+    }
+    user.getIdTokenResult()
+      .then(result => {
+        if (cancelled) return;
+        setIsGodMode(result.claims.admin === true);
+      })
+      .catch(err => {
+        console.warn('Failed to read admin claim', err);
+        if (!cancelled) setIsGodMode(false);
+      });
+    return () => { cancelled = true; };
+  }, [user]);
+
+  // --- Timer ---
+  // Inactivity timer to close menus after 60 seconds.
+  useEffect(() => {
+    // Clear existing timer.
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+
+    // If a menu is open (navStack > 0)...
+    if (navStack.length > 0) {
+      // Set a timeout.
+      timerRef.current = window.setTimeout(() => {
+        // Construct label from the path (e.g. "SERVICE ITEMS: PINT").
+        const trail = navStack.map(b => b.label).join(': ');
+        // Auto-submit as an "Ask Me" request.
+        submitRequest(`${trail} (Ask Me)`);
+        // Reset stack.
+        setNavStack([]);
+      }, 60000);
+    }
+    // Cleanup.
+    return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
+  }, [navStack]);
 
   // --- Actions ---
 
@@ -1054,8 +1216,9 @@ function App() {
             </p>
             <div className="flex flex-col items-center gap-1 mt-2">
                  <a
-                    href={`ntfy://subscribe/barbacker-${user.uid}`}
-                    className="text-blue-400 underline font-bold"
+                    href={globalNtfyTopic ? `ntfy://subscribe/${globalNtfyTopic}` : '#'}
+                    aria-disabled={!globalNtfyTopic}
+                    className={`text-blue-400 underline font-bold ${!globalNtfyTopic ? 'opacity-50 pointer-events-none' : ''}`}
                  >
                     Subscribe to iOS Alerts
                  </a>

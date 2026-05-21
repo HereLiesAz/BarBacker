@@ -354,22 +354,26 @@ function App() {
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
       let cancelled = false;
-      const handles: { remove: () => Promise<void> }[] = [];
 
       const setup = async () => {
         try {
-          // Clear any handlers from a previous mount (StrictMode, hot reload).
+          // Clear any handlers from a previous mount (StrictMode, hot
+          // reload) and on first mount as a defensive no-op. We rely on
+          // removeAllListeners for both setup and teardown rather than
+          // tracking per-handle remove callbacks — Capacitor's plugin
+          // listener registry is the source of truth here, and mixing
+          // both strategies makes cleanup ordering ambiguous.
           await PushNotifications.removeAllListeners();
 
-          handles.push(await PushNotifications.addListener('registration', token => {
+          await PushNotifications.addListener('registration', token => {
             setFcmToken(token.value);
-          }));
+          });
 
-          handles.push(await PushNotifications.addListener('registrationError', err => {
+          await PushNotifications.addListener('registrationError', err => {
             console.error('Registration error: ', err.error);
-          }));
+          });
 
-          handles.push(await PushNotifications.addListener('pushNotificationReceived', () => {
+          await PushNotifications.addListener('pushNotificationReceived', () => {
             if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
             if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
             const audio = audioRef.current;
@@ -377,11 +381,11 @@ function App() {
             audio.onended = null;
             audio.currentTime = 0;
             audio.play().catch(() => {});
-          }));
+          });
 
-          handles.push(await PushNotifications.addListener('pushNotificationActionPerformed', () => {
+          await PushNotifications.addListener('pushNotificationActionPerformed', () => {
             // Future: open specific request from tap.
-          }));
+          });
 
           if (cancelled) return;
 
@@ -418,11 +422,21 @@ function App() {
     const unsubscribeMessages = onForegroundMessage((payload: any) => {
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
 
-      if (payload && payload.notification) {
-        new Notification(payload.notification.title, {
-          body: payload.notification.body,
-          icon: '/icon-192x192.png',
-        });
+      // The Notification constructor throws under denied permission and
+      // is undefined in some embedded webviews / JSDOM, so guard both.
+      if (
+        payload?.notification
+        && typeof Notification !== 'undefined'
+        && Notification.permission === 'granted'
+      ) {
+        try {
+          new Notification(payload.notification.title, {
+            body: payload.notification.body,
+            icon: '/icon-192x192.png',
+          });
+        } catch (e) {
+          console.warn('Notification display failed', e);
+        }
       }
 
       if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
@@ -1065,22 +1079,27 @@ function App() {
         }
     });
 
-    // Send the requests in parallel. Await so the request submission
-    // completes only once notifications have been dispatched; per-topic
-    // failures are swallowed inside the worker so one bad topic doesn't
-    // abort the fanout.
+    // Send the requests in parallel. The mapper catches its own errors
+    // and resolves to undefined on failure, so pMap never rejects and
+    // one bad topic cannot abort the fanout. We await the result so
+    // submitRequest only resolves once dispatch attempts are complete.
     await pMap(
         Array.from(topics),
         async (topic) => {
-            return fetch(`https://ntfy.sh/${topic}`, {
-                method: 'POST',
-                body: `New Request: ${label} (by ${displayName})`,
-                headers: {
-                    'Title': 'BarBacker Alert',
-                    'Priority': 'high',
-                    'Tags': 'bell,bar_chart'
-                }
-            }).catch(err => console.error('Failed to send ntfy', err));
+            try {
+                return await fetch(`https://ntfy.sh/${topic}`, {
+                    method: 'POST',
+                    body: `New Request: ${label} (by ${displayName})`,
+                    headers: {
+                        'Title': 'BarBacker Alert',
+                        'Priority': 'high',
+                        'Tags': 'bell,bar_chart'
+                    }
+                });
+            } catch (err) {
+                console.error('Failed to send ntfy', err);
+                return undefined;
+            }
         },
         NTFY_DISPATCH_CONCURRENCY
     );
@@ -1142,9 +1161,16 @@ function App() {
       // FCM token. Previously tokens were left behind — they're now
       // restricted to the owning user by Firestore rules, so an
       // orphaned token would never be cleaned up.
+      //
+      // Per-doc failures are logged (not thrown) so a single missing
+      // bar / network blip doesn't abort the rest of the cleanup, but
+      // partial-cleanup issues remain visible in the console for
+      // debugging.
       await Promise.all(joinedBars.flatMap((bid) => [
-          deleteDoc(doc(db, `bars/${bid}/users`, user.uid)).catch(() => {}),
-          deleteDoc(doc(db, `bars/${bid}/tokens`, user.uid)).catch(() => {}),
+          deleteDoc(doc(db, `bars/${bid}/users`, user.uid))
+              .catch(e => console.warn(`Failed to delete bars/${bid}/users/${user.uid}`, e)),
+          deleteDoc(doc(db, `bars/${bid}/tokens`, user.uid))
+              .catch(e => console.warn(`Failed to delete bars/${bid}/tokens/${user.uid}`, e)),
       ]));
 
       // 3. Delete the global user document.

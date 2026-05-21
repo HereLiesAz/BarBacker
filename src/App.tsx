@@ -41,6 +41,7 @@ import { useUsageBatching } from './hooks/useUsageBatching';
 import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
 import { useAuth } from './hooks/useAuth';
 import { usePushNotifications } from './hooks/usePushNotifications';
+import { useBarNoticeBoard } from './hooks/useBarNoticeBoard';
 import { pMap } from './utils/async';
 
 
@@ -192,9 +193,6 @@ function App() {
 
   // Notice Board State.
   const [notices, setNotices] = useState<Notice[]>([]);
-  const [isAddingNotice, setIsAddingNotice] = useState(false);
-  const [noticeText, setNoticeText] = useState('');
-  const [noticeError, setNoticeError] = useState<string | null>(null);
 
   // Control the main menu dropdown.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -559,31 +557,13 @@ function App() {
     setHiddenButtonIds(prev => prev.filter(id => id !== btnId));
   };
 
-  // Save a notice to the bulletin board.
-  const saveNotice = async (text: string) => {
-    if (!user || !barId || !text.trim()) return;
-    try {
-      await addDoc(collection(db, `bars/${barId}/notices`), {
-          text,
-          authorId: user.uid,
-          authorName: displayName,
-          timestamp: serverTimestamp()
-      });
-      setNoticeText('');
-      setIsAddingNotice(false);
-    } catch (e: any) {
-      console.error("Error saving notice:", e);
-      setNoticeError("Failed to save notice: " + (e.message || "Unknown error"));
-    }
-  };
-
-  // Delete a notice.
-  const deleteNotice = async (noticeId: string) => {
-    if (!user || !barId) return;
-    if (confirm("Delete this notice?")) {
-        await deleteDoc(doc(db, `bars/${barId}/notices`, noticeId));
-    }
-  };
+  // Notice-board write actions + dialog form state.
+  const {
+    isAddingNotice, setIsAddingNotice,
+    noticeText, setNoticeText,
+    noticeError, setNoticeError,
+    saveNotice, deleteNotice,
+  } = useBarNoticeBoard({ user, barId, displayName });
 
   // Determine children for dynamic buttons (ICE, BEER, etc.).
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {

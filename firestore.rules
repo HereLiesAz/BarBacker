@@ -3,43 +3,76 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Users: Allow read/write for the user themselves
+    // A user is a "member" of a bar if they have a profile document in
+    // that bar's users subcollection. Membership is established by the
+    // join flow in App.tsx (confirmRole writes to bars/{barId}/users/{uid}).
+    function isMember(barId) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid));
+    }
+
+    // Global per-user document — self only. Holds joinedBars and other
+    // account-level data.
     match /users/{userId} {
       allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Bars: Allow read/write for authenticated users
-    // In a real app, you might restrict write to Owners or specific roles
+    // Bar documents.
     match /bars/{barId} {
-      allow read, write: if isAuthenticated();
+      // Bars are discoverable by any signed-in user (search + join).
+      allow read: if isAuthenticated();
+      // Anyone signed in can claim a new bar (creates a verified or
+      // temporary bar via BarSearch).
+      allow create: if isAuthenticated();
+      // Only members can mutate the bar's settings (name, buttons,
+      // inventory, hiddenButtonIds, etc.).
+      allow update, delete: if isMember(barId);
 
-      // Users subcollection: Allow read/write for authenticated users
+      // Per-user profile within a bar — only the owning user can write
+      // their own doc.
       match /users/{userId} {
-        // Allow write only if user is modifying their own document
+        allow read: if isAuthenticated()
+          && (request.auth.uid == userId || resource.data.status in ['active', 'pending']);
         allow write: if isAuthenticated() && request.auth.uid == userId;
-        // Allow read if user is reading their own document OR the user is active/pending
-        allow read: if isAuthenticated() && (request.auth.uid == userId || resource.data.status in ['active', 'pending']);
       }
 
-      // Tokens subcollection: Allow read/write for authenticated users
+      // FCM tokens — strictly self. Reads are server-side via the
+      // notification dispatcher (admin SDK bypasses rules); clients
+      // should never need to read another user's token.
       match /tokens/{userId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
 
-      // Notices subcollection: Allow read/write for authenticated users
+      // Notices (bulletin board) — readable by bar members; create must
+      // set authorId to the writer; any member may delete (matches the
+      // current marquee UX).
       match /notices/{noticeId} {
-        allow read, write: if isAuthenticated();
+        allow read: if isMember(barId);
+        allow create: if isMember(barId)
+          && request.resource.data.authorId == request.auth.uid;
+        allow update: if isMember(barId)
+          && resource.data.authorId == request.auth.uid;
+        allow delete: if isMember(barId);
       }
     }
 
-    // Requests: Allow read/write for authenticated users
+    // Requests — top-level collection, scoped by barId field.
     match /requests/{requestId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated() && isMember(resource.data.barId);
+      allow create: if isAuthenticated()
+        && request.resource.data.requesterId == request.auth.uid
+        && isMember(request.resource.data.barId);
+      // Any member can claim/update a request in their bar.
+      allow update: if isAuthenticated() && isMember(resource.data.barId);
+      // Requester can cancel; any member can also clean up.
+      allow delete: if isAuthenticated() && (
+        resource.data.requesterId == request.auth.uid
+        || isMember(resource.data.barId)
+      );
     }
   }
 }

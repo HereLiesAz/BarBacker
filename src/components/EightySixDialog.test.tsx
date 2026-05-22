@@ -76,7 +76,7 @@ describe('EightySixDialog', () => {
   it('shows add form when Add Person is clicked', () => {
     render(<EightySixDialog {...defaultProps} userRole="Owner" />);
     fireEvent.click(screen.getByText('Add Person'));
-    expect(screen.getByText('Cancel')).toBeDefined();
+    expect(screen.getByText('Add')).toBeDefined();
   });
 
   it('shows private toggle only for premium Owner/Manager in add form', () => {

@@ -3,48 +3,106 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
+    function isAuthed() { return request.auth != null; }
+
+    function roleIn(barId) {
+      return isAuthed() && 'bars' in request.auth.token
+        ? request.auth.token.bars.get(barId, '')
+        : '';
     }
 
-    // Users: Allow read/write for the user themselves
+    function hasRole(barId) {
+      return roleIn(barId) != '';
+    }
+
+    function isManagerPlus(barId) {
+      return roleIn(barId) in ['Manager', 'Owner'];
+    }
+
+    function isOwner(barId) {
+      return roleIn(barId) == 'Owner';
+    }
+
+    // Global /users/{userId}
     match /users/{userId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      allow read, write: if isAuthed() && request.auth.uid == userId;
     }
 
-    // Bars: Allow read/write for authenticated users
-    // In a real app, you might restrict write to Owners or specific roles
     match /bars/{barId} {
-      allow read, write: if isAuthenticated();
+      allow read: if hasRole(barId);
+      allow create: if isAuthed();
+      allow update: if isManagerPlus(barId);
+      allow delete: if isOwner(barId);
 
-      // Users subcollection: Allow read/write for authenticated users
       match /users/{userId} {
-        // Allow write only if user is modifying their own document
-        allow write: if isAuthenticated() && request.auth.uid == userId;
-        // Allow read if user is reading their own document OR the user is active/pending
-        allow read: if isAuthenticated() && (request.auth.uid == userId || resource.data.status in ['active', 'pending']);
+        // Self-write limited to safe operational fields. status may only be set to 'off_clock'.
+        allow write: if isAuthed() && request.auth.uid == userId &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName', 'lastSeen', 'notificationPreferences', 'ntfyTopic', 'email', 'status']) &&
+          (!('status' in request.resource.data.diff(resource.data).affectedKeys()) ||
+           request.resource.data.status == 'off_clock');
+
+        // Managers can promote pending → active, set role for non-Owners, kick non-Owners.
+        allow update: if isManagerPlus(barId) &&
+          resource.data.role != 'Owner';
+
+        // Owners can do anything to any user (including other Owners only via self-relinquish).
+        allow update: if isOwner(barId) &&
+          (resource.data.role != 'Owner' || request.auth.uid == userId);
+
+        allow read: if hasRole(barId);
+        // New user creating own pending/active record at join time.
+        allow create: if isAuthed() && request.auth.uid == userId;
+        allow delete: if isManagerPlus(barId) && resource.data.role != 'Owner';
       }
 
-      // Tokens subcollection: Allow read/write for authenticated users
       match /tokens/{userId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isAuthed() && request.auth.uid == userId;
       }
 
-      // Notices subcollection: Allow read/write for authenticated users
-      match /notices/{noticeId} {
-        allow read, write: if isAuthenticated();
-      }
-
-      // 86'd list subcollection: Allow read/write for authenticated users
+      // TODO(D4): gate private create on premium subscription claim (request.auth.token.subscription[barId] == 'premium').
       match /eightySixed/{entryId} {
-        allow read, write: if isAuthenticated();
+        allow read: if (resource.data.visibility == 'public' && hasRole(barId)) ||
+                       isManagerPlus(barId);
+        allow create: if isManagerPlus(barId) &&
+          (request.resource.data.visibility == 'public' ||
+           (request.resource.data.visibility == 'private' &&
+            hasRole(barId)));
+        allow delete: if isManagerPlus(barId);
+        allow update: if false;
+      }
+
+      match /notices/{noticeId} {
+        // Kept wide for Phase 1 — replaced in Phase 2 by chat.
+        allow read, write: if hasRole(barId);
+      }
+
+      match /invites/{inviteId} {
+        allow read: if isManagerPlus(barId) ||
+                       (isAuthed() && resource.data.email == request.auth.token.email);
+        allow create: if isManagerPlus(barId);
+        allow update: if isAuthed() && resource.data.email == request.auth.token.email &&
+                        request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['consumed', 'consumedBy', 'consumedAt']);
+        allow delete: if isManagerPlus(barId);
+      }
+
+      match /ownershipClaims/{claimId} {
+        allow read: if isManagerPlus(barId) ||
+                       (isAuthed() && resource.data.claimantId == request.auth.uid);
+        // Writes go through Cloud Functions only.
+        allow write: if false;
       }
     }
 
-    // Requests: Allow read/write for authenticated users
     match /requests/{requestId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthed() && hasRole(resource.data.barId);
+      allow create: if isAuthed() && hasRole(request.resource.data.barId) &&
+                      request.resource.data.requesterId == request.auth.uid;
+      allow update, delete: if isAuthed() && (
+        resource.data.requesterId == request.auth.uid ||
+        isManagerPlus(resource.data.barId)
+      );
     }
   }
 }

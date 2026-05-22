@@ -50,6 +50,8 @@ export interface Bar {
   customOrders?: Record<string, string[]>;
   // Optional: Subscription tier for the bar.
   subscription?: 'free' | 'premium';
+  // Join policy for new users. 'open' = auto-active. 'approval' = pending until Manager approves.
+  joinPolicy?: 'open' | 'approval';
   // Optional: Custom branding/theming for premium bars.
   theme?: BarTheme;
 }
@@ -115,7 +117,7 @@ export interface BarUser {
   // Optional: The user's role (e.g., 'Bartender', 'Barback').
   role?: string;
   // Optional: The user's current status.
-  status?: 'active' | 'off_clock' | 'pending';
+  status?: 'active' | 'off_clock' | 'pending' | 'rejected';
   // Optional: The timestamp of the user's last activity.
   lastSeen?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
   // Optional: The user's email address.
@@ -166,4 +168,41 @@ export interface POSClient {
   syncMenu(): Promise<any[]>;
   // Fetch sales data for a given date range.
   getSales(startDate: Date, endDate: Date): Promise<any>;
+}
+
+// Define an invite for a specific email to join a bar at a specific role.
+export interface BarInvite {
+  id: string;
+  email: string;            // normalized lowercase
+  role: 'Staff' | 'Manager' | 'Owner';
+  createdBy: string;        // uid
+  createdByName: string;
+  createdAt: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  consumed: boolean;
+  consumedBy?: string;      // uid of the user who used it
+  consumedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}
+
+// Define an ownership-claim request and its waterfall state.
+export interface OwnershipClaim {
+  id: string;
+  barId: string;
+  claimantId: string;       // uid
+  claimantEmail: string;
+  claimantName: string;
+  // Method that succeeded, if any.
+  approvedVia?: 'osm_code' | 'domain_match' | 'manager_approval' | 'dispute_window' | 'manual';
+  status: 'pending_code' | 'pending_manager' | 'pending_dispute' | 'pending_manual' | 'approved' | 'rejected' | 'expired';
+  // OSM step.
+  codeSentTo?: string;      // masked phone or email
+  codeChannel?: 'email' | 'sms';
+  codeHash?: string;        // bcrypt of the code; never store plaintext
+  codeExpiresAt?: import('firebase/firestore').Timestamp;
+  codeAttempts?: number;
+  // Dispute step.
+  disputeOpensAt?: import('firebase/firestore').Timestamp;
+  disputeClosesAt?: import('firebase/firestore').Timestamp;
+  disputedBy?: string[];    // uids
+  createdAt: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  updatedAt: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }

@@ -12,6 +12,9 @@ export async function pMap<T, R>(
   fn: (item: T) => Promise<R>,
   concurrency: number
 ): Promise<R[]> {
+  if (concurrency < 1) {
+    throw new Error('pMap: concurrency must be at least 1.');
+  }
   const results: R[] = new Array(items.length);
   const queue = items.map((item, index) => ({ item, index }));
 

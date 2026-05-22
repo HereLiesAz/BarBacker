@@ -35,6 +35,11 @@ service cloud.firestore {
       match /notices/{noticeId} {
         allow read, write: if isAuthenticated();
       }
+
+      // 86'd list subcollection: Allow read/write for authenticated users
+      match /eightySixed/{entryId} {
+        allow read, write: if isAuthenticated();
+      }
     }
 
     // Requests: Allow read/write for authenticated users

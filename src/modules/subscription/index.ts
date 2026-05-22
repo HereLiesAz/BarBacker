@@ -15,14 +15,8 @@ export class UserManager {
   }
 }
 
-export class EightySixList {
-  addItem(item: string): void {
-    console.log(`Item 86'd: ${item}`);
-  }
-  is86d(_item: string): boolean {
-    return false;
-  }
-}
+// 86'd list is now handled via Firestore in App.tsx (bars/{barId}/eightySixed collection).
+// See src/components/EightySixDialog.tsx for the UI.
 
 import { POSClient } from '../../types';
 import { ToastAdapter } from '../pos/ToastAdapter';
@@ -100,11 +94,8 @@ export class CalendarIntegration {
   }
 }
 
-export class ThemeManager {
-  applyTheme(theme: string): void {
-    console.log(`Theme applied: ${theme}`);
-  }
-}
+// Theme is now handled via useBarTheme hook (src/hooks/useBarTheme.ts)
+// and ThemeEditor component (src/components/ThemeEditor.tsx).
 
 export class PublicMenu {
   getMenu(): any {

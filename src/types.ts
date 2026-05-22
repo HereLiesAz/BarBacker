@@ -48,6 +48,10 @@ export interface Bar {
   buttonUsage?: Record<string, number>;
   // Optional: Custom sort orders for button lists (Context ID -> Array of Button IDs).
   customOrders?: Record<string, string[]>;
+  // Optional: Subscription tier for the bar.
+  subscription?: 'free' | 'premium';
+  // Optional: Custom branding/theming for premium bars.
+  theme?: BarTheme;
 }
 
 // Define the data model for a 'Request' document in Firestore.
@@ -120,6 +124,36 @@ export interface BarUser {
   notificationPreferences?: string[];
   // Optional: The ntfy topic ID for iOS notifications.
   ntfyTopic?: string;
+}
+
+// Define the data model for a banned patron entry (86'd list).
+export interface EightySixEntry {
+  // The unique ID of the entry (matches document ID).
+  id: string;
+  // The name of the banned patron.
+  patronName: string;
+  // The UID of the staff member who submitted this entry.
+  submittedBy: string;
+  // The display name of the submitter (snapshot at creation time).
+  submitterName: string;
+  // Optional: The reason for banning (only on private entries).
+  reason?: string;
+  // Visibility level: 'public' is visible to all staff, 'private' is Owner/Manager only.
+  visibility: 'public' | 'private';
+  // The timestamp when the entry was created.
+  timestamp: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}
+
+// Define the structure for custom bar branding/theming.
+export interface BarTheme {
+  // Primary brand color (hex, e.g. '#FF5722').
+  primaryColor: string;
+  // Accent/secondary color (hex).
+  accentColor: string;
+  // Optional: URL to the bar's logo in Firebase Storage.
+  logoUrl?: string;
+  // Optional: Font family from curated list.
+  fontFamily?: string;
 }
 
 // Define the standard interface for Point of Sale (POS) system integration.

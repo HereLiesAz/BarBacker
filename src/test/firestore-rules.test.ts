@@ -152,6 +152,35 @@ describe('Firestore security rules', () => {
         text: 'hi', authorId: ALICE, authorName: 'Alice', timestamp: new Date(),
       }));
     });
+
+    it('rejects a notice create within 5s of the previous lastNoticeAt', async () => {
+      // Stamp Alice's lastNoticeAt to "now" via rule-bypass seed.
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(
+          doc(ctx.firestore(), `bars/${BAR_A}/users`, ALICE),
+          { lastNoticeAt: new Date() },
+          { merge: true },
+        );
+      });
+      const db = env.authenticatedContext(ALICE).firestore();
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/notices`), {
+        text: 'spam', authorId: ALICE, authorName: 'Alice', timestamp: new Date(),
+      }));
+    });
+
+    it('admins bypass the notice rate limit', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(
+          doc(ctx.firestore(), `bars/${BAR_A}/users`, ADMIN),
+          { displayName: 'Admin', role: 'Manager', status: 'active', lastNoticeAt: new Date() },
+          { merge: true },
+        );
+      });
+      const db = env.authenticatedContext(ADMIN, { admin: true }).firestore();
+      await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/notices`), {
+        text: 'urgent', authorId: ADMIN, authorName: 'Admin', timestamp: new Date(),
+      }));
+    });
   });
 
   describe('requests/{requestId}', () => {

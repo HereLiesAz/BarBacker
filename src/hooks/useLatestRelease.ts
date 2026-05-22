@@ -1,78 +1,84 @@
-// Import useState and useEffect hooks from React.
 import { useState, useEffect } from 'react';
 
-// Define the interface for a GitHub Release Asset (e.g., an APK file).
 interface GitHubReleaseAsset {
-  // The name of the file (e.g., "app-release.apk").
   name: string;
-  // The direct download URL for the asset.
   browser_download_url: string;
-  // The MIME type of the content.
   content_type: string;
 }
 
-// Define the interface for a GitHub Release object.
 interface GitHubRelease {
-  // The tag name of the release (e.g., "v1.0.0").
   tag_name: string;
-  // The list of assets attached to this release.
   assets: GitHubReleaseAsset[];
 }
 
-// Custom hook to fetch the latest release information from GitHub.
-// This is used to provide a download link for the Android APK.
+// GitHub API rate-limit aware fetch. Unauthenticated requests get 60
+// req/hour per IP; busy sessions hit 403 with X-RateLimit-Remaining:
+// 0, or 429 when the secondary abuse limit fires. The hook used to
+// fall over loudly on either. Now: retry with exponential backoff
+// for transient 429s, give up quietly on 403 (no point retrying
+// inside the hour-long window), surface other errors as before.
+async function fetchLatestRelease(): Promise<GitHubRelease> {
+  const url = 'https://api.github.com/repos/HereLiesAz/BarBacker/releases/latest';
+  const MAX_ATTEMPTS = 3;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const response = await fetch(url);
+    if (response.ok) return response.json();
+
+    if (response.status === 403) {
+      // Primary rate limit. Retrying within the same hour won't help.
+      const remaining = response.headers.get('X-RateLimit-Remaining');
+      throw new Error(`GitHub API rate limited (remaining=${remaining ?? '?'}); skipping release lookup`);
+    }
+    if (response.status === 429 && attempt < MAX_ATTEMPTS - 1) {
+      // Secondary/abuse limit. Honor Retry-After if present; otherwise
+      // exponential backoff (1s, 2s, 4s).
+      const retryAfter = Number(response.headers.get('Retry-After')) || 2 ** attempt;
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      continue;
+    }
+    throw new Error(`GitHub API Error: ${response.status} ${response.statusText}`);
+  }
+  // Unreachable — the loop either returns, throws, or continues; this
+  // satisfies TypeScript.
+  throw new Error('GitHub API: max retries exhausted');
+}
+
+// Fetches the latest GitHub release for the project and surfaces the
+// APK asset URL + version tag. Errors are stored in `error` and
+// logged; the dashboard treats a null downloadUrl as "no install
+// link to show" without flagging the page as broken.
 export function useLatestRelease() {
-  // State to store the download URL of the APK.
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  // State to store the version tag.
   const [version, setVersion] = useState<string | null>(null);
-  // State to indicate if the fetch operation is in progress.
   const [loading, setLoading] = useState(true);
-  // State to store any error messages.
   const [error, setError] = useState<string | null>(null);
 
-  // Effect to perform the fetch on component mount.
   useEffect(() => {
-    // Async function to handle the API request.
-    const fetchLatest = async () => {
-      try {
-        // Fetch the latest release data from the GitHub API.
-        const response = await fetch('https://api.github.com/repos/HereLiesAz/BarBacker/releases/latest');
+    let cancelled = false;
 
-        // Check if the response was successful.
-        if (!response.ok) {
-            throw new Error(`GitHub API Error: ${response.statusText}`);
-        }
-
-        // Parse the JSON response.
-        const data: GitHubRelease = await response.json();
-
-        // Find the asset that ends with '.apk'.
+    fetchLatestRelease()
+      .then(data => {
+        if (cancelled) return;
         const apkAsset = data.assets.find(asset => asset.name.endsWith('.apk'));
-
-        // If an APK asset is found, update the state.
         if (apkAsset) {
-            setDownloadUrl(apkAsset.browser_download_url);
-            setVersion(data.tag_name);
+          setDownloadUrl(apkAsset.browser_download_url);
+          setVersion(data.tag_name);
         } else {
-            // If no APK is found, set an error.
-            setError('No APK found in latest release');
+          setError('No APK found in latest release');
         }
-      } catch (err: any) {
-        // Log the error to the console.
-        console.error('Failed to fetch latest release:', err);
-        // Update the error state.
-        setError(err.message || 'Unknown error');
-      } finally {
-        // Set loading to false regardless of success or failure.
-        setLoading(false);
-      }
-    };
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.warn('Failed to fetch latest release:', err);
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-    // Invoke the fetch function.
-    fetchLatest();
-  }, []); // Empty dependency array ensures this runs only once.
+    return () => { cancelled = true; };
+  }, []);
 
-  // Return the hook's state.
   return { downloadUrl, version, loading, error };
 }

@@ -377,13 +377,6 @@ function App() {
       }
     });
 
-    // Listen for Requests.
-    // Query: Last 24 hours, matching Bar ID, ordered by time. Limit to 100 for performance.
-    const unsubReq = onSnapshot(
-      query(collection(db, 'requests'), where('barId', '==', barId), where('timestamp', '>=', new Date(Date.now() - 24 * 60 * 60 * 1000)), orderBy('timestamp', 'desc'), limit(100)),
-      (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request)))
-    );
-
     // Listen for All Users (for "Who's On").
     // Query varies based on whether we are viewing the "Who's On" dialog (show off_clock users too).
     const userQuery = query(collection(db, `bars/${barId}/users`), where('status', 'in', ['active', 'pending']));
@@ -392,23 +385,67 @@ function App() {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // Listen for Notices (Bulletin Board).
-    // Query: Last 3 days.
+    // Cleanup: Unsubscribe from non-time-windowed listeners. The
+    // requests/notices listeners are owned by a separate effect below
+    // so they can re-subscribe on the hourly windowEpoch without
+    // tearing these down.
+    return () => { unsubUser(); unsubBar(); unsubAllUsers(); };
+  }, [user, barId, setSearchParams]);
+
+  // Time-window epoch. Bumped every hour so the requests/notices
+  // listeners below re-subscribe with a fresh "now" lower bound. In a
+  // long-running PWA tab the 24h / 3-day windows would otherwise be
+  // pinned at the moment the listeners were first established.
+  const [windowEpoch, setWindowEpoch] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setWindowEpoch(e => e + 1), 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Time-windowed listeners (requests + notices). Split off from the
+  // main listener block so they can re-subscribe on the hourly
+  // windowEpoch tick without disturbing the user/bar/allUsers
+  // subscriptions.
+  useEffect(() => {
+    if (!user || !barId) return;
+
+    const unsubReq = onSnapshot(
+      query(
+        collection(db, 'requests'),
+        where('barId', '==', barId),
+        where('timestamp', '>=', new Date(Date.now() - 24 * 60 * 60 * 1000)),
+        orderBy('timestamp', 'desc'),
+        limit(100),
+      ),
+      (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request))),
+    );
+
     const unsubNotices = onSnapshot(
       query(
         collection(db, `bars/${barId}/notices`),
         where('timestamp', '>=', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
-        orderBy('timestamp', 'desc'), limit(100)
+        orderBy('timestamp', 'desc'),
+        limit(100),
       ),
-      (s) => {
-        const validNotices = s.docs.map(d => ({ id: d.id, ...d.data() } as Notice));
-        setNotices(validNotices);
-      }
+      (s) => setNotices(s.docs.map(d => ({ id: d.id, ...d.data() } as Notice))),
     );
 
-    // Cleanup: Unsubscribe from all listeners when component unmounts or barId changes.
-    return () => { unsubUser(); unsubBar(); unsubReq(); unsubAllUsers(); unsubNotices(); };
-  }, [user, barId, setSearchParams]);
+    return () => { unsubReq(); unsubNotices(); };
+  }, [user, barId, windowEpoch]);
+
+  // Mirror globalNtfyTopic into the per-bar user doc whenever the
+  // account-level topic changes. The per-bar user snapshot above also
+  // mirrors it on its own update, but if the global topic changes
+  // while the per-bar user doc is otherwise quiet (no role change,
+  // status flip, etc.) the snapshot wouldn't fire and the per-bar
+  // value would stay stale. This effect plugs that gap without
+  // re-subscribing the listeners.
+  useEffect(() => {
+    if (!user || !barId || !globalNtfyTopic) return;
+    const userRef = doc(db, `bars/${barId}/users`, user.uid);
+    updateDoc(userRef, { ntfyTopic: globalNtfyTopic }).catch(console.error);
+    setNtfyTopic(globalNtfyTopic);
+  }, [user, barId, globalNtfyTopic]);
 
   // --- 2.5 Auto-Clock In (Token Update) ---
   useEffect(() => {
@@ -723,15 +760,25 @@ function App() {
     user, barId, displayName, userRole, allUsers, getButtonIdForLabel,
   });
 
-  // Save new notification settings.
+  // Save new notification settings. Write to Firestore first, then
+  // update local state on success — the previous order set local
+  // state optimistically before awaiting the write, so a sign-out or
+  // bar switch mid-write would leave the UI showing prefs that never
+  // persisted. The per-bar user snapshot will also reconcile this
+  // state once the write lands, so the local set is mostly a latency
+  // smoother now.
   const saveNotificationPreferences = async (prefs: string[], topic: string) => {
     if (!user || !barId) return;
-    setNotificationPreferences(prefs);
-    setNtfyTopic(topic);
-    await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
+    try {
+      await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
         notificationPreferences: prefs,
-        ntfyTopic: topic
-    }, { merge: true });
+        ntfyTopic: topic,
+      }, { merge: true });
+      setNotificationPreferences(prefs);
+      setNtfyTopic(topic);
+    } catch (e) {
+      console.error('Failed to save notification preferences', e);
+    }
   };
 
   // Sign out — also closes the account dialog that triggered it.

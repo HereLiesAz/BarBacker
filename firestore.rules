@@ -54,13 +54,23 @@ service cloud.firestore {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
 
-      // Notices (bulletin board) — readable by bar members; create must
-      // set authorId to the writer; any member may delete (matches the
-      // current marquee UX).
+      // Notices (bulletin board) — readable by bar members; create
+      // must set authorId to the writer; any member may delete
+      // (matches the current marquee UX). Posts are rate-limited via
+      // the lastNoticeAt field on the writer's per-bar user doc:
+      // saveNotice writes a batch that creates the notice AND bumps
+      // lastNoticeAt = serverTimestamp(), so the rule below blocks
+      // bursts faster than once every 5s. Admins bypass via
+      // isMember/isAdmin and the default-when-missing read.
       match /notices/{noticeId} {
         allow read: if isMember(barId);
         allow create: if isMember(barId)
-          && request.resource.data.authorId == request.auth.uid;
+          && request.resource.data.authorId == request.auth.uid
+          && (
+            isAdmin()
+            || request.time > get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)).data.get('lastNoticeAt', timestamp.value(0))
+              + duration.value(5, 's')
+          );
         allow update: if isMember(barId)
           && resource.data.authorId == request.auth.uid;
         allow delete: if isMember(barId);

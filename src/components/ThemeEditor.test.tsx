@@ -47,7 +47,7 @@ describe('ThemeEditor', () => {
     };
     render(<ThemeEditor {...defaultProps} currentTheme={theme} />);
     // Logo preview should be visible
-    const logoImg = screen.getByAlt('Logo');
+    const logoImg = screen.getByAltText('Logo');
     expect(logoImg).toBeDefined();
   });
 

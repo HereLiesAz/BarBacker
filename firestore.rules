@@ -43,8 +43,12 @@ service cloud.firestore {
            request.resource.data.status == 'off_clock');
 
         // Managers can promote pending → active, set role for non-Owners, kick non-Owners.
+        // New role must not be 'Owner' (only Owners can create Owners).
+        // Cannot change own role (no self-promote).
         allow update: if isManagerPlus(barId) &&
-          resource.data.role != 'Owner';
+          resource.data.role != 'Owner' &&
+          request.resource.data.role != 'Owner' &&
+          request.auth.uid != userId;
 
         // Owners can do anything to any user (including other Owners only via self-relinquish).
         allow update: if isOwner(barId) &&

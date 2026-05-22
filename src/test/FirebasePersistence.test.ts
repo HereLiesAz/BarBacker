@@ -41,6 +41,11 @@ vi.mock('firebase/messaging', () => ({
   onMessage: vi.fn(),
 }));
 
+// Mock firebase/storage
+vi.mock('firebase/storage', () => ({
+  getStorage: vi.fn(() => ({})),
+}));
+
 describe('Firebase Persistence', () => {
   afterEach(() => {
     vi.clearAllMocks();

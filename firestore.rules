@@ -34,6 +34,14 @@ service cloud.firestore {
       allow update: if isManagerPlus(barId);
       allow delete: if isOwner(barId);
 
+      // TODO(G2): Invite consumption needs a Cloud Function. Client-side create
+      // is restricted to Staff role; non-Staff invites can only be honored via
+      // admin SDK which bypasses these rules.
+      // TODO(C1): onUserRoleChange should ideally skip stamping claims when
+      // status is 'pending' so a pending user with a requested-but-unapproved
+      // higher role doesn't get the privileged claim before approval. Not
+      // blocking D3 because pending users with role=Staff (the only allowed
+      // create value) get a Staff claim which matches their pending state.
       match /users/{userId} {
         // Self-write limited to safe operational fields. status may only be set to 'off_clock'.
         allow write: if isAuthed() && request.auth.uid == userId &&
@@ -55,8 +63,13 @@ service cloud.firestore {
           (resource.data.role != 'Owner' || request.auth.uid == userId);
 
         allow read: if hasRole(barId);
-        // New user creating own pending/active record at join time.
-        allow create: if isAuthed() && request.auth.uid == userId;
+        // Self-create on join. Role must be 'Staff' — higher roles only granted via
+        // Manager+ update (post-join) or Cloud Function (invite consumption).
+        // status may be 'active' (open policy) or 'pending' (approval policy).
+        allow create: if isAuthed() && request.auth.uid == userId &&
+          request.resource.data.role == 'Staff' &&
+          (request.resource.data.status == 'active' ||
+           request.resource.data.status == 'pending');
         allow delete: if isManagerPlus(barId) && resource.data.role != 'Owner';
       }
 

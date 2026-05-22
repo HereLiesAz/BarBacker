@@ -1,6 +1,6 @@
 import { describe, it, beforeAll, beforeEach, afterAll } from "vitest";
 import { assertSucceeds, assertFails } from "@firebase/rules-unit-testing";
-import { doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { getTestEnv, authedAs } from "./helpers";
 
 describe("user role rules (owner immunity matrix)", () => {
@@ -113,5 +113,72 @@ describe("user role rules (owner immunity matrix)", () => {
   it("Manager cannot self-promote (via own doc)", async () => {
     const db = authedAs(env, "manager_alice", { bars: { bar_A: "Manager" } });
     await assertFails(updateDoc(doc(db, "bars/bar_A/users/manager_alice"), { role: "Owner" }));
+  });
+
+  // Create path
+  it("Staff cannot self-mint as Owner via create", async () => {
+    const db = authedAs(env, "new_user_x", { bars: {} });
+    await assertFails(setDoc(doc(db, "bars/bar_A/users/new_user_x"), {
+      role: "Owner",
+      status: "active",
+    }));
+  });
+
+  it("Staff cannot self-mint as Manager via create", async () => {
+    const db = authedAs(env, "new_user_y", { bars: {} });
+    await assertFails(setDoc(doc(db, "bars/bar_A/users/new_user_y"), {
+      role: "Manager",
+      status: "active",
+    }));
+  });
+
+  it("New joiner can self-create with role:Staff status:active (open policy)", async () => {
+    const db = authedAs(env, "new_user_z", { bars: {} });
+    await assertSucceeds(setDoc(doc(db, "bars/bar_A/users/new_user_z"), {
+      role: "Staff",
+      status: "active",
+    }));
+  });
+
+  it("New joiner can self-create with role:Staff status:pending (approval policy)", async () => {
+    const db = authedAs(env, "new_user_w", { bars: {} });
+    await assertSucceeds(setDoc(doc(db, "bars/bar_A/users/new_user_w"), {
+      role: "Staff",
+      status: "pending",
+    }));
+  });
+
+  it("Cannot create user doc at someone else's uid", async () => {
+    const db = authedAs(env, "attacker", { bars: {} });
+    await assertFails(setDoc(doc(db, "bars/bar_A/users/staff_bob"), {
+      role: "Staff",
+      status: "active",
+    }));
+  });
+
+  // Delete (kick) path
+  it("Manager can kick Staff", async () => {
+    const db = authedAs(env, "manager_alice", { bars: { bar_A: "Manager" } });
+    await assertSucceeds(deleteDoc(doc(db, "bars/bar_A/users/staff_bob")));
+  });
+
+  it("Manager can kick Manager", async () => {
+    const db = authedAs(env, "manager_alice", { bars: { bar_A: "Manager" } });
+    await assertSucceeds(deleteDoc(doc(db, "bars/bar_A/users/manager_dave")));
+  });
+
+  it("Manager cannot kick Owner", async () => {
+    const db = authedAs(env, "manager_alice", { bars: { bar_A: "Manager" } });
+    await assertFails(deleteDoc(doc(db, "bars/bar_A/users/owner_eve")));
+  });
+
+  it("Owner can kick Manager", async () => {
+    const db = authedAs(env, "owner_eve", { bars: { bar_A: "Owner" } });
+    await assertSucceeds(deleteDoc(doc(db, "bars/bar_A/users/manager_alice")));
+  });
+
+  it("Staff cannot kick anyone", async () => {
+    const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
+    await assertFails(deleteDoc(doc(db, "bars/bar_A/users/staff_carol")));
   });
 });

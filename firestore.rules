@@ -3,92 +3,177 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAuthenticated() {
-      return request.auth != null;
-    }
+    function isAuthed() { return request.auth != null; }
 
-    // Admin claim. Set via `scripts/set-admin-claim.js`. Admins bypass
-    // membership checks for moderation and cross-bar operations.
+    // Admin claim. Set via `scripts/set-admin-claim.js`. Admins
+    // bypass per-bar role checks for moderation.
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.admin == true;
+      return isAuthed() && request.auth.token.admin == true;
     }
 
-    // A user is a "member" of a bar if they have a profile document in
-    // that bar's users subcollection. Membership is established by the
-    // join flow in App.tsx (confirmRole writes to bars/{barId}/users/{uid}).
-    // Admins are treated as members of every bar.
-    function isMember(barId) {
-      return isAdmin() || (isAuthenticated()
-        && exists(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)));
+    // Per-bar role claim. Stamped on the user's ID token by the
+    // onUserRoleChange Cloud Function. Returns the user's role
+    // ('Staff' | 'Manager' | 'Owner') for the given bar, or '' if
+    // they have none. The `bars` map is keyed by barId.
+    function roleIn(barId) {
+      return isAuthed() && 'bars' in request.auth.token
+        ? request.auth.token.bars.get(barId, '')
+        : '';
     }
 
-    // Global per-user document — self only. Holds joinedBars and other
-    // account-level data.
+    function hasRole(barId) { return isAdmin() || roleIn(barId) != ''; }
+    function isManagerPlus(barId) {
+      return isAdmin() || roleIn(barId) in ['Manager', 'Owner'];
+    }
+    function isOwner(barId) {
+      return isAdmin() || roleIn(barId) == 'Owner';
+    }
+
+    // Global /users/{userId} — self-only.
     match /users/{userId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      allow read, write: if isAuthed() && request.auth.uid == userId;
     }
 
     // Bar documents.
     match /bars/{barId} {
       // Bars are discoverable by any signed-in user (search + join).
-      allow read: if isAuthenticated();
-      // Anyone signed in can claim a new bar (creates a verified or
-      // temporary bar via BarSearch).
-      allow create: if isAuthenticated();
-      // Only members can mutate the bar's settings (name, buttons,
-      // inventory, hiddenButtonIds, etc.).
-      allow update, delete: if isMember(barId);
+      allow read: if isAuthed();
+      // Anyone signed in can claim a new bar.
+      allow create: if isAuthed();
+      // Routine updates by Manager+.
+      allow update: if isManagerPlus(barId);
+      // Only Owners can delete.
+      allow delete: if isOwner(barId);
 
-      // Per-user profile within a bar — only the owning user can write
-      // their own doc.
+      // Per-bar user profile. Self-write is limited to operational
+      // fields so an attacker who controls a user's session can't
+      // self-promote by writing `role: 'Owner'`. Promotions go
+      // through the Manager update branch below, and the role claim
+      // is then stamped by the onUserRoleChange Cloud Function so
+      // these rules see it on the next request.
       match /users/{userId} {
-        allow read: if isAuthenticated()
-          && (request.auth.uid == userId || resource.data.status in ['active', 'pending']);
-        allow write: if isAuthenticated() && request.auth.uid == userId;
+        allow read: if hasRole(barId);
+
+        // Self-create on join. Role must be 'Staff' — higher roles
+        // only come from Manager/Owner promotion (post-join) or a
+        // Cloud Function (invite consumption). Status may be
+        // 'active' (open policy) or 'pending' (approval policy).
+        allow create: if isAuthed() && request.auth.uid == userId &&
+          request.resource.data.role == 'Staff' &&
+          (request.resource.data.status == 'active' ||
+           request.resource.data.status == 'pending');
+
+        // Self-write limited to safe operational fields. `status`
+        // may only be set to 'off_clock' (clocking out). The
+        // lastNoticeAt cooldown stamp is included so saveNotice's
+        // batched write succeeds.
+        allow write: if isAuthed() && request.auth.uid == userId &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName', 'lastSeen', 'notificationPreferences',
+                      'ntfyTopic', 'email', 'status', 'lastNoticeAt']) &&
+          (!('status' in request.resource.data.diff(resource.data).affectedKeys()) ||
+           request.resource.data.status == 'off_clock');
+
+        // Managers can flip pending → active, set role for
+        // non-Owners, or kick non-Owners. They cannot promote to
+        // Owner, can't change their own role, can't touch existing
+        // Owners.
+        allow update: if isManagerPlus(barId) &&
+          resource.data.role != 'Owner' &&
+          request.resource.data.role != 'Owner' &&
+          request.auth.uid != userId;
+
+        // Owners can do anything to non-Owners and to themselves
+        // (self-relinquish only).
+        allow update: if isOwner(barId) &&
+          (resource.data.role != 'Owner' || request.auth.uid == userId);
+
+        // Self-delete (Leave Bar) is always allowed; Manager+ can
+        // delete any non-Owner.
+        allow delete: if isAuthed() && (
+          request.auth.uid == userId
+          || (isManagerPlus(barId) && resource.data.role != 'Owner')
+        );
       }
 
-      // FCM tokens — strictly self. Reads are server-side via the
-      // notification dispatcher (admin SDK bypasses rules); clients
-      // should never need to read another user's token.
+      // FCM tokens — strictly self.
       match /tokens/{userId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+        allow read, write: if isAuthed() && request.auth.uid == userId;
       }
 
-      // Notices (bulletin board) — readable by bar members; create
-      // must set authorId to the writer; any member may delete
-      // (matches the current marquee UX). Posts are rate-limited via
-      // the lastNoticeAt field on the writer's per-bar user doc:
-      // saveNotice writes a batch that creates the notice AND bumps
-      // lastNoticeAt = serverTimestamp(), so the rule below blocks
-      // bursts faster than once every 5s. Admins bypass via
-      // isMember/isAdmin and the default-when-missing read.
+      // Notices (bulletin board). Members read/write. Posts are
+      // rate-limited via lastNoticeAt on the writer's per-bar user
+      // doc — saveNotice writes a batch that creates the notice
+      // AND bumps lastNoticeAt = serverTimestamp(), so this rule
+      // blocks bursts faster than once every 5 seconds. Admins
+      // bypass via isAdmin.
       match /notices/{noticeId} {
-        allow read: if isMember(barId);
-        allow create: if isMember(barId)
+        allow read: if hasRole(barId);
+        allow create: if hasRole(barId)
           && request.resource.data.authorId == request.auth.uid
           && (
             isAdmin()
-            || request.time > get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)).data.get('lastNoticeAt', timestamp.value(0))
-              + duration.value(5, 's')
+            || request.time > get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid))
+                                .data.get('lastNoticeAt', timestamp.value(0))
+                              + duration.value(5, 's')
           );
-        allow update: if isMember(barId)
+        allow update: if hasRole(barId)
           && resource.data.authorId == request.auth.uid;
-        allow delete: if isMember(barId);
+        allow delete: if hasRole(barId);
+      }
+
+      // 86'd list. Public entries readable by anyone with a role;
+      // private entries (gated by premium subscription) readable
+      // only by Manager+. Only Manager+ can create/delete.
+      match /eightySixed/{entryId} {
+        allow read: if (resource.data.visibility == 'public' && hasRole(barId))
+                       || isManagerPlus(barId);
+        // Private entries are gated by the bar's premium
+        // subscription so non-paying bars can't store private
+        // moderator-only notes about patrons. The UI also hides the
+        // "private" toggle when isPremium is false, but the rules
+        // are the authority. Admins (isAdmin) bypass via isManagerPlus.
+        allow create: if isManagerPlus(barId)
+          && (request.resource.data.visibility == 'public'
+              || (request.resource.data.visibility == 'private'
+                  && (isAdmin()
+                      || get(/databases/$(database)/documents/bars/$(barId))
+                         .data.get('subscription', 'free') == 'premium')));
+        allow update: if false;
+        allow delete: if isManagerPlus(barId);
+      }
+
+      // Invites. Manager+ can read all; invitee can read their own.
+      // Consumption (flipping `consumed`) is the only update the
+      // invitee can do client-side.
+      match /invites/{inviteId} {
+        allow read: if isManagerPlus(barId) ||
+                       (isAuthed() && resource.data.email == request.auth.token.email);
+        allow create: if isManagerPlus(barId);
+        allow update: if isAuthed() && resource.data.email == request.auth.token.email &&
+                        request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['consumed', 'consumedBy', 'consumedAt']);
+        allow delete: if isManagerPlus(barId);
+      }
+
+      // Ownership claims — writes flow through Cloud Functions only.
+      match /ownershipClaims/{claimId} {
+        allow read: if isManagerPlus(barId) ||
+                       (isAuthed() && resource.data.claimantId == request.auth.uid);
+        allow write: if false;
       }
     }
 
     // Requests — top-level collection, scoped by barId field.
     match /requests/{requestId} {
-      allow read: if isAuthenticated() && isMember(resource.data.barId);
-      allow create: if isAuthenticated()
-        && request.resource.data.requesterId == request.auth.uid
-        && isMember(request.resource.data.barId);
-      // Any member can claim/update a request in their bar.
-      allow update: if isAuthenticated() && isMember(resource.data.barId);
-      // Requester can cancel; any member can also clean up.
-      allow delete: if isAuthenticated() && (
+      allow read: if isAuthed() && hasRole(resource.data.barId);
+      allow create: if isAuthed()
+        && hasRole(request.resource.data.barId)
+        && request.resource.data.requesterId == request.auth.uid;
+      allow update: if isAuthed() && hasRole(resource.data.barId);
+      allow delete: if isAuthed() && (
         resource.data.requesterId == request.auth.uid
-        || isMember(resource.data.barId)
+        || isManagerPlus(resource.data.barId)
       );
     }
   }

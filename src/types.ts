@@ -48,6 +48,14 @@ export interface Bar {
   buttonUsage?: Record<string, number>;
   // Optional: Custom sort orders for button lists (Context ID -> Array of Button IDs).
   customOrders?: Record<string, string[]>;
+  // Optional: Subscription tier for the bar (gates premium features
+  // like custom theme and the private 86'd list).
+  subscription?: 'free' | 'premium';
+  // Join policy for new users. 'open' = auto-active. 'approval' =
+  // pending until a Manager approves.
+  joinPolicy?: 'open' | 'approval';
+  // Optional: Custom branding for premium bars.
+  theme?: BarTheme;
 }
 
 // Define the data model for a 'Request' document in Firestore.
@@ -111,7 +119,7 @@ export interface BarUser {
   // Optional: The user's role (e.g., 'Bartender', 'Barback').
   role?: string;
   // Optional: The user's current status.
-  status?: 'active' | 'off_clock' | 'pending';
+  status?: 'active' | 'off_clock' | 'pending' | 'rejected';
   // Optional: The timestamp of the user's last activity.
   lastSeen?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
   // Optional: The user's email address.
@@ -120,4 +128,71 @@ export interface BarUser {
   notificationPreferences?: string[];
   // Optional: The ntfy topic ID for iOS notifications.
   ntfyTopic?: string;
+  // Optional: Server timestamp of the user's most recent notice
+  // post. Used by firestore.rules to enforce a 5s cooldown between
+  // notice creates. Bumped atomically by saveNotice (batched write).
+  lastNoticeAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}
+
+// Define the data model for a banned-patron entry (86'd list).
+export interface EightySixEntry {
+  // The unique ID of the entry (matches document ID).
+  id: string;
+  // The name of the banned patron.
+  patronName: string;
+  // The UID of the staff member who submitted this entry.
+  submittedBy: string;
+  // The display name of the submitter (snapshot at creation time).
+  submitterName: string;
+  // Optional: The reason for banning (only on private entries).
+  reason?: string;
+  // Visibility level: 'public' is visible to all staff with a role,
+  // 'private' is Owner/Manager only and gated by the bar's premium
+  // subscription.
+  visibility: 'public' | 'private';
+  // The timestamp when the entry was created.
+  timestamp: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}
+
+// Define the structure for custom bar branding/theming. Applied via
+// useBarTheme on premium bars only.
+export interface BarTheme {
+  // Primary brand color (hex).
+  primaryColor: string;
+  // Accent color (hex).
+  accentColor: string;
+  // Optional: URL to the bar's logo in Firebase Storage.
+  logoUrl?: string;
+  // Optional: Font family from a curated list.
+  fontFamily?: string;
+}
+
+// Define an invite for a specific email to join a bar at a specific
+// role. Consumed via Cloud Function; client-side reads scoped to
+// Managers+ or the invited address.
+export interface BarInvite {
+  id: string;
+  email: string;            // normalized lowercase
+  role: 'Staff' | 'Manager' | 'Owner';
+  createdBy: string;        // uid
+  createdByName: string;
+  createdAt: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  consumed: boolean;
+  consumedBy?: string;
+  consumedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}
+
+// A claim filed by a user requesting Ownership of a bar (e.g. the
+// real-world owner reclaiming a temporarily-created entry). Writes
+// only go through Cloud Functions.
+export interface OwnershipClaim {
+  id: string;
+  barId: string;
+  claimantId: string;
+  claimantName: string;
+  // Free-form justification supplied by the claimant.
+  justification?: string;
+  // Lifecycle status.
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }

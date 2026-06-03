@@ -22,6 +22,7 @@ import {
   serverTimestamp,
   setDoc,
   getDoc,
+  addDoc,
   deleteDoc,
   arrayUnion,
   arrayRemove,
@@ -65,15 +66,18 @@ import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
 
 // Import Types and Constants.
-import { Bar, ButtonConfig, Request, Notice, BarUser } from './types';
+import { Bar, BarTheme, ButtonConfig, Request, Notice, BarUser, EightySixEntry } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
+import { useBarTheme } from './hooks/useBarTheme';
 // Import UI Components.
 import BarSearch from './components/BarSearch';
 import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
 import BarManager from './components/BarManager';
+import EightySixDialog from './components/EightySixDialog';
+import ThemeEditor from './components/ThemeEditor';
 import InputDialog from './components/InputDialog';
 import { WhoIsOnDialog } from './components/WhoIsOnDialog';
 import { SortableButton } from './components/SortableButton';
@@ -300,8 +304,26 @@ function App() {
     }
   });
 
-  // Admin / god-mode gate.
+  // Admin / god-mode gate (custom claim on the user's ID token).
   const isGodMode = useGodMode(user);
+
+  // Bar-level subscription tier + custom theme. Both populated from
+  // the bar listener below.
+  const [barSubscription, setBarSubscription] = useState<'free' | 'premium'>('free');
+  const [barTheme, setBarTheme] = useState<BarTheme | undefined>(undefined);
+
+  // Premium gating. Admins (god mode) always count as premium for
+  // moderation purposes; otherwise the bar must be on the premium
+  // tier.
+  const isPremium = isGodMode || barSubscription === 'premium';
+
+  // Apply the custom bar theme to the document root when premium.
+  useBarTheme(barTheme, isPremium);
+
+  // 86'd list state and dialog visibility.
+  const [eightySixEntries, setEightySixEntries] = useState<EightySixEntry[]>([]);
+  const [showEightySixDialog, setShowEightySixDialog] = useState(false);
+  const [showThemeEditor, setShowThemeEditor] = useState(false);
 
   // Joined bars + their display names + the account-level ntfy topic
   // — all driven by the global users/{uid} document.
@@ -374,6 +396,8 @@ function App() {
         if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
         if (data.buttonUsage) setButtonUsage(data.buttonUsage);
         if (data.customOrders) setCustomOrders(data.customOrders);
+        setBarSubscription(data.subscription || 'free');
+        setBarTheme(data.theme);
       }
     });
 
@@ -432,6 +456,24 @@ function App() {
 
     return () => { unsubReq(); unsubNotices(); };
   }, [user, barId, windowEpoch]);
+
+  // 86'd list listener. Public entries are visible to anyone with a
+  // role; private entries (gated by premium subscription) are only
+  // visible to Owner/Manager. Switching the query shape based on the
+  // caller's permission is what keeps a tighter rule on the read
+  // side and avoids the client even attempting a private read it
+  // can't decode.
+  useEffect(() => {
+    if (!barId) return;
+    const canSeePrivate = isPremium && (userRole === 'Owner' || userRole === 'Manager');
+    const q = canSeePrivate
+      ? query(collection(db, `bars/${barId}/eightySixed`), orderBy('timestamp', 'desc'), limit(200))
+      : query(collection(db, `bars/${barId}/eightySixed`), where('visibility', '==', 'public'), orderBy('timestamp', 'desc'), limit(200));
+    const unsub = onSnapshot(q, (s) => {
+      setEightySixEntries(s.docs.map(d => ({ id: d.id, ...d.data() } as EightySixEntry)));
+    });
+    return () => unsub();
+  }, [barId, isPremium, userRole]);
 
   // Mirror globalNtfyTopic into the per-bar user doc whenever the
   // account-level topic changes. The per-bar user snapshot above also
@@ -564,13 +606,41 @@ function App() {
     setHiddenButtonIds(prev => [...prev, btnId]);
   };
 
-  // Unhide a button (God Mode only).
+  // Unhide a button (premium only).
   const unhideButton = async (btnId: string) => {
     if (!user || !barId) return;
     await updateDoc(doc(db, 'bars', barId), {
         hiddenButtonIds: arrayRemove(btnId)
     });
     setHiddenButtonIds(prev => prev.filter(id => id !== btnId));
+  };
+
+  // Add a person to the 86'd list. Visibility decides whether all
+  // staff with a role can see the entry ('public') or only Manager+
+  // ('private', gated by the premium subscription).
+  const addEightySixEntry = async (patronName: string, reason?: string, visibility: 'public' | 'private' = 'public') => {
+    if (!user || !barId || !patronName.trim()) return;
+    await addDoc(collection(db, `bars/${barId}/eightySixed`), {
+      patronName: patronName.trim(),
+      submittedBy: user.uid,
+      submitterName: displayName,
+      visibility,
+      ...(reason ? { reason } : {}),
+      timestamp: serverTimestamp(),
+    });
+  };
+
+  // Remove an entry from the 86'd list (Manager+ only via rules).
+  const deleteEightySixEntry = async (entryId: string) => {
+    if (!user || !barId) return;
+    await deleteDoc(doc(db, `bars/${barId}/eightySixed`, entryId));
+  };
+
+  // Save the bar's custom theme. Gated to Manager+ via rules; the UI
+  // hides the entry point unless isPremium.
+  const saveBarTheme = async (theme: BarTheme) => {
+    if (!barId) return;
+    await updateDoc(doc(db, 'bars', barId), { theme });
   };
 
   // Notice-board write actions + dialog form state.
@@ -1041,9 +1111,30 @@ function App() {
         allButtons={sortedAllButtons}
         hiddenButtonIds={hiddenButtonIds}
         onHideButton={hideButton}
-        godMode={isGodMode}
+        isPremium={isPremium}
         onUnhideButton={unhideButton}
       />
+
+      <EightySixDialog
+        open={showEightySixDialog}
+        onClose={() => setShowEightySixDialog(false)}
+        entries={eightySixEntries}
+        onAdd={addEightySixEntry}
+        onDelete={deleteEightySixEntry}
+        isPremium={isPremium}
+        userRole={userRole}
+        currentUserId={user?.uid}
+      />
+
+      {isPremium && (
+        <ThemeEditor
+          open={showThemeEditor}
+          onClose={() => setShowThemeEditor(false)}
+          currentTheme={barTheme}
+          onSave={saveBarTheme}
+          barId={barId!}
+        />
+      )}
 
       <WhoIsOnDialog
         open={showWhoIsOn}
@@ -1156,11 +1247,21 @@ function App() {
         {/* Right Side Actions */}
         <div className="flex items-center gap-6 mr-4 flex-wrap justify-end">
            {/* Bar Name (Hidden on small screens) */}
-           <span className="font-bold text-xl text-white tracking-wide hidden sm:block">{barName}</span>
+           <span className="font-bold text-xl text-white tracking-wide hidden sm:flex items-center gap-2">
+             {barTheme?.logoUrl && isPremium && (
+               <img src={barTheme.logoUrl} alt={barName} className="h-8 w-8 rounded-full object-cover" />
+             )}
+             {barName}
+           </span>
 
            {/* Bar Manager Button (Visible on small screens) */}
            <md-text-button onClick={() => setShowBarManager(true)} className="sm:hidden">
-             <span className="font-bold text-lg text-white tracking-wide">{barName}</span>
+             <span className="font-bold text-lg text-white tracking-wide flex items-center gap-2">
+               {barTheme?.logoUrl && isPremium && (
+                 <img src={barTheme.logoUrl} alt={barName} className="h-6 w-6 rounded-full object-cover" />
+               )}
+               {barName}
+             </span>
            </md-text-button>
 
            <div className="flex gap-4 items-center">
@@ -1201,6 +1302,12 @@ function App() {
                             <md-icon slot="start">store</md-icon>
                             <div slot="headline">Manage Bar</div>
                         </md-menu-item>
+                        {isPremium && (userRole === 'Owner' || userRole === 'Manager') && (
+                          <md-menu-item onClick={() => setShowThemeEditor(true)}>
+                              <md-icon slot="start">palette</md-icon>
+                              <div slot="headline">Customize Theme</div>
+                          </md-menu-item>
+                        )}
                         <md-menu-item onClick={handleShare}>
                             <md-icon slot="start">share</md-icon>
                             <div slot="headline">Share</div>
@@ -1208,6 +1315,10 @@ function App() {
                         <md-menu-item onClick={() => setShowWhoIsOn(true)}>
                             <md-icon slot="start">group</md-icon>
                             <div slot="headline">Who's On</div>
+                        </md-menu-item>
+                        <md-menu-item onClick={() => setShowEightySixDialog(true)}>
+                            <md-icon slot="start">block</md-icon>
+                            <div slot="headline">86'd List</div>
                         </md-menu-item>
                         <md-menu-item onClick={() => { setIsAddingNotice(true); setNoticeError(null); }}>
                             <md-icon slot="start">campaign</md-icon>

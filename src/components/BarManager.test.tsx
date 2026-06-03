@@ -70,7 +70,7 @@ describe('BarManager', () => {
     expect(screen.getByText('Hidden Button B')).toBeDefined();
   });
 
-  it('renders restorable buttons when in God Mode', () => {
+  it('renders restorable buttons when premium', () => {
     const onHide = vi.fn();
     const onClose = vi.fn();
     const onUnhide = vi.fn();
@@ -83,13 +83,13 @@ describe('BarManager', () => {
         allButtons={buttons}
         hiddenButtonIds={['2']}
         onHideButton={onHide}
-        godMode={true}
+        isPremium={true}
         onUnhideButton={onUnhide}
       />
     );
 
     // Should show the hidden button in the "Restorable" section
-    expect(screen.getByText('Restorable Buttons (God Mode)')).toBeDefined();
+    expect(screen.getByText('Restorable Buttons (Premium)')).toBeDefined();
     expect(screen.getByText('Hidden Button B')).toBeDefined();
   });
 });

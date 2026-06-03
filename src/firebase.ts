@@ -20,6 +20,8 @@ import {
 // 'getToken' retrieves the FCM registration token for the current device.
 // 'onMessage' allows listening for incoming messages when the app is in the foreground.
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
+// Import Firebase Storage for file uploads (e.g., bar logos).
+import { getStorage } from "firebase/storage";
 
 // Define the Firebase configuration object using environment variables.
 // These variables are injected by Vite at build time.
@@ -53,6 +55,10 @@ export const auth = getAuth(app);
 
 // Initialize and export the Firebase Cloud Messaging service instance.
 export const messaging = getMessaging(app);
+
+// Initialize and export the Firebase Storage service instance for
+// file uploads (bar logo uploads from ThemeEditor).
+export const storage = getStorage(app);
 
 // --- Auth Providers ---
 

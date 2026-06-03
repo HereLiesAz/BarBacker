@@ -8,9 +8,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/test/firestore-rules.test.ts'],
+    include: ['src/test/firestore-rules.test.ts', 'src/test/rules/**/*.test.ts'],
     testTimeout: 30000,
     hookTimeout: 30000,
     reporters: ['verbose'],
+    // Serialize test files. All four test files share the one
+    // Firestore emulator instance started by `firebase emulators:exec`,
+    // and clearFirestore in their beforeEach hooks can stomp on each
+    // other's seeds when run in parallel.
+    fileParallelism: false,
   },
 });

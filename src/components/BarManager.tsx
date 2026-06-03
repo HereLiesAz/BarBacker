@@ -28,15 +28,15 @@ interface BarManagerProps {
   hiddenButtonIds: string[];
   // Callback function to hide a button.
   onHideButton: (id: string) => void;
-  // Boolean indicating if God Mode (paid features) is enabled.
-  godMode?: boolean;
+  // Boolean indicating if the bar has premium features enabled.
+  isPremium?: boolean;
   // Callback function to unhide/restore a button.
   onUnhideButton?: (id: string) => void;
 }
 
 // The BarManager component provides an interface for managers to configure which buttons are visible on the dashboard.
 // Currently, it only supports "hiding" (soft deleting) buttons.
-const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHideButton, godMode, onUnhideButton }: BarManagerProps) => {
+const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHideButton, isPremium, onUnhideButton }: BarManagerProps) => {
   // State to track the ID of the button currently selected for deletion confirmation.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -49,7 +49,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
     return allButtons.filter(b => !hiddenButtonSet.has(b.id));
   }, [allButtons, hiddenButtonSet]);
 
-  // Compute the list of hidden buttons (for God Mode restoration).
+  // Compute the list of hidden buttons (for premium restoration).
   const hiddenButtons = useMemo(() => {
     return allButtons.filter(b => hiddenButtonSet.has(b.id));
   }, [allButtons, hiddenButtonSet]);
@@ -104,10 +104,10 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
                 </md-list>
            </div>
 
-           {/* Hidden Buttons (God Mode Only) */}
-           {godMode && hiddenButtons.length > 0 && (
+           {/* Hidden Buttons (Premium Only) */}
+           {isPremium && hiddenButtons.length > 0 && (
                <div className="mt-4 border border-red-800 rounded overflow-y-auto max-h-[30vh]">
-                   <div className="bg-red-900/20 p-2 text-xs font-bold text-red-400 uppercase">Restorable Buttons (God Mode)</div>
+                   <div className="bg-red-900/20 p-2 text-xs font-bold text-red-400 uppercase">Restorable Buttons (Premium)</div>
                    <md-list>
                        {hiddenButtons.map(btn => (
                            <md-list-item key={btn.id}>

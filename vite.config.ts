@@ -60,6 +60,17 @@ export default defineConfig({
     // node environment + a live emulator process. They are excluded from
     // the default suite and invoked via `npm run test:rules`, which
     // wraps them in `firebase emulators:exec`.
-    exclude: ['**/node_modules/**', '**/dist/**', '**/firestore-rules.test.ts'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      // Rules tests run against the Firestore emulator via the
+      // `test:rules` npm script (vitest.rules.config.ts) and have no
+      // place in the jsdom suite.
+      '**/firestore-rules.test.ts',
+      'src/test/rules/**',
+      // The Cloud Functions package has its own vitest config; the
+      // root suite shouldn't pick it up.
+      'functions/**',
+    ],
   },
 })

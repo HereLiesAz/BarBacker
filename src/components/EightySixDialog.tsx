@@ -46,6 +46,9 @@ const EightySixDialog = ({ open, onClose, entries, onAdd, onDelete, isPremium, u
       setReason('');
       setIsPrivate(false);
       setShowAddForm(false);
+    } catch (err) {
+      console.error('Failed to add 86d entry:', err);
+      alert('Failed to add entry. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -53,14 +56,28 @@ const EightySixDialog = ({ open, onClose, entries, onAdd, onDelete, isPremium, u
 
   const handleDelete = async () => {
     if (!confirmDeleteId) return;
-    await onDelete(confirmDeleteId);
-    setConfirmDeleteId(null);
+    try {
+      await onDelete(confirmDeleteId);
+    } catch (err) {
+      console.error('Failed to delete 86d entry:', err);
+      alert('Failed to delete entry. Please try again.');
+    } finally {
+      setConfirmDeleteId(null);
+    }
   };
 
-  const formatDate = (ts: any) => {
-    if (!ts) return '';
-    const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  // Robust against Firestore FieldValue (which has neither toDate
+  // nor a numeric seconds) seen during optimistic local writes.
+  const formatDate = (ts: { toDate?: () => Date; seconds?: number } | unknown) => {
+    if (!ts || typeof ts !== 'object') return '';
+    const t = ts as { toDate?: () => Date; seconds?: number };
+    if (typeof t.toDate === 'function') {
+      return t.toDate().toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+    if (typeof t.seconds === 'number') {
+      return new Date(t.seconds * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+    return '';
   };
 
   return (

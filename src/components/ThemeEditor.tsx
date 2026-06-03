@@ -55,6 +55,9 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
       alert('Logo must be under 2MB.');
+      // Clear the input so a same-file retry after fixing the size
+      // still fires onChange.
+      e.target.value = '';
       return;
     }
     setUploading(true);
@@ -69,6 +72,9 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
       alert('Failed to upload logo.');
     } finally {
       setUploading(false);
+      // Reset the file input so re-uploading the same file after a
+      // delete or a failed upload re-fires onChange.
+      e.target.value = '';
     }
   };
 
@@ -82,6 +88,9 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
         ...(logoUrl ? { logoUrl } : {}),
       });
       onClose();
+    } catch (err) {
+      console.error('Failed to save theme:', err);
+      alert('Failed to save theme. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -91,14 +100,15 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
     if (!confirm('Reset theme to default? This removes all custom branding.')) return;
     setSaving(true);
     try {
-      // Save an empty-ish theme to clear it. The updateDoc in App.tsx will overwrite.
-      // Actually we need to delete the theme field. For now, save defaults.
       await onSave({ primaryColor: '#FFFFFF', accentColor: '#1E1E1E' });
       setPrimaryColor('#FFFFFF');
       setAccentColor('#1E1E1E');
       setFontFamily('system-ui, sans-serif');
       setLogoUrl(undefined);
       onClose();
+    } catch (err) {
+      console.error('Failed to reset theme:', err);
+      alert('Failed to reset theme. Please try again.');
     } finally {
       setSaving(false);
     }

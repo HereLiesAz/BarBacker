@@ -88,7 +88,12 @@ service cloud.firestore {
         allow update: if isOwner(barId) &&
           (resource.data.role != 'Owner' || request.auth.uid == userId);
 
-        allow delete: if isManagerPlus(barId) && resource.data.role != 'Owner';
+        // Self-delete (Leave Bar) is always allowed; Manager+ can
+        // delete any non-Owner.
+        allow delete: if isAuthed() && (
+          request.auth.uid == userId
+          || (isManagerPlus(barId) && resource.data.role != 'Owner')
+        );
       }
 
       // FCM tokens — strictly self.
@@ -123,9 +128,17 @@ service cloud.firestore {
       match /eightySixed/{entryId} {
         allow read: if (resource.data.visibility == 'public' && hasRole(barId))
                        || isManagerPlus(barId);
+        // Private entries are gated by the bar's premium
+        // subscription so non-paying bars can't store private
+        // moderator-only notes about patrons. The UI also hides the
+        // "private" toggle when isPremium is false, but the rules
+        // are the authority. Admins (isAdmin) bypass via isManagerPlus.
         allow create: if isManagerPlus(barId)
           && (request.resource.data.visibility == 'public'
-              || (request.resource.data.visibility == 'private' && hasRole(barId)));
+              || (request.resource.data.visibility == 'private'
+                  && (isAdmin()
+                      || get(/databases/$(database)/documents/bars/$(barId))
+                         .data.get('subscription', 'free') == 'premium')));
         allow update: if false;
         allow delete: if isManagerPlus(barId);
       }

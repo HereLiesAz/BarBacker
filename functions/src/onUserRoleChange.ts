@@ -40,14 +40,23 @@ export const onUserRoleChange = onDocumentWritten(
     }));
     const { bars } = computeClaimsForUser(docs);
     let existingClaims: Record<string, unknown> = {};
+    let userExists = true;
     try {
       const userRecord = await admin.auth().getUser(userId);
       existingClaims = userRecord.customClaims ?? {};
     } catch (err: any) {
-      // If the auth user doesn't exist yet, treat existing claims as empty.
-      if (err?.code !== "auth/user-not-found") throw err;
+      if (err?.code === "auth/user-not-found") {
+        // User deleted from Auth (or race during user creation).
+        // Skip the claim write entirely — setCustomUserClaims would
+        // also throw auth/user-not-found and crash the trigger.
+        userExists = false;
+      } else {
+        throw err;
+      }
     }
-    const merged = { ...existingClaims, bars };
-    await admin.auth().setCustomUserClaims(userId, merged);
+    if (userExists) {
+      const merged = { ...existingClaims, bars };
+      await admin.auth().setCustomUserClaims(userId, merged);
+    }
   }
 );

@@ -150,3 +150,6 @@ next-env.d.ts
 
 # generated service worker
 public/firebase-messaging-sw.js
+
+# Local Claude Code settings
+.claude/

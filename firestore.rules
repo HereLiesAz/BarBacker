@@ -58,6 +58,15 @@ service cloud.firestore {
       // since only one side would be non-null.
       allow update: if isManagerPlus(barId) &&
         request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null);
+      // Any bar member (not just Manager+) may bump buttonUsage —
+      // it's just per-button tap counts driving sort order, not
+      // privileged config, and restricting it to Manager+ meant every
+      // non-Manager's usage flush (useUsageBatching.ts) was silently
+      // denied, so the "most used" sort only ever reflected whichever
+      // Manager happened to be clocked in. Scoped via affectedKeys()
+      // so this can't be used to slip other fields through.
+      allow update: if hasRole(barId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['buttonUsage']);
       // Only Owners can delete.
       allow delete: if isOwner(barId);
 

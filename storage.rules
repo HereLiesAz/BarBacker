@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Governs Firebase Storage. Previously there was no storage.rules
+// file (and no "storage" block in firebase.json), so bar logo
+// uploads (ThemeEditor.tsx -> bars/{barId}/logo.*) were governed
+// entirely by whatever rules happened to be set in the Firebase
+// console rather than anything checked into this repo.
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Bar logo. Logos are public branding, not sensitive — readable
+    // by any signed-in user. Writes are restricted to Manager+ of
+    // that specific bar, checked against the same `bars` custom claim
+    // firestore.rules uses (stamped by the onUserRoleChange Cloud
+    // Function), plus the `admin` claim for moderation. Size/type
+    // limits mirror the client-side check in ThemeEditor.tsx so a
+    // client that skips the UI validation can't bypass it.
+    match /bars/{barId}/logo.{ext} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        (request.auth.token.admin == true ||
+         request.auth.token.get('bars', {}).get(barId, '') in ['Manager', 'Owner']) &&
+        request.resource.size < 2 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+    }
+  }
+}

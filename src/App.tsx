@@ -205,8 +205,21 @@ function App() {
   const [editNameValue, setEditNameValue] = useState('');
   const [editNameError, setEditNameError] = useState<string | null>(null);
 
-  // List of request IDs the user has locally ignored/muted.
-  const [ignoredIds, setIgnoredIds] = useState<string[]>([]);
+  // List of request IDs the user has locally ignored/muted. Persisted
+  // to localStorage — previously plain useState, so a reload (or the
+  // app being killed and reopened, routine on mobile) brought back
+  // every previously-dismissed nag.
+  const [ignoredIds, setIgnoredIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('ignoredRequestIds');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem('ignoredRequestIds', JSON.stringify(ignoredIds));
+  }, [ignoredIds]);
 
   // Notice Board State.
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -301,10 +314,19 @@ function App() {
           // Only show pending requests.
           if (r.status !== 'pending') return false;
 
+          // Always show the requester's own pending requests, regardless
+          // of their notification preferences — otherwise a bartender's
+          // own SECURITY/MANAGER tap (not in their default prefs) never
+          // appears in their own footer: no confirmation it sent, no way
+          // to cancel a mis-tap.
+          if (user && r.requesterId === user.uid) return true;
+
           const btnId = getButtonIdForLabel(r.label);
 
-          // Special Logic: ALWAYS show BREAK requests.
-          if (btnId === 'break' || r.label.includes('BREAK')) {
+          // Special Logic: ALWAYS show BREAK requests. Exact match only
+          // (not a substring check) — free text containing "BREAK" (e.g.
+          // "BREAKAGE AT WELL 3") shouldn't bypass everyone's preferences.
+          if (btnId === 'break') {
              return true;
           }
 
@@ -322,7 +344,7 @@ function App() {
           }
           return aIgnored ? 1 : -1;
       });
-  }, [requests, getButtonIdForLabel, notificationPreferences, ignoredIds]);
+  }, [requests, getButtonIdForLabel, notificationPreferences, ignoredIds, user]);
 
   // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);
@@ -569,7 +591,7 @@ function App() {
 
 
   // Auto-submit an "(Ask Me)" request if a sub-menu sits open for 60s.
-  useInactivityAutoSubmit(navStack, (label) => submitRequest(label), () => setNavStack([]));
+  useInactivityAutoSubmit(navStack, (label) => submitRequestSafe(label), () => setNavStack([]));
 
   // --- Actions ---
 
@@ -634,7 +656,7 @@ function App() {
     // If exists, request ice for it.
     if (wells.includes(wellName)) {
         setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
-        submitRequest(`ICE: ${wellName}`);
+        submitRequestSafe(`ICE: ${wellName}`);
         setNavStack([]);
         return;
     }
@@ -649,7 +671,7 @@ function App() {
     setInputDialog(prev => ({ ...prev, open: false, searchTerm: '' }));
 
     // Submit request.
-    submitRequest(`ICE: ${wellName}`);
+    submitRequestSafe(`ICE: ${wellName}`);
     setNavStack([]);
   };
 
@@ -823,7 +845,7 @@ function App() {
     } else {
       // Leaf node: Submit Request.
       // Construct label from stack + current button.
-      submitRequest([...navStack, btn].map(b => b.label).join(': '));
+      submitRequestSafe([...navStack, btn].map(b => b.label).join(': '));
       setNavStack([]);
     }
   };
@@ -896,8 +918,19 @@ function App() {
     setShowOffClockDialog(false);
   };
 
-  // Switch to another bar without clocking out (unless inactive).
+  // Switch to another bar. Despite the old name/comment, this DOES
+  // clock the user out of the bar being left — otherwise they kept
+  // getting paged (in-app and via push) from a bar they're no longer
+  // standing in. Clocking back in later is a one-tap self-write (see
+  // the auto-clock-in effect above), so this doesn't cost them
+  // anything beyond a page they wouldn't have wanted anyway.
   const handleSwitchBar = async () => {
+    if (user && barId) {
+      const oldBarId = barId;
+      await updateDoc(doc(db, `bars/${oldBarId}/users`, user.uid), { status: 'off_clock' })
+        .catch((e) => console.error('Failed to clock out of previous bar', e));
+      await deleteDoc(doc(db, `bars/${oldBarId}/tokens`, user.uid)).catch(() => {});
+    }
     setBarId(null);
     setJustCreatedBar(false);
     localStorage.removeItem('barId');
@@ -932,6 +965,26 @@ function App() {
     user, barId, displayName, userRole, allUsers, getButtonIdForLabel,
   });
 
+  // True while a request submission is in flight. Guards against a
+  // double-tap or fat-finger creating two identical requests (none of
+  // the submit call sites previously had any disabled/pending state),
+  // and lets us surface a real failure instead of the previous
+  // fire-and-forget submitRequest(...) with no await/catch — a failed
+  // or offline-queued send used to look identical to a successful one.
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const submitRequestSafe = useCallback(async (label: string) => {
+    if (isSubmittingRequest) return;
+    setIsSubmittingRequest(true);
+    try {
+      await submitRequest(label);
+    } catch (e) {
+      console.error('Failed to submit request', e);
+      alert('Failed to send request. Please try again.');
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  }, [isSubmittingRequest, submitRequest]);
+
   // Save new notification settings. Write to Firestore first, then
   // update local state on success — the previous order set local
   // state optimistically before awaiting the write, so a sign-out or
@@ -964,6 +1017,11 @@ function App() {
     if (!user || !barId) return;
     if (!confirm('Are you sure you want to leave this bar? You will need to join again.')) return;
     await deleteDoc(doc(db, `bars/${barId}/users`, user.uid));
+    // Also drop the FCM token — otherwise it's orphaned (the rules
+    // restrict bars/{barId}/tokens/{uid} to its owner, and this user
+    // never visits this bar's docs again to clean it up) and nag-bot
+    // keeps paging a device that's no longer staff here, forever.
+    await deleteDoc(doc(db, `bars/${barId}/tokens`, user.uid)).catch(() => {});
     // Remove from joinedBars list.
     await updateDoc(doc(db, 'users', user.uid), {
         joinedBars: arrayRemove(barId)
@@ -1194,6 +1252,15 @@ function App() {
   // Sorting for main screen.
   const sortedAllButtons = sortButtons(buttons, 'main');
   const mainScreenButtons = sortedAllButtons.filter(btn => !hiddenButtonIds.includes(btn.id));
+  // CUSTOM is a permanent, non-configurable tile appended to every
+  // bar's grid — it must be part of the SAME array passed to
+  // SortableContext's `items` and to handleDragOver's `items` param
+  // as the one actually rendered, or dnd-kit's active/over index
+  // lookups go out of sync with what's on screen: dragging CUSTOM
+  // itself resolves to index -1 and silently reorders a different
+  // (the last "real") button instead.
+  const customRequestButton: ButtonConfig = { id: 'custom_req_btn', label: 'CUSTOM', icon: 'add', isCustom: true };
+  const mainScreenButtonsWithCustom = [...mainScreenButtons, customRequestButton];
 
   // Check for pending users (for Managers).
   const pendingUsers = allUsers.filter(u => u.status === 'pending');
@@ -1269,23 +1336,29 @@ function App() {
 
       <InputDialog
         open={inputDialog.open}
-        mode={inputDialog.type as 'brand' | 'type' | 'well'}
+        mode={inputDialog.type}
         searchTerm={inputDialog.searchTerm}
         onSearchChange={(val) => setInputDialog(prev => ({ ...prev, searchTerm: val }))}
         onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}
         onSelect={(val) => {
-            // Deduplication Check.
-            const existingLabels = currentButtonsSource.map(b => b.label.toLowerCase());
-            if (existingLabels.includes(val.toLowerCase())) {
-                alert('This button already exists!');
-                return;
+            // Deduplication check — only meaningful for brand/type/well,
+            // which create a new persistent button. 'custom' is free-text
+            // request text, not a button; it should never be blocked just
+            // because the words happen to match an existing button label
+            // (e.g. typing "ice" as a custom note).
+            if (inputDialog.type !== 'custom') {
+                const existingLabels = currentButtonsSource.map(b => b.label.toLowerCase());
+                if (existingLabels.includes(val.toLowerCase())) {
+                    alert('This button already exists!');
+                    return;
+                }
             }
 
             if (inputDialog.type === 'brand') saveBrand(val);
             else if (inputDialog.type === 'type') saveType(val);
             else if (inputDialog.type === 'well') saveWell(val);
             else if (inputDialog.type === 'custom') {
-                submitRequest(val);
+                submitRequestSafe(val);
                 setInputDialog(prev => ({ ...prev, open: false }));
             }
         }}
@@ -1310,7 +1383,7 @@ function App() {
         <div slot="actions">
           <md-text-button onClick={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>Cancel</md-text-button>
           <md-filled-button onClick={() => {
-             submitRequest(`${quantityPicker.context}: ${quantityPicker.currentQty}`);
+             submitRequestSafe(`${quantityPicker.context}: ${quantityPicker.currentQty}`);
              setQuantityPicker(prev => ({ ...prev, open: false }));
              setNavStack([]);
           }}>Send</md-filled-button>
@@ -1594,13 +1667,13 @@ function App() {
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
-        onDragOver={(e) => handleDragOver(e, 'main', mainScreenButtons)}
+        onDragOver={(e) => handleDragOver(e, 'main', mainScreenButtonsWithCustom)}
         onDragEnd={(e) => handleDragEnd(e, 'main')}
       >
-        <SortableContext items={mainScreenButtons} strategy={rectSortingStrategy}>
+        <SortableContext items={mainScreenButtonsWithCustom} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-2 gap-8 p-6">
             {/* Render Standard Buttons + Custom Request Button */}
-            {[...mainScreenButtons, { id: 'custom_req_btn', label: 'CUSTOM', icon: 'add', isCustom: true }].map(btn => {
+            {mainScreenButtonsWithCustom.map(btn => {
               // Highlight pending requests.
               const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
               return (
@@ -1620,7 +1693,7 @@ function App() {
         <DragOverlay>
             {activeId ? (
                 (() => {
-                    const btn = buttons.find(b => b.id === activeId);
+                    const btn = mainScreenButtonsWithCustom.find(b => b.id === activeId);
                     if (!btn) return null;
                     const isPending = activeRequests.some(r => r.label.startsWith(btn.label));
                     return (

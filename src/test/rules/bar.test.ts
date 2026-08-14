@@ -48,6 +48,22 @@ describe("bar rules", () => {
     await assertFails(updateDoc(doc(db, "bars/bar_A"), { wells: ["Well 1"] }));
   });
 
+  it("Staff can bump buttonUsage alone (useUsageBatching)", async () => {
+    // buttonUsage drives sort order, not privileged config — this
+    // must work for every clocked-in member, not just Manager+, or
+    // sort order only ever reflects a Manager's taps.
+    const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
+    await assertSucceeds(updateDoc(doc(db, "bars/bar_A"), { "buttonUsage.ice": 1 }));
+  });
+
+  it("Staff cannot slip other fields through alongside buttonUsage", async () => {
+    const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
+    await assertFails(updateDoc(doc(db, "bars/bar_A"), {
+      "buttonUsage.ice": 1,
+      name: "pwned",
+    }));
+  });
+
   it("Staff cannot escalate role via combined-field self-write", async () => {
     const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
     // Attempt to set status:off_clock AND role:Manager in one update.

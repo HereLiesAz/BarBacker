@@ -111,22 +111,20 @@ service cloud.firestore {
         // may only toggle between 'active' and 'off_clock' — this
         // lets a user clock in and back out on their own without
         // being able to self-approve out of 'pending'/'rejected'.
-        // The lastNoticeAt cooldown stamp is included so saveNotice's
-        // batched write succeeds. ntfyTopic deliberately is NOT
-        // writable here (or readable — see the `read` rule above,
-        // which still exposes this whole doc to any hasRole() peer):
-        // it used to be mirrored onto this doc so client-side fanout
-        // could read every member's topic to compute who to notify,
-        // which is exactly what made it possible for any bar member
-        // to read (and keep, even after being kicked) a colleague's
-        // ntfy topic. Fanout is now server-side (onRequestCreated
-        // Cloud Function, Admin SDK), which reads the topic off the
-        // global users/{uid} doc instead — self-only, see that match
-        // block above.
+        // ntfyTopic deliberately is NOT writable here (or readable —
+        // see the `read` rule above, which still exposes this whole
+        // doc to any hasRole() peer): it used to be mirrored onto this
+        // doc so client-side fanout could read every member's topic to
+        // compute who to notify, which is exactly what made it
+        // possible for any bar member to read (and keep, even after
+        // being kicked) a colleague's ntfy topic. Fanout is now
+        // server-side (onRequestCreated Cloud Function, Admin SDK),
+        // which reads the topic off the global users/{uid} doc instead
+        // — self-only, see that match block above.
         allow write: if isAuthed() && request.auth.uid == userId &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['displayName', 'lastSeen', 'notificationPreferences',
-                      'email', 'status', 'lastNoticeAt', 'jobTitle']) &&
+                      'email', 'status', 'jobTitle']) &&
           (!('status' in request.resource.data.diff(resource.data).affectedKeys()) ||
            request.resource.data.status == 'off_clock' ||
            (request.resource.data.status == 'active' && resource.data.status == 'off_clock'));
@@ -161,30 +159,27 @@ service cloud.firestore {
         allow read, write: if isAuthed() && request.auth.uid == userId;
       }
 
-      // Notices (bulletin board). Members read/write. Posts are
-      // rate-limited via lastNoticeAt on the writer's per-bar user
-      // doc — saveNotice writes a batch that creates the notice AND
-      // bumps lastNoticeAt = serverTimestamp(). Note this cooldown is
-      // client-cooperative: a client that never bumps lastNoticeAt
-      // sees every create request satisfy "more than 5s since epoch"
-      // and isn't actually throttled. Firestore rules can't enforce
-      // that two independent document writes land atomically, so
-      // this blocks bursts from the shipped app but isn't a hard
-      // backstop against a hostile client hitting the API directly.
-      // Admins bypass via isAdmin.
-      match /notices/{noticeId} {
+      // Chat. Replaces the old notices bulletin board (Phase 2 —
+      // see docs/plans/2026-05-21-feature-set-purr-design.md). Any
+      // bar member can post; only Manager+ can pin (pinned messages
+      // are what the dashboard marquee renders — see the `pinned`
+      // fields below). Text is immutable once posted: `update` is
+      // scoped to exactly the pin-related fields, so there's no path
+      // to editing a message's content after the fact.
+      match /chat/{messageId} {
         allow read: if hasRole(barId);
+        // authorName/authorRole are snapshotted from the caller's own
+        // per-bar user doc at write time (not client-asserted) so a
+        // message can't be posted under a spoofed name or role badge.
         allow create: if hasRole(barId)
           && request.resource.data.authorId == request.auth.uid
-          && (
-            isAdmin()
-            || request.time > get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid))
-                                .data.get('lastNoticeAt', timestamp.value(0))
-                              + duration.value(5, 's')
-          );
-        allow update: if hasRole(barId)
-          && resource.data.authorId == request.auth.uid
-          && request.resource.data.authorId == resource.data.authorId;
+          && request.resource.data.authorName ==
+               get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)).data.get('displayName', '')
+          && request.resource.data.authorRole ==
+               get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)).data.get('role', '')
+          && (request.resource.data.pinned == false || isManagerPlus(barId));
+        allow update: if isManagerPlus(barId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinned', 'pinnedBy', 'pinnedAt']);
         allow delete: if hasRole(barId)
           && (resource.data.authorId == request.auth.uid || isManagerPlus(barId));
       }

@@ -34,6 +34,7 @@ vi.mock('firebase/firestore', async () => {
         setDoc: vi.fn(() => Promise.resolve()),
         updateDoc: vi.fn(() => Promise.resolve()),
         deleteDoc: vi.fn(() => Promise.resolve()),
+        deleteField: vi.fn(() => 'mock-delete-field'),
         onSnapshot: vi.fn((query, callback) => {
             // Simulate snapshot with empty docs to prevent errors
             callback({
@@ -45,11 +46,16 @@ vi.mock('firebase/firestore', async () => {
         }),
         query: vi.fn(() => 'mock-query'),
         where: vi.fn((field) => `mock-where-${field}`),
-        orderBy: vi.fn(() => 'mock-order-by'),
+        orderBy: vi.fn((field, dir) => `mock-order-by-${field}-${dir}`),
         limit: vi.fn((n) => `mock-limit-${n}`),
         serverTimestamp: vi.fn(),
     };
 });
+
+vi.mock('firebase/functions', () => ({
+  getFunctions: vi.fn(() => ({})),
+  httpsCallable: vi.fn(() => vi.fn(() => Promise.resolve({ data: {} }))),
+}));
 
 vi.mock('firebase/messaging', () => ({
   getMessaging: vi.fn(),
@@ -60,6 +66,7 @@ vi.mock('firebase/messaging', () => ({
 vi.mock('../firebase', () => ({
   auth: {},
   db: {},
+  functions: {},
   googleProvider: {},
   requestNotificationPermission: vi.fn(() => Promise.resolve('mock-token')),
   onForegroundMessage: vi.fn(() => () => {}),
@@ -77,7 +84,7 @@ class MockAudio {
 }
 global.Audio = MockAudio as any;
 
-describe('Notices Query Optimization', () => {
+describe('Pinned Chat Query Optimization', () => {
 
   beforeEach(() => {
       vi.clearAllMocks();
@@ -90,11 +97,7 @@ describe('Notices Query Optimization', () => {
       vi.useRealTimers();
   });
 
-  it('initial query should have timestamp filter and limit', async () => {
-    // Setup time
-    const fixedNow = new Date('2024-01-10T00:00:00Z');
-    vi.setSystemTime(fixedNow); // Only mock Date, avoid timer issues with waitFor
-
+  it('pinned-messages query filters on pinned==true, orders by pinnedAt desc, and limits', async () => {
     render(
       <MemoryRouter>
         <App />
@@ -105,41 +108,26 @@ describe('Notices Query Optimization', () => {
        expect(firestore.onSnapshot).toHaveBeenCalled();
     });
 
-    // Find the call to onSnapshot for notices
-    // The App calls onSnapshot multiple times (user, bar, requests, users, notices)
-
-    // Verify collection call
+    // Verify collection call — chat lives under bars/{barId}/chat, the
+    // same path the full scrollback listener (only live while the
+    // panel is open) would also use, but this listener is always on.
     const collectionCalls = vi.mocked(firestore.collection).mock.calls;
-    const noticesCollectionCall = collectionCalls.find(call => call[1] === 'bars/test-bar-id/notices');
-    expect(noticesCollectionCall).toBeDefined();
+    const chatCollectionCall = collectionCalls.find(call => call[1] === 'bars/test-bar-id/chat');
+    expect(chatCollectionCall).toBeDefined();
 
-    // Verify timestamp filter creation
+    // Verify the pinned filter.
     const whereCalls = vi.mocked(firestore.where).mock.calls;
-    const expectedTimestampBoundary = new Date(fixedNow.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const pinnedFilter = whereCalls.find(call => call[0] === 'pinned' && call[1] === '==' && call[2] === true);
+    expect(pinnedFilter).toBeDefined();
 
-    // Find the specific timestamp filter that matches the 3-day cutoff
-    const timestampFilter = whereCalls.find(call =>
-        call[0] === 'timestamp' &&
-        call[1] === '>=' &&
-        (call[2] instanceof Date) &&
-        call[2].getTime() === expectedTimestampBoundary.getTime()
-    );
-
-    expect(timestampFilter).toBeDefined();
-    expect(timestampFilter?.[1]).toBe('>=');
-    expect(timestampFilter?.[2]).toEqual(expectedTimestampBoundary);
-
-    // Verify query composition
-    // We expect a query call that includes the timestamp filter AND limit(100)
+    // Verify query composition: where('pinned') + orderBy('pinnedAt', 'desc') + limit(50).
     const queryCalls = vi.mocked(firestore.query).mock.calls;
-
-    // We look for a query that contains 'mock-where-timestamp' AND 'mock-limit-100'
-    // args are [collection, constraint1, constraint2, ...]
-    const noticesQuery = queryCalls.find(args =>
-        args.includes('mock-where-timestamp') &&
-        args.includes('mock-limit-100')
+    const pinnedQuery = queryCalls.find(args =>
+        args.includes('mock-where-pinned') &&
+        args.includes('mock-order-by-pinnedAt-desc') &&
+        args.includes('mock-limit-50')
     );
 
-    expect(noticesQuery).toBeDefined();
+    expect(pinnedQuery).toBeDefined();
   });
 });

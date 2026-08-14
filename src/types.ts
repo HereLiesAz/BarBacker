@@ -103,18 +103,32 @@ export interface Request {
   lastNotification?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
 
-// Define the data model for a 'Notice' document (Bulletin Board).
-export interface Notice {
-  // The unique ID of the notice.
+// Define the data model for a 'ChatMessage' document. Replaces the
+// old 'Notice' bulletin-board model — see
+// docs/plans/2026-05-21-feature-set-purr-design.md Phase 2. A pinned
+// message is what the dashboard marquee renders; unpinned messages
+// are ordinary scrollback in the chat panel.
+export interface ChatMessage {
+  // The unique ID of the message.
   id: string;
-  // The message text of the notice.
+  // The message text. Immutable once posted (see firestore.rules).
   text: string;
   // The UID of the author.
   authorId: string;
-  // The display name of the author.
+  // The author's display name, snapshotted at post time.
   authorName: string;
-  // The timestamp when the notice was posted.
+  // The author's privilege role, snapshotted at post time. Empty
+  // string for messages migrated from the old notices collection,
+  // which never captured a role.
+  authorRole: string;
+  // The timestamp when the message was posted.
   timestamp: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  // Whether this message is pinned to the dashboard marquee.
+  pinned: boolean;
+  // Optional: the uid of whoever last pinned this message.
+  pinnedBy?: string;
+  // Optional: when this message was last pinned.
+  pinnedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
 
 // Define the structure of a result from the OpenStreetMap API search.
@@ -161,10 +175,6 @@ export interface BarUser {
   email?: string;
   // Optional: List of button IDs the user wants to be notified about.
   notificationPreferences?: string[];
-  // Optional: Server timestamp of the user's most recent notice
-  // post. Used by firestore.rules to enforce a 5s cooldown between
-  // notice creates. Bumped atomically by saveNotice (batched write).
-  lastNoticeAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
 
 // Define the data model for a banned-patron entry (86'd list).

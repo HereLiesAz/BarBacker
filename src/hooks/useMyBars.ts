@@ -16,7 +16,7 @@ import type { Bar } from '../types';
 // Generate a 128-bit hex suffix for ntfy topic IDs. ntfy.sh is an
 // unauthenticated pub-sub — anyone who knows the topic can subscribe,
 // so we use a high-entropy random value instead of deriving from the
-// Firebase UID (which leaks into every Request/Notice document).
+// Firebase UID (which leaks into every Request/ChatMessage document).
 function generateRandomTopicSuffix(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);

@@ -75,7 +75,17 @@ export function useRequestActions({
         return;
       }
 
-      if (prefs && btnId && prefs.includes(btnId)) {
+      // Free-text / unrecognized labels (custom requests, "(Ask Me)"
+      // auto-submits) have no btnId to check preferences against.
+      // activeRequests in App.tsx treats this the same way — shown to
+      // everyone as a safety default — so mirror that here instead of
+      // silently notifying nobody.
+      if (!btnId) {
+        topics.add(u.ntfyTopic);
+        return;
+      }
+
+      if (prefs && prefs.includes(btnId)) {
         topics.add(u.ntfyTopic);
       }
     });
@@ -102,13 +112,25 @@ export function useRequestActions({
     );
   }, [user, barId, displayName, userRole, allUsers, getButtonIdForLabel]);
 
+  // Firestore serializes writes to a single document, and
+  // firestore.rules requires resource.data.status == 'pending' for
+  // this update — so if two barbacks tap CLAIM on the same request,
+  // whichever write commits first flips it to 'claimed' and the
+  // second is evaluated against that new state and denied. The
+  // rejection surfaces here as a thrown error so the UI can tell the
+  // loser they lost the race instead of failing silently.
   const claimRequest = useCallback(async (reqId: string) => {
-    await updateDoc(doc(db, 'requests', reqId), {
-      status: 'claimed',
-      claimedBy: user?.uid,
-      claimerName: displayName,
-      claimedAt: serverTimestamp(),
-    });
+    try {
+      await updateDoc(doc(db, 'requests', reqId), {
+        status: 'claimed',
+        claimedBy: user?.uid,
+        claimerName: displayName,
+        claimedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error('Failed to claim request (likely already claimed)', e);
+      throw e;
+    }
   }, [user, displayName]);
 
   const cancelRequest = useCallback(async (reqId: string) => {

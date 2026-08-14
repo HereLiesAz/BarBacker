@@ -81,17 +81,31 @@ export const requestNotificationPermission = async () => {
 
     // Check if the user granted permission.
     if (permission === 'granted') {
+      // getToken() defaults to looking for a service worker at the
+      // origin-root path '/firebase-messaging-sw.js', which 404s once
+      // the app is deployed under a subpath (e.g. GitHub Pages) — the
+      // file is actually served at `${BASE_URL}firebase-messaging-sw.js`.
+      // Register it explicitly at the right path and hand that
+      // registration to getToken() instead of relying on its default.
+      const swRegistration = await navigator.serviceWorker.register(
+        `${import.meta.env.BASE_URL}firebase-messaging-sw.js`
+      );
       // If granted, retrieve the FCM registration token.
       // The 'vapidKey' is required for web push notifications and identifies the sender.
-      const token = await getToken(messaging, { 
-        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY 
+      const token = await getToken(messaging, {
+        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+        serviceWorkerRegistration: swRegistration,
       });
       // Return the token to be used for sending notifications to this device.
       return token;
     }
   } catch (error) {
     // Log any errors that occur during the permission request process.
-    console.error("Notification permission denied", error);
+    // (Despite the message below, this branch also catches SW
+    // registration and getToken() failures, not just a denied prompt
+    // — permission denial is handled by the `if` above, which simply
+    // skips this block and returns null.)
+    console.error("Failed to set up push notifications", error);
   }
   // Return null if permission was denied or an error occurred.
   return null;

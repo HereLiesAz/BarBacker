@@ -3,9 +3,13 @@ import { ButtonConfig } from './types';
 
 export const NTFY_DISPATCH_CONCURRENCY = 5;
 
-// Define the list of available roles in the application.
-// These are used for role selection and permission logic.
-export const ROLES = ['Owner', 'Bartender', 'Barback', 'Server', 'Manager', 'Security', 'Runner'];
+// Job titles a joining user can self-select. This is deliberately
+// NOT the privilege list — 'Owner' is auto-assigned to whoever
+// creates the bar and 'Manager' can only be granted by promotion, so
+// neither is self-selectable here. Selecting a title sets `jobTitle`
+// (display + notification defaults); the security-relevant `role`
+// field is computed separately (see App.tsx confirmRole).
+export const JOB_TITLES = ['Bartender', 'Barback', 'Server', 'Security', 'Runner'];
 
 // Define a default list of common beer brands to populate suggestions.
 export const DEFAULT_BEERS = [

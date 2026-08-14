@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
     <meta name="theme-color" content="#000000" />
@@ -12,7 +12,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
 
     <title>BarBacker</title>
-    <base href="/barbacker/" />
+    <!--
+      No <base href> here on purpose. vite.config.ts already sets
+      base: './', which makes every built asset reference relative to
+      wherever index.html itself is served from — that works
+      regardless of the deploy subpath (or its exact case). A
+      hardcoded absolute base previously pointed at "/barbacker/"
+      while the real GitHub Pages path is "/BarBacker/" (capital B),
+      so every asset 404'd and the deployed site was a blank page.
+      Routing is hash-based (see main.tsx's HashRouter) so it doesn't
+      depend on this either.
+    -->
   </head>
   <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-QEVWXVQY66"></script>

@@ -5,20 +5,47 @@ import '@material/web/button/filled-button.js';
 import '@material/web/textfield/filled-text-field.js';
 import '@material/web/icon/icon.js';
 import '@material/web/radio/radio.js';
-// Import roles constant.
-import { ROLES } from '../constants';
+// Import job titles constant.
+import { JOB_TITLES } from '../constants';
 
 // Define props.
 interface RoleSelectorProps {
-  onSelect: (role: string, name: string) => void;
+  onSelect: (jobTitle: string, name: string) => void;
   initialName?: string;
+  // True when this user is the one who just created the bar. They
+  // become the bar's Owner automatically (there's no one else yet to
+  // promote them) so we skip the job-title picker and just confirm
+  // their name.
+  isNewBar?: boolean;
 }
 
 // Component to select user role and set display name upon joining.
-const RoleSelector = ({ onSelect, initialName }: RoleSelectorProps) => {
+const RoleSelector = ({ onSelect, initialName, isNewBar }: RoleSelectorProps) => {
   // Local state.
   const [selectedRole, setSelectedRole] = useState('');
   const [displayName, setDisplayName] = useState(initialName || '');
+
+  if (isNewBar) {
+    return (
+      <div className="w-[300px] space-y-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold text-white">You Own This Bar</h2>
+          <p className="text-gray-500">You created it, so you're the Owner. What should we call you?</p>
+        </div>
+
+        <md-filled-text-field
+          label="Display Name (e.g. 'Angry Steve')"
+          value={displayName}
+          onInput={(e: any) => setDisplayName(e.target.value)}
+          required
+        />
+
+        <md-filled-button disabled={!displayName || null} onClick={() => onSelect('Owner', displayName)}>
+          Clock In
+        </md-filled-button>
+      </div>
+    );
+  }
 
   return (
     <div className="w-[300px] space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -35,9 +62,9 @@ const RoleSelector = ({ onSelect, initialName }: RoleSelectorProps) => {
         required
       />
 
-      {/* Role List */}
+      {/* Job Title List */}
       <div className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800 max-h-60 overflow-y-auto">
-        {ROLES.map((role) => (
+        {JOB_TITLES.map((role) => (
           <div
             key={role}
             // Selecting via clicking the row.

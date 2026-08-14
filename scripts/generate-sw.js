@@ -42,12 +42,19 @@ const messaging = firebase.messaging();
 // Handle background messages.
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
-  
-  // Customize notification display.
-  const notificationTitle = payload.notification.title;
+
+  // payload.notification is absent on data-only messages — guard
+  // instead of throwing (which would drop the notification silently,
+  // since a throwing handler shows nothing rather than falling back).
+  const notificationTitle = payload.notification?.title || 'BarBacker Alert';
   const notificationOptions = {
-    body: payload.notification.body,
-    icon: '/pwa-192x192.png', // Path to PWA icon.
+    body: payload.notification?.body || payload.data?.body || '',
+    // Relative (no leading slash) so it resolves against this
+    // service worker's own scope regardless of the deploy subpath —
+    // the file it previously pointed at ('/pwa-192x192.png', origin-
+    // root-absolute) never existed in public/ at all; the real icons
+    // are named 'icon-<size>.png'.
+    icon: 'icon-192x192.png',
     vibrate: [200, 100, 200, 100, 200, 100, 200], // Custom vibration pattern.
     tag: 'request-alert', // Tag to replace existing notifications (prevent stacking).
     renotify: true // Vibrate/Alert again even if replacing.

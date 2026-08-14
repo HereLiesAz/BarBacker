@@ -12,6 +12,7 @@ import '@material/web/textfield/filled-text-field.js';
 // Import types and constants.
 import { ButtonConfig } from '../types';
 import { ROLE_NOTIFICATION_DEFAULTS } from '../constants';
+import { MdDialog } from './MdDialog';
 
 // Define props.
 interface NotificationSettingsProps {
@@ -72,7 +73,7 @@ const NotificationSettings = ({
   };
 
   return (
-    <md-dialog open={open || undefined} onClose={onClose}>
+    <MdDialog open={open} onClose={onClose}>
       <div slot="headline">Notification Settings</div>
       <div slot="content" className="flex flex-col gap-4 min-w-[300px]">
         <div className="text-sm text-gray-400">
@@ -135,7 +136,7 @@ const NotificationSettings = ({
         <md-text-button onClick={onClose}>Cancel</md-text-button>
         <md-filled-button onClick={handleSave}>Save</md-filled-button>
       </div>
-    </md-dialog>
+    </MdDialog>
   );
 };
 

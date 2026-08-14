@@ -37,11 +37,27 @@ service cloud.firestore {
     // Bar documents.
     match /bars/{barId} {
       // Bars are discoverable by any signed-in user (search + join).
-      allow read: if isAuthed();
-      // Anyone signed in can claim a new bar.
-      allow create: if isAuthed();
-      // Routine updates by Manager+.
-      allow update: if isManagerPlus(barId);
+      // Split into get/list so a future tightening of `list` (e.g.
+      // routing name search through a Cloud Function) doesn't also
+      // have to relitigate direct-by-id reads.
+      allow get: if isAuthed();
+      allow list: if isAuthed();
+      // Anyone signed in can claim a new bar, but must name
+      // themselves as its owner — this is what lets the per-bar
+      // self-create rule below recognize the bar's creator and grant
+      // them 'Owner' instead of 'Staff'.
+      allow create: if isAuthed() && request.resource.data.get('ownerId', null) == request.auth.uid;
+      // Routine updates by Manager+. Ownership transfer isn't
+      // implemented (see ownershipClaims below) so ownerId is
+      // immutable outside that Cloud-Function-only path. Uses
+      // .get(..., null) rather than dot access on both sides so a bar
+      // document that predates the ownerId field (or was seeded
+      // without one) doesn't hard-error on every routine update —
+      // null == null holds, leaving it unset, and a Manager+ update
+      // that tries to introduce/change ownerId is still rejected
+      // since only one side would be non-null.
+      allow update: if isManagerPlus(barId) &&
+        request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null);
       // Only Owners can delete.
       allow delete: if isOwner(barId);
 
@@ -54,34 +70,59 @@ service cloud.firestore {
       match /users/{userId} {
         allow read: if hasRole(barId);
 
-        // Self-create on join. Role must be 'Staff' — higher roles
-        // only come from Manager/Owner promotion (post-join) or a
-        // Cloud Function (invite consumption). Status may be
-        // 'active' (open policy) or 'pending' (approval policy).
+        // Self-create on join. Role is 'Staff' for everyone except
+        // the bar's own creator (verified against bars/{barId}.ownerId,
+        // set atomically when the bar document was created), who
+        // self-assigns 'Owner' — there is no other user yet to
+        // promote them. `status` follows the bar's joinPolicy:
+        // 'open' (default) activates immediately, 'approval'
+        // requires a Manager to flip pending -> active. The bar's
+        // own creator always activates immediately regardless of
+        // joinPolicy, since they can't be pending approval on a bar
+        // with no other members.
         allow create: if isAuthed() && request.auth.uid == userId &&
-          request.resource.data.role == 'Staff' &&
-          (request.resource.data.status == 'active' ||
-           request.resource.data.status == 'pending');
+          request.resource.data.keys().hasOnly([
+            'role', 'jobTitle', 'status', 'displayName', 'email',
+            'joinedAt', 'lastSeen', 'notificationPreferences', 'ntfyTopic'
+          ]) &&
+          (
+            (request.resource.data.role == 'Staff') ||
+            (request.resource.data.role == 'Owner' &&
+             get(/databases/$(database)/documents/bars/$(barId)).data.get('ownerId', null) == request.auth.uid)
+          ) &&
+          (
+            (request.resource.data.role == 'Owner' && request.resource.data.status == 'active') ||
+            (get(/databases/$(database)/documents/bars/$(barId)).data.get('joinPolicy', 'open') != 'approval' &&
+             request.resource.data.status == 'active') ||
+            (get(/databases/$(database)/documents/bars/$(barId)).data.get('joinPolicy', 'open') == 'approval' &&
+             request.resource.data.status == 'pending')
+          );
 
         // Self-write limited to safe operational fields. `status`
-        // may only be set to 'off_clock' (clocking out). The
-        // lastNoticeAt cooldown stamp is included so saveNotice's
+        // may only toggle between 'active' and 'off_clock' — this
+        // lets a user clock in and back out on their own without
+        // being able to self-approve out of 'pending'/'rejected'.
+        // The lastNoticeAt cooldown stamp is included so saveNotice's
         // batched write succeeds.
         allow write: if isAuthed() && request.auth.uid == userId &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['displayName', 'lastSeen', 'notificationPreferences',
-                      'ntfyTopic', 'email', 'status', 'lastNoticeAt']) &&
+                      'ntfyTopic', 'email', 'status', 'lastNoticeAt', 'jobTitle']) &&
           (!('status' in request.resource.data.diff(resource.data).affectedKeys()) ||
-           request.resource.data.status == 'off_clock');
+           request.resource.data.status == 'off_clock' ||
+           (request.resource.data.status == 'active' && resource.data.status == 'off_clock'));
 
-        // Managers can flip pending → active, set role for
+        // Managers can flip pending → active, set role/jobTitle for
         // non-Owners, or kick non-Owners. They cannot promote to
         // Owner, can't change their own role, can't touch existing
-        // Owners.
+        // Owners, and are limited to the role/status/jobTitle fields
+        // (e.g. they can't rewrite someone else's ntfyTopic).
         allow update: if isManagerPlus(barId) &&
           resource.data.role != 'Owner' &&
           request.resource.data.role != 'Owner' &&
-          request.auth.uid != userId;
+          request.auth.uid != userId &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['role', 'jobTitle', 'status']);
 
         // Owners can do anything to non-Owners and to themselves
         // (self-relinquish only).
@@ -103,10 +144,15 @@ service cloud.firestore {
 
       // Notices (bulletin board). Members read/write. Posts are
       // rate-limited via lastNoticeAt on the writer's per-bar user
-      // doc — saveNotice writes a batch that creates the notice
-      // AND bumps lastNoticeAt = serverTimestamp(), so this rule
-      // blocks bursts faster than once every 5 seconds. Admins
-      // bypass via isAdmin.
+      // doc — saveNotice writes a batch that creates the notice AND
+      // bumps lastNoticeAt = serverTimestamp(). Note this cooldown is
+      // client-cooperative: a client that never bumps lastNoticeAt
+      // sees every create request satisfy "more than 5s since epoch"
+      // and isn't actually throttled. Firestore rules can't enforce
+      // that two independent document writes land atomically, so
+      // this blocks bursts from the shipped app but isn't a hard
+      // backstop against a hostile client hitting the API directly.
+      // Admins bypass via isAdmin.
       match /notices/{noticeId} {
         allow read: if hasRole(barId);
         allow create: if hasRole(barId)
@@ -118,8 +164,10 @@ service cloud.firestore {
                               + duration.value(5, 's')
           );
         allow update: if hasRole(barId)
-          && resource.data.authorId == request.auth.uid;
-        allow delete: if hasRole(barId);
+          && resource.data.authorId == request.auth.uid
+          && request.resource.data.authorId == resource.data.authorId;
+        allow delete: if hasRole(barId)
+          && (resource.data.authorId == request.auth.uid || isManagerPlus(barId));
       }
 
       // 86'd list. Public entries readable by anyone with a role;
@@ -143,14 +191,19 @@ service cloud.firestore {
         allow delete: if isManagerPlus(barId);
       }
 
-      // Invites. Manager+ can read all; invitee can read their own.
-      // Consumption (flipping `consumed`) is the only update the
-      // invitee can do client-side.
+      // Invites. Manager+ can read all; invitee can read their own —
+      // gated on a verified email address so an attacker can't
+      // self-register an unverified account under someone else's
+      // email to read/consume their invite. Consumption (flipping
+      // `consumed`) is the only update the invitee can do
+      // client-side.
       match /invites/{inviteId} {
         allow read: if isManagerPlus(barId) ||
-                       (isAuthed() && resource.data.email == request.auth.token.email);
+                       (isAuthed() && request.auth.token.email_verified == true &&
+                        resource.data.email == request.auth.token.email);
         allow create: if isManagerPlus(barId);
-        allow update: if isAuthed() && resource.data.email == request.auth.token.email &&
+        allow update: if isAuthed() && request.auth.token.email_verified == true &&
+                        resource.data.email == request.auth.token.email &&
                         request.resource.data.diff(resource.data).affectedKeys()
                           .hasOnly(['consumed', 'consumedBy', 'consumedAt']);
         allow delete: if isManagerPlus(barId);
@@ -169,8 +222,26 @@ service cloud.firestore {
       allow read: if isAuthed() && hasRole(resource.data.barId);
       allow create: if isAuthed()
         && hasRole(request.resource.data.barId)
-        && request.resource.data.requesterId == request.auth.uid;
-      allow update: if isAuthed() && hasRole(resource.data.barId);
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      // The only client-side update is claiming: pending -> claimed,
+      // touching only the claim fields, with barId/requesterId/label
+      // immutable so a member of one bar can't rewrite a request into
+      // another bar or forge its requester. Firestore serializes
+      // writes to a single document, so this "resource.data.status ==
+      // 'pending'" precondition is itself what prevents two
+      // concurrent claims from both succeeding — whichever commits
+      // first flips status to 'claimed' and the second write is
+      // evaluated against that new state and denied. No client-side
+      // transaction is needed for this invariant.
+      allow update: if isAuthed() && hasRole(resource.data.barId)
+        && request.resource.data.barId == resource.data.barId
+        && request.resource.data.requesterId == resource.data.requesterId
+        && request.resource.data.label == resource.data.label
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'claimed'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'claimedBy', 'claimerName', 'claimedAt']);
       allow delete: if isAuthed() && (
         resource.data.requesterId == request.auth.uid
         || isManagerPlus(resource.data.barId)

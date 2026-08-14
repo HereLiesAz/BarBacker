@@ -2,12 +2,13 @@ import { useRef, useState } from 'react';
 import {
   TouchSensor,
   MouseSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   DragEndEvent,
   DragStartEvent,
 } from '@dnd-kit/core';
-import { arrayMove } from '@dnd-kit/sortable';
+import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { ButtonConfig } from '../types';
@@ -36,6 +37,13 @@ export function useDragAndDrop({ barId, customOrders, setCustomOrders }: UseDrag
     }),
     useSensor(MouseSensor, {
       activationConstraint: { distance: 10 },
+    }),
+    // Without this, reordering has no keyboard-operable path at all —
+    // SortableButton is focusable (dnd-kit gives it tabIndex=0) but
+    // Space/arrow-key pickup only works if a KeyboardSensor is
+    // registered here.
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
 

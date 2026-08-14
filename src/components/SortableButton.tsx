@@ -36,6 +36,18 @@ export function SortableButton({ id, children, onClick, disabled }: SortableButt
     touchAction: 'manipulation'
   };
 
+  // dnd-kit's `attributes` add role="button" and tabIndex={0} to this
+  // div, but activation (Enter/Space -> click) is not synthesized by
+  // the browser for a non-native element with an ARIA button role —
+  // that's only automatic for real <button>s. Without this handler
+  // the entire button grid has no keyboard-operable path at all.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -44,6 +56,7 @@ export function SortableButton({ id, children, onClick, disabled }: SortableButt
       {...attributes}
       {...listeners}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
       className="h-full w-full relative"
     >
       {children}

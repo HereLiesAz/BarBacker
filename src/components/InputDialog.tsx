@@ -6,6 +6,12 @@ import '@material/web/textfield/filled-text-field.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
 import '@material/web/icon/icon.js';
+import { MdDialog } from './MdDialog';
+
+// Buttons render inside a fixed-height grid cell — anything much past
+// this renders truncated (see the label span's line-clamp) but a hard
+// cap keeps a pasted wall of text from being stored at all.
+const MAX_LABEL_LENGTH = 60;
 
 // Define props for the input dialog.
 interface InputDialogProps {
@@ -28,15 +34,25 @@ interface InputDialogProps {
 // A reusable dialog component for text input with auto-complete suggestions.
 // Used for adding brands, types, and wells.
 const InputDialog = ({ open, mode, searchTerm, onSearchChange, onClose, onSelect, suggestions }: InputDialogProps) => {
-  // Normalize search term for case-insensitive matching.
-  const term = searchTerm.toLowerCase();
+  // Normalize search term for case-insensitive matching AND for what
+  // actually gets submitted — untrimmed input previously let "Coors "
+  // (trailing space) create a distinct duplicate of an existing
+  // "Coors" entry, and pure-whitespace input created a button with a
+  // blank visible label.
+  const trimmed = searchTerm.trim();
+  const term = trimmed.toLowerCase();
   // Filter suggestions.
   const matches = suggestions.filter(i => i.toLowerCase().includes(term));
   // Check if there is an exact match.
   const exactMatch = matches.some(i => i.toLowerCase() === term);
+  const canSubmit = trimmed.length > 0 && trimmed.length <= MAX_LABEL_LENGTH;
+
+  // Submit the trimmed, length-capped value rather than the raw
+  // (possibly whitespace-padded) input.
+  const submit = (value: string) => onSelect(value.trim().slice(0, MAX_LABEL_LENGTH));
 
   return (
-    <md-dialog open={open || undefined} onClose={onClose}>
+    <MdDialog open={open} onClose={onClose}>
       <div slot="headline">
         {/* Dynamic headline based on mode */}
         {mode === 'brand' && 'Select or Add Brand'}
@@ -65,9 +81,9 @@ const InputDialog = ({ open, mode, searchTerm, onSearchChange, onClose, onSelect
                  ))}
 
                  {/* "Create New" Option: Shown if text exists but doesn't exactly match an existing item */}
-                 {searchTerm && !exactMatch && (
-                   <md-list-item type="button" onClick={() => onSelect(searchTerm)}>
-                     <div slot="headline" className="text-blue-400">Create "{searchTerm}"</div>
+                 {canSubmit && !exactMatch && (
+                   <md-list-item type="button" onClick={() => submit(searchTerm)}>
+                     <div slot="headline" className="text-blue-400">Create "{trimmed}"</div>
                      <md-icon slot="end" className="text-blue-400">add_circle</md-icon>
                    </md-list-item>
                  )}
@@ -76,14 +92,14 @@ const InputDialog = ({ open, mode, searchTerm, onSearchChange, onClose, onSelect
          ) : (
              /* 'Well' mode is just simple input submission */
              <div className="flex justify-center p-4">
-                 <md-filled-button onClick={() => onSelect(searchTerm)}>Save & Request</md-filled-button>
+                 <md-filled-button disabled={!canSubmit || undefined} onClick={() => submit(searchTerm)}>Save & Request</md-filled-button>
              </div>
          )}
       </div>
       <div slot="actions">
         <md-text-button onClick={onClose}>Cancel</md-text-button>
       </div>
-    </md-dialog>
+    </MdDialog>
   );
 };
 

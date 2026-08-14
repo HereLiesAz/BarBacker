@@ -12,6 +12,7 @@ import '@material/web/textfield/filled-text-field.js';
 import '@material/web/switch/switch.js';
 
 import type { EightySixEntry } from '../types';
+import { MdDialog } from './MdDialog';
 
 interface EightySixDialogProps {
   open: boolean;
@@ -82,7 +83,7 @@ const EightySixDialog = ({ open, onClose, entries, onAdd, onDelete, isPremium, u
 
   return (
     <>
-      <md-dialog open={open || undefined} onClose={onClose} style={{ maxHeight: '85vh' }}>
+      <MdDialog open={open} onClose={onClose} style={{ maxHeight: '85vh' }}>
         <div slot="headline" className="flex items-center gap-2">
           <md-icon>block</md-icon>
           86'd List
@@ -185,10 +186,10 @@ const EightySixDialog = ({ open, onClose, entries, onAdd, onDelete, isPremium, u
         <div slot="actions">
           <md-text-button onClick={onClose}>Close</md-text-button>
         </div>
-      </md-dialog>
+      </MdDialog>
 
       {/* Delete confirmation dialog */}
-      <md-dialog open={!!confirmDeleteId || undefined} onClose={() => setConfirmDeleteId(null)}>
+      <MdDialog open={!!confirmDeleteId} onClose={() => setConfirmDeleteId(null)}>
         <div slot="headline">Remove from 86'd List?</div>
         <div slot="content">
           Are you sure you want to remove this person from the 86'd list?
@@ -197,7 +198,7 @@ const EightySixDialog = ({ open, onClose, entries, onAdd, onDelete, isPremium, u
           <md-text-button onClick={() => setConfirmDeleteId(null)}>Cancel</md-text-button>
           <md-filled-button onClick={handleDelete} className="btn-alert">Remove</md-filled-button>
         </div>
-      </md-dialog>
+      </MdDialog>
     </>
   );
 };

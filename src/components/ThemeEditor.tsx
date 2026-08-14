@@ -11,6 +11,7 @@ import '@material/web/progress/circular-progress.js';
 
 import type { BarTheme } from '../types';
 import { getContrastColor } from '../utils/color';
+import { MdDialog } from './MdDialog';
 
 const FONT_OPTIONS = [
   { label: 'System Default', value: 'system-ui, sans-serif' },
@@ -115,9 +116,15 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
   };
 
   const contrastColor = getContrastColor(primaryColor);
+  // The actual button grid uses accentColor as the button background
+  // (see useBarTheme) and derives its label color from THIS contrast
+  // pair, not primaryColor's — the preview needs to match or a
+  // red/pink accent would look fine here and illegible on the real
+  // dashboard.
+  const accentContrastColor = getContrastColor(accentColor);
 
   return (
-    <md-dialog open={open || undefined} onClose={onClose} style={{ maxHeight: '85vh' }}>
+    <MdDialog open={open} onClose={onClose} style={{ maxHeight: '85vh' }}>
       <div slot="headline" className="flex items-center gap-2">
         <md-icon>palette</md-icon>
         Customize Theme
@@ -204,7 +211,7 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
           <div className="text-xs text-gray-500 mb-2 uppercase">Preview</div>
           <div className="flex items-center gap-3 p-3 rounded" style={{ backgroundColor: accentColor, fontFamily }}>
             {logoUrl && <img src={logoUrl} alt="Preview logo" className="h-8 w-8 rounded-full object-cover" />}
-            <span className="font-bold" style={{ color: primaryColor }}>Your Bar Name</span>
+            <span className="font-bold" style={{ color: accentContrastColor }}>Your Bar Name</span>
           </div>
           <div className="mt-2 flex gap-2">
             <button
@@ -230,7 +237,7 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
           {saving ? 'Saving...' : 'Save'}
         </md-filled-button>
       </div>
-    </md-dialog>
+    </MdDialog>
   );
 };
 

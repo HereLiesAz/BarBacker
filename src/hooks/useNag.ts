@@ -29,8 +29,11 @@ export function useNag(activeRequests: Request[], ignoredIds: string[]) {
        // If there are actionable pending requests...
        if (pending.length > 0) {
            // Initialize the Audio object if it doesn't exist yet.
+           // Root-absolute '/alert.wav' 404s once the app is deployed
+           // under a subpath (e.g. GitHub Pages) — BASE_URL resolves
+           // to wherever the app is actually served from.
            if (!audioRef.current) {
-               audioRef.current = new Audio('/alert.wav');
+               audioRef.current = new Audio(`${import.meta.env.BASE_URL}alert.wav`);
            }
 
            // Reset the audio playback position to the start.

@@ -46,7 +46,7 @@ export function usePushNotifications() {
 
           await PushNotifications.addListener('pushNotificationReceived', () => {
             if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-            if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
+            if (!audioRef.current) audioRef.current = new Audio(`${import.meta.env.BASE_URL}alert.wav`);
             const audio = audioRef.current;
             audio.pause();
             audio.onended = null;
@@ -102,14 +102,14 @@ export function usePushNotifications() {
         try {
           new Notification(payload.notification.title, {
             body: payload.notification.body,
-            icon: '/icon-192x192.png',
+            icon: `${import.meta.env.BASE_URL}icon-192x192.png`,
           });
         } catch (e) {
           console.warn('Notification display failed', e);
         }
       }
 
-      if (!audioRef.current) audioRef.current = new Audio('/alert.wav');
+      if (!audioRef.current) audioRef.current = new Audio(`${import.meta.env.BASE_URL}alert.wav`);
       const audio = audioRef.current;
       let plays = 0;
       audio.onended = () => {

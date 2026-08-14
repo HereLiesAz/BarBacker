@@ -8,7 +8,11 @@ declare module 'react' {
         open?: boolean;
         quick?: boolean;
         positioning?: string;
-        onClosed?: () => void;
+        // Deliberately no `onClosed` here — md-menu dispatches a
+        // lowercase 'closed' DOM event which React's custom-element
+        // prop binding does not map correctly (see MdDialog.tsx for
+        // the same issue on md-dialog/onClose). Bind it via a ref +
+        // addEventListener instead, as App.tsx does.
       };
       'md-menu-item': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         headline?: string;

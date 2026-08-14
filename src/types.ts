@@ -34,8 +34,18 @@ export interface Bar {
   phone?: string;
   // Optional: OpenStreetMap ID, if linked.
   osmId?: string;
+  // Optional: OpenStreetMap element type ('node' | 'way' | 'relation').
+  // osm_id is only unique within a given osm_type, so the pair is
+  // what actually identifies an OSM place — osmId alone can collide
+  // across two unrelated venues.
+  osmType?: string;
   // The verification status of the bar ('verified' is public, 'temporary' is for shift-only use).
   status: 'verified' | 'temporary';
+  // The uid of the user who created this bar document. Set once at
+  // creation and immutable thereafter (see firestore.rules). Lets a
+  // brand-new bar's creator self-assign the 'Owner' role on join,
+  // since there's no existing Owner/Manager to promote them.
+  ownerId: string;
   // Optional: The type of establishment.
   type?: 'bar' | 'restaurant';
   // Optional: Inventory mapping for beer (Brand -> Array of Types).
@@ -101,13 +111,23 @@ export interface Notice {
 // Define the structure of a result from the OpenStreetMap API search.
 export interface OSMResult {
   // The unique Place ID from OSM.
-  place_id: number;
-  // The unique OSM object ID.
-  osm_id: number;
+  place_id: number | string;
+  // The unique OSM object ID. NOTE: osm_id is only unique within a
+  // given osm_type ('node' | 'way' | 'relation') — two unrelated
+  // places can share the same osm_id if they're different element
+  // types, so osm_id alone is not a safe identity key.
+  osm_id: number | string;
+  // The OSM element type. Present on live Nominatim results; absent
+  // on results synthesized from our own Firestore `bars` collection
+  // (isFirebase: true), which already have a stable Firestore doc id.
+  osm_type?: string;
   // The full display name (address).
   display_name: string;
   // The specific name of the place.
   name: string;
+  // True for results synthesized from our own Firestore `bars`
+  // collection rather than a live Nominatim lookup.
+  isFirebase?: boolean;
 }
 
 // Define the data model for a User profile within a specific Bar context.
@@ -116,8 +136,14 @@ export interface BarUser {
   id: string;
   // Optional: The user's display name.
   displayName?: string;
-  // Optional: The user's role (e.g., 'Bartender', 'Barback').
+  // Optional: The user's privilege tier ('Staff' | 'Manager' | 'Owner').
+  // This is what firestore.rules and the `bars` token claim key off
+  // of — it is NOT the user's job function, see `jobTitle`.
   role?: string;
+  // Optional: The user's job function (e.g. 'Bartender', 'Barback'),
+  // used for display and as the key into ROLE_NOTIFICATION_DEFAULTS.
+  // Distinct from `role`, which is the privilege tier.
+  jobTitle?: string;
   // Optional: The user's current status.
   status?: 'active' | 'off_clock' | 'pending' | 'rejected';
   // Optional: The timestamp of the user's last activity.

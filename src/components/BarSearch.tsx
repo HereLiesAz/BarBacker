@@ -43,6 +43,10 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
   const [results, setResults] = useState<OSMResult[]>([]);
   // Boolean indicating if a search is currently in progress.
   const [isSearching, setIsSearching] = useState(false);
+  // Set when both the OSM and Firestore lookups fail — surfaced to
+  // the user instead of silently leaving the previous query's
+  // (unrelated) results on screen and tappable.
+  const [searchError, setSearchError] = useState(false);
 
   // --- Create State ---
   const [createName, setCreateName] = useState('');
@@ -63,6 +67,16 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
     };
   }, []);
 
+  // Tracks which run is the "current" one — i.e. hasn't been
+  // superseded by a later search. A run's own AbortSignal being
+  // aborted isn't the right test for "should I still update
+  // isSearching/results": leaving search mode entirely also aborts
+  // the signal, but there (unlike a rapid-retype race) there's no
+  // newer run to hand off to, so the in-flight one resolving is
+  // exactly what should clear the spinner. Comparing against "am I
+  // still the most recently started run" gets both cases right.
+  const currentControllerRef = useRef<AbortController | null>(null);
+
   // Effect to handle the search logic with debouncing.
   useEffect(() => {
     const controller = new AbortController();
@@ -70,13 +84,17 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
 
     // Only search if in search mode and query is long enough.
     if (mode === 'search' && queryText.length > 2) {
+      currentControllerRef.current = controller;
       // Set a timeout to delay execution.
       const timer = setTimeout(async () => {
         setIsSearching(true);
+        setSearchError(false);
         try {
           // Parallel Search: Query both OpenStreetMap and local Firestore.
           let fetchedFb: OSMResult[] = [];
           let fetchedOsm: OSMResult[] = [];
+          let osmFailed = false;
+          let fbFailed = false;
 
           // 1. OSM Search
           const osmPromise = fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryText + ' bar')}`, { signal })
@@ -88,9 +106,10 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
               return data;
             })
             .catch((e) => {
-                // If aborted, return empty array to prevent unhandled rejections
-                if (e.name === 'AbortError') return [];
-                return []; // Fallback to empty array on other errors.
+                // Aborted just means a newer search superseded this
+                // one \u2014 not a failure worth reporting.
+                if (e.name !== 'AbortError') osmFailed = true;
+                return [];
             });
 
           // 2. Firestore Search (Prefix match)
@@ -111,8 +130,8 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                     osm_id: d.id,
                     display_name: `${data.name}, ${data.city || ''} ${data.state || ''}`,
                     name: data.name,
-                    isFirebase: true
-                } as any;
+                    isFirebase: true,
+                } as OSMResult;
             }))
             .then(data => {
               if (signal.aborted || !isMounted.current) return data;
@@ -120,17 +139,31 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
               setResults([...fetchedFb, ...fetchedOsm]);
               return data;
             })
-            .catch(() => []);
+            .catch(() => {
+                fbFailed = true;
+                return [];
+            });
 
           // Await both promises only to handle loading state
           await Promise.all([osmPromise, fbPromise]);
+
+          // Both sources failed: don't leave the previous (unrelated)
+          // query's results on screen and tappable \u2014 clear them and
+          // tell the user, rather than showing nothing wrong.
+          if (isMounted.current && currentControllerRef.current === controller && osmFailed && fbFailed) {
+              setResults([]);
+              setSearchError(true);
+          }
 
         } catch (e: any) {
           if (e.name !== 'AbortError') {
               console.error(e);
           }
         } finally {
-          if (isMounted.current) {
+          // Only the still-current run (i.e. not superseded by a
+          // later search) gets to clear the spinner \u2014 see
+          // currentControllerRef's comment above.
+          if (isMounted.current && currentControllerRef.current === controller) {
               setIsSearching(false);
           }
         }
@@ -151,11 +184,16 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
   const handleCreate = (e: React.FormEvent) => {
       e.preventDefault();
 
+      const trimmedName = createName.trim();
+      const trimmedCity = city.trim();
+      const trimmedState = state.trim();
+      const trimmedZip = zip.trim();
+
       // Validation logic: Name is required.
       // Must have either a Zip Code OR (City AND State) to be valid.
-      const hasLocation = (city && state) || zip;
+      const hasLocation = (trimmedCity && trimmedState) || trimmedZip;
 
-      if (!createName || !hasLocation) {
+      if (!trimmedName || !hasLocation) {
           alert("Please enter a Business Name and either City/State or Zip Code.");
           return;
       }
@@ -163,12 +201,12 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
       // Call the parent handler with the new bar data.
       onJoin({
           id: `bar_${Date.now()}`, // Generate a temporary timestamp-based ID.
-          name: createName,
-          address: address,
-          city: city,
-          state: state,
-          zip: zip,
-          phone: phone,
+          name: trimmedName,
+          address: address.trim(),
+          city: trimmedCity,
+          state: trimmedState,
+          zip: trimmedZip,
+          phone: phone.trim(),
           status: 'verified', // Publicly available.
           type: barType
       });
@@ -194,22 +232,42 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
                     </md-filled-text-field>
                 </div>
 
+                {/* Search failure: don't leave the previous query's
+                    (unrelated) results on screen and tappable. */}
+                {searchError && (
+                    <div className="text-red-400 text-sm p-2 border border-red-900 rounded bg-red-900/10">
+                        Search failed. Check your connection and try again.
+                    </div>
+                )}
+
                 {/* Render Result List */}
                 {results.length > 0 && (
                     <md-list className="bg-[#1E1E1E] rounded-xl overflow-hidden border border-gray-800 max-h-60 overflow-y-auto">
-                        {results.map((r) => (
-                            <md-list-item key={r.place_id} type="button" onClick={() => onJoin({
-                                id: String(r.osm_id),
-                                name: r.name || r.display_name.split(',')[0],
-                                address: r.display_name,
-                                status: 'verified',
-                                osmId: String(r.osm_id)
-                            })}>
-                                <div slot="headline" className="text-white">{r.name || r.display_name.split(',')[0]}</div>
-                                <div slot="supporting-text" className="text-gray-400 text-xs truncate">{r.display_name}</div>
-                                <md-icon slot="start">location_on</md-icon>
-                            </md-list-item>
-                        ))}
+                        {results.map((r) => {
+                            // osm_id is only unique WITHIN an osm_type
+                            // (node/way/relation) — two unrelated
+                            // places can share a numeric id across
+                            // types, so the id used for our own
+                            // Firestore bar doc must include the type
+                            // or they'd collide onto the same doc.
+                            const barId = r.isFirebase
+                                ? String(r.osm_id)
+                                : `osm_${r.osm_type || 'unknown'}_${r.osm_id}`;
+                            return (
+                                <md-list-item key={r.place_id} type="button" onClick={() => onJoin({
+                                    id: barId,
+                                    name: r.name || r.display_name.split(',')[0],
+                                    address: r.display_name,
+                                    status: 'verified',
+                                    osmId: String(r.osm_id),
+                                    osmType: r.osm_type,
+                                })}>
+                                    <div slot="headline" className="text-white">{r.name || r.display_name.split(',')[0]}</div>
+                                    <div slot="supporting-text" className="text-gray-400 text-xs truncate">{r.display_name}</div>
+                                    <md-icon slot="start">location_on</md-icon>
+                                </md-list-item>
+                            );
+                        })}
                     </md-list>
                 )}
              </div>

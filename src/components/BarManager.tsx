@@ -13,6 +13,8 @@ import '@material/web/list/list-item.js';
 
 // Import the ButtonConfig type definition.
 import { ButtonConfig } from '../types';
+// Wrapper that fixes md-dialog's onClose not firing under React 19.
+import { MdDialog } from './MdDialog';
 
 // Define the props interface for the BarManager component.
 interface BarManagerProps {
@@ -70,7 +72,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
   return (
     <>
       {/* Main Dialog: Lists active buttons */}
-      <md-dialog data-testid="bar-manager-dialog" open={open || undefined} onClose={onClose} style={{ maxHeight: '80vh' }}>
+      <MdDialog data-testid="bar-manager-dialog" open={open} onClose={onClose} style={{ maxHeight: '80vh' }}>
         {/* Dialog Header */}
         <div slot="headline">Manage {barName}</div>
 
@@ -127,20 +129,21 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
         <div slot="actions">
           <md-text-button onClick={onClose} data-testid="bar-manager-close">Close</md-text-button>
         </div>
-      </md-dialog>
+      </MdDialog>
 
       {/* Confirmation Dialog: "Are you sure?" */}
-      <md-dialog open={!!confirmDeleteId || undefined} onClose={() => setConfirmDeleteId(null)}>
+      <MdDialog open={!!confirmDeleteId} onClose={() => setConfirmDeleteId(null)}>
         <div slot="headline">Remove Button?</div>
         <div slot="content">
-          Are you sure you want to remove this button from the dashboard?
+          Are you sure you want to remove this button from the dashboard? It will disappear from
+          every device at this bar, and restoring it requires Premium.
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setConfirmDeleteId(null)}>Cancel</md-text-button>
           {/* Use 'btn-alert' class for styling destructive actions */}
           <md-filled-button onClick={confirmDelete} className="btn-alert">Remove</md-filled-button>
         </div>
-      </md-dialog>
+      </MdDialog>
     </>
   );
 };

@@ -14,6 +14,7 @@ export function useBarTheme(theme: BarTheme | undefined, isPremium: boolean): vo
       root.style.removeProperty('--md-sys-color-primary');
       root.style.removeProperty('--md-sys-color-on-primary');
       root.style.removeProperty('--md-sys-color-secondary-container');
+      root.style.removeProperty('--bb-button-label-color');
       root.style.removeProperty('font-family');
       return;
     }
@@ -24,6 +25,12 @@ export function useBarTheme(theme: BarTheme | undefined, isPremium: boolean): vo
     }
     if (theme.accentColor) {
       root.style.setProperty('--md-sys-color-secondary-container', theme.accentColor);
+      // The grid button label/icon color is otherwise a fixed red
+      // (see --bb-button-label-color's default in index.css) — on a
+      // themed bar the button's background IS this accent color, so
+      // a red/pink/orange brand color would make the label illegible
+      // against its own background without this override.
+      root.style.setProperty('--bb-button-label-color', getContrastColor(theme.accentColor));
     }
     if (theme.fontFamily) {
       root.style.setProperty('font-family', theme.fontFamily);
@@ -33,6 +40,7 @@ export function useBarTheme(theme: BarTheme | undefined, isPremium: boolean): vo
       root.style.removeProperty('--md-sys-color-primary');
       root.style.removeProperty('--md-sys-color-on-primary');
       root.style.removeProperty('--md-sys-color-secondary-container');
+      root.style.removeProperty('--bb-button-label-color');
       root.style.removeProperty('font-family');
     };
   }, [theme, isPremium]);

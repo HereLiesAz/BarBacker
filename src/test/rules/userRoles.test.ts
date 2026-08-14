@@ -141,10 +141,28 @@ describe("user role rules (owner immunity matrix)", () => {
   });
 
   it("New joiner can self-create with role:Staff status:pending (approval policy)", async () => {
+    // bar_A defaults to joinPolicy 'open' in the top-level seed;
+    // switch it to 'approval' for this case so a self-create is only
+    // accepted with status 'pending', matching what confirmRole
+    // actually writes for an approval-gated bar.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "bars/bar_A"), { name: "Bar A", joinPolicy: "approval" });
+    });
     const db = authedAs(env, "new_user_w", { bars: {} });
     await assertSucceeds(setDoc(doc(db, "bars/bar_A/users/new_user_w"), {
       role: "Staff",
       status: "pending",
+    }));
+  });
+
+  it("New joiner cannot self-create with status:active on an approval-policy bar", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "bars/bar_A"), { name: "Bar A", joinPolicy: "approval" });
+    });
+    const db = authedAs(env, "new_user_v", { bars: {} });
+    await assertFails(setDoc(doc(db, "bars/bar_A/users/new_user_v"), {
+      role: "Staff",
+      status: "active",
     }));
   });
 

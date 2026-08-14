@@ -64,10 +64,25 @@ describe("bar rules", () => {
     }));
   });
 
-  it("Staff cannot set status to active via self-write", async () => {
-    // Seed staff_bob as off_clock so that an attempted change to 'active' is a real diff.
+  it("Staff can clock back in (self-write status active, from off_clock)", async () => {
+    // A user who clocks out must be able to clock back in on their
+    // own — without this, off_clock was a one-way door that silently
+    // dropped them from every notification fanout forever.
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "bars/bar_A/users/staff_bob"), { role: "Staff", status: "off_clock" });
+    });
+    const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
+    await assertSucceeds(updateDoc(doc(db, "bars/bar_A/users/staff_bob"), {
+      status: "active",
+    }));
+  });
+
+  it("Staff cannot self-activate out of pending (still requires Manager approval)", async () => {
+    // The self-write active<->off_clock toggle must not become a way
+    // to skip the 'approval' joinPolicy — only a Manager+ update (or
+    // starting from off_clock) may set status to 'active'.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "bars/bar_A/users/staff_bob"), { role: "Staff", status: "pending" });
     });
     const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
     await assertFails(updateDoc(doc(db, "bars/bar_A/users/staff_bob"), {

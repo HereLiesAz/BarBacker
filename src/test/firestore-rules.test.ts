@@ -96,8 +96,18 @@ describe('Firestore security rules', () => {
 
     it('lets a non-member create a new bar (claim flow)', async () => {
       const db = env.authenticatedContext(BOB).firestore();
+      // The creator must name themselves as ownerId — this is what
+      // lets their own upcoming bars/{id}/users/{uid} self-create
+      // claim the 'Owner' role (see the userRoles.test.ts create-path
+      // cases for that half of the flow).
       await assertSucceeds(setDoc(doc(db, 'bars', 'fresh-bar'),
-        { name: 'New', status: 'temporary' }));
+        { name: 'New', status: 'temporary', ownerId: BOB }));
+    });
+
+    it('denies creating a bar with someone else named as ownerId', async () => {
+      const db = env.authenticatedContext(BOB).firestore();
+      await assertFails(setDoc(doc(db, 'bars', 'fresh-bar-2'),
+        { name: 'New', status: 'temporary', ownerId: ALICE }));
     });
 
     it('denies Staff from updating bar settings', async () => {

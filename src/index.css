@@ -24,6 +24,14 @@
   --md-sys-color-secondary-container: #333333;
   --md-sys-color-on-secondary-container: #E2E2E2;
 
+  /* Grid button label/icon color. Defaults to the app's red accent;
+     overridden by useBarTheme to a WCAG-contrasted color against the
+     premium bar's chosen accentColor (which becomes the button
+     background via --md-sys-color-secondary-container above) so a
+     red/pink brand color can't make the label illegible against
+     itself. */
+  --bb-button-label-color: #EF4444;
+
   /* Shape - Expressive but Precise */
   --md-sys-shape-corner-small: 8px;
   --md-sys-shape-corner-medium: 12px;

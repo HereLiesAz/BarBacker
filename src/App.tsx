@@ -1,5 +1,5 @@
 // Import React hooks for managing state and side effects.
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 // Import 'useSearchParams' to read/write URL query parameters.
 import { useSearchParams } from 'react-router-dom';
 // Import Firebase Auth functions still used directly (handlers below
@@ -81,6 +81,7 @@ import ThemeEditor from './components/ThemeEditor';
 import InputDialog from './components/InputDialog';
 import { WhoIsOnDialog } from './components/WhoIsOnDialog';
 import { SortableButton } from './components/SortableButton';
+import { MdDialog } from './components/MdDialog';
 // Import dnd-kit for drag-and-drop functionality.
 import {
   DndContext,
@@ -127,12 +128,25 @@ function App() {
   // --- User Context in Bar ---
   // Store the name of the current bar.
   const [barName, setBarName] = useState('');
-  // Store the user's role in this bar (e.g., 'Bartender').
+  // Store the user's privilege role in this bar ('Staff' | 'Manager' | 'Owner').
   const [userRole, setUserRole] = useState<string | null>(null);
+  // Store the user's job title/function (e.g. 'Bartender'), used for
+  // display and notification-preference defaults. Distinct from the
+  // privilege role above.
+  const [jobTitle, setJobTitle] = useState<string>('');
   // Store the user's status (active/off_clock/pending).
   const [userStatus, setUserStatus] = useState<string>('active');
   // Store the user's display name.
   const [displayName, setDisplayName] = useState<string>('');
+  // True for the brief window between creating a brand-new bar and
+  // confirming the RoleSelector — lets confirmRole know to assign
+  // 'Owner' instead of 'Staff'. Reset to false the moment it's
+  // consumed or the user backs out of bar selection.
+  const [justCreatedBar, setJustCreatedBar] = useState(false);
+  // The bar's join policy ('open' | 'approval'), read off the bar
+  // document. Determines whether confirmRole writes status 'active'
+  // or 'pending' for a joining (non-creator) user.
+  const [barJoinPolicy, setBarJoinPolicy] = useState<'open' | 'approval'>('open');
   // Store the user's notification preferences (list of button IDs).
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
   // Store the ntfy topic ID for iOS notifications (per-bar snapshot
@@ -187,15 +201,28 @@ function App() {
   // Notice Board State.
   const [notices, setNotices] = useState<Notice[]>([]);
 
-  // Control the main menu dropdown.
+  // Control the main menu dropdown. md-menu's `onClosed` JSX prop has
+  // the same React-19-custom-element bug as md-dialog's `onClose` (see
+  // MdDialog) — React listens for "Closed" (capitalized) while
+  // md-menu dispatches lowercase 'closed', so it never fires and
+  // dismissing the menu by clicking outside it would strand menuOpen
+  // at true. Bind the real event via a ref instead.
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const handleClosed = () => setMenuOpen(false);
+    el.addEventListener('closed', handleClosed);
+    return () => el.removeEventListener('closed', handleClosed);
+  }, []);
 
   // Fetch latest APK info using custom hook.
   const { downloadUrl: apkUrl, loading: apkLoading } = useLatestRelease();
 
   // Drag-and-drop sensors + handlers (dnd-kit). Persistence of
   // customOrders happens inside the hook on drag end.
-  const { sensors, activeId, handleDragStart, handleDragOver, handleDragEnd } =
+  const { sensors, activeId, isDraggingRef, handleDragStart, handleDragOver, handleDragEnd } =
     useDragAndDrop({ barId, customOrders, setCustomOrders });
 
   // Memoized lookup map for button IDs. Maps both top-level and child labels to top-level button ID.
@@ -317,6 +344,11 @@ function App() {
   // tier.
   const isPremium = isGodMode || barSubscription === 'premium';
 
+  // Privilege check used to gate Manager+ actions in the UI (theme
+  // editing, approving pending joins). firestore.rules is the actual
+  // authority — this only controls what's shown.
+  const isManagerPlus = userRole === 'Owner' || userRole === 'Manager';
+
   // Apply the custom bar theme to the document root when premium.
   useBarTheme(barTheme, isPremium);
 
@@ -346,15 +378,18 @@ function App() {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setUserRole(data.role);
+        setJobTitle(data.jobTitle || data.role || '');
         setUserStatus(data.status || 'active');
         setDisplayName(data.displayName || 'Unknown');
 
         // Load notification preferences or set defaults.
+        const defaultsKey = data.jobTitle || data.role;
         if (data.notificationPreferences) {
           setNotificationPreferences(data.notificationPreferences);
-        } else if (data.role) {
-          // If no preferences saved, use defaults for role.
-          setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[data.role] || []);
+        } else if (defaultsKey) {
+          // If no preferences saved, use defaults for job title (or
+          // role, for docs written before jobTitle existed).
+          setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[defaultsKey] || []);
         }
 
         // Auto-coordinate ntfy topic. Mirror the global topic from
@@ -372,13 +407,14 @@ function App() {
         // User document doesn't exist (new user).
         setUserRole(null);
       }
-    });
+    }, (err) => console.error('User profile listener failed', err));
 
     // Listen for changes to the Bar configuration.
     const unsubBar = onSnapshot(doc(db, 'bars', barId), (d) => {
       if (d.exists()) {
         const data = d.data() as Bar;
         setBarName(data.name);
+        setBarJoinPolicy(data.joinPolicy === 'approval' ? 'approval' : 'open');
 
         // Merge default buttons with custom bar buttons.
         if (data.buttons) {
@@ -395,11 +431,16 @@ function App() {
         if (data.wells) setWells(data.wells);
         if (data.hiddenButtonIds) setHiddenButtonIds(data.hiddenButtonIds);
         if (data.buttonUsage) setButtonUsage(data.buttonUsage);
-        if (data.customOrders) setCustomOrders(data.customOrders);
+        // Skip while a local drag is in flight — this listener fires
+        // on ANY change to the bar doc (not just customOrders), and
+        // an unconditional overwrite here would clobber an in-progress
+        // reorder with the pre-drag server value the instant another
+        // device touches the same bar document.
+        if (data.customOrders && !isDraggingRef.current) setCustomOrders(data.customOrders);
         setBarSubscription(data.subscription || 'free');
         setBarTheme(data.theme);
       }
-    });
+    }, (err) => console.error('Bar listener failed', err));
 
     // Listen for All Users (for "Who's On").
     // Query varies based on whether we are viewing the "Who's On" dialog (show off_clock users too).
@@ -407,14 +448,14 @@ function App() {
 
     const unsubAllUsers = onSnapshot(userQuery, (s) => {
         setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    }, (err) => console.error('Bar users listener failed', err));
 
     // Cleanup: Unsubscribe from non-time-windowed listeners. The
     // requests/notices listeners are owned by a separate effect below
     // so they can re-subscribe on the hourly windowEpoch without
     // tearing these down.
     return () => { unsubUser(); unsubBar(); unsubAllUsers(); };
-  }, [user, barId, setSearchParams]);
+  }, [user, barId, setSearchParams, isDraggingRef]);
 
   // Time-window epoch. Bumped every hour so the requests/notices
   // listeners below re-subscribe with a fresh "now" lower bound. In a
@@ -442,6 +483,7 @@ function App() {
         limit(100),
       ),
       (s) => setRequests(s.docs.map(d => ({ id: d.id, ...d.data() } as Request))),
+      (err) => console.error('Requests listener failed', err),
     );
 
     const unsubNotices = onSnapshot(
@@ -452,6 +494,7 @@ function App() {
         limit(100),
       ),
       (s) => setNotices(s.docs.map(d => ({ id: d.id, ...d.data() } as Notice))),
+      (err) => console.error('Notices listener failed', err),
     );
 
     return () => { unsubReq(); unsubNotices(); };
@@ -465,13 +508,13 @@ function App() {
   // can't decode.
   useEffect(() => {
     if (!barId) return;
-    const canSeePrivate = isPremium && (userRole === 'Owner' || userRole === 'Manager');
+    const canSeePrivate = isPremium && isManagerPlus;
     const q = canSeePrivate
       ? query(collection(db, `bars/${barId}/eightySixed`), orderBy('timestamp', 'desc'), limit(200))
       : query(collection(db, `bars/${barId}/eightySixed`), where('visibility', '==', 'public'), orderBy('timestamp', 'desc'), limit(200));
     const unsub = onSnapshot(q, (s) => {
       setEightySixEntries(s.docs.map(d => ({ id: d.id, ...d.data() } as EightySixEntry)));
-    });
+    }, (err) => console.error('86\'d list listener failed', err));
     return () => unsub();
   }, [barId, isPremium, userRole]);
 
@@ -502,11 +545,14 @@ function App() {
         token: fcmToken,
         updated: serverTimestamp()
       });
-      // Set status to active and update heartbeat.
+      // Set status to active and update heartbeat. Rules only permit
+      // this self-write when transitioning from 'off_clock' (or when
+      // status isn't changing at all) — a user still 'pending'
+      // manager approval correctly stays pending here.
       await updateDoc(userRef, {
         status: 'active',
         lastSeen: serverTimestamp()
-      }).catch(() => {});
+      }).catch((e) => console.error('Auto clock-in failed', e));
     };
     autoClockIn();
   }, [user, barId, fcmToken]);
@@ -772,35 +818,55 @@ function App() {
     }
   };
 
-  // Finalize role selection and enter the dashboard.
-  const confirmRole = async (role: string, name: string) => {
+  // Finalize role selection and enter the dashboard. `title` is the
+  // job function (or 'Owner' verbatim, from RoleSelector's new-bar
+  // path) — the security-relevant privilege `role` is computed here,
+  // never taken from the client-selectable list, since firestore.rules
+  // only allows a self-create to claim 'Owner' when bars/{barId}.ownerId
+  // already matches this uid (set atomically at bar-creation time).
+  const confirmRole = async (title: string, name: string) => {
     if (!user || !barId) return;
 
-    const status = 'active';
+    const role = justCreatedBar ? 'Owner' : 'Staff';
+    const status = (role === 'Owner' || barJoinPolicy !== 'approval') ? 'active' : 'pending';
 
-    // Update Global User Document with joined bar.
-    await setDoc(doc(db, 'users', user.uid), {
-        joinedBars: arrayUnion(barId)
-    }, { merge: true });
+    try {
+      // Update Global User Document with joined bar.
+      await setDoc(doc(db, 'users', user.uid), {
+          joinedBars: arrayUnion(barId)
+      }, { merge: true });
 
-    // Update User Document.
-    await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
-      role: role,
-      displayName: name,
-      email: user.email,
-      status: status,
-      joinedAt: serverTimestamp(),
-      lastSeen: serverTimestamp(),
-      // Set default prefs if not exists.
-      notificationPreferences: ROLE_NOTIFICATION_DEFAULTS[role] || []
-    }, { merge: true });
-    
-    // Ensure Token is fresh.
-    if (fcmToken) {
-      await setDoc(doc(db, `bars/${barId}/tokens`, user.uid), {
-        token: fcmToken,
-        updated: serverTimestamp()
-      });
+      // Update User Document.
+      await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
+        role,
+        jobTitle: title,
+        displayName: name,
+        email: user.email,
+        status,
+        joinedAt: serverTimestamp(),
+        lastSeen: serverTimestamp(),
+        // Set default prefs if not exists.
+        notificationPreferences: ROLE_NOTIFICATION_DEFAULTS[title] || []
+      }, { merge: true });
+
+      // Ensure Token is fresh.
+      if (fcmToken) {
+        await setDoc(doc(db, `bars/${barId}/tokens`, user.uid), {
+          token: fcmToken,
+          updated: serverTimestamp()
+        });
+      }
+
+      setJustCreatedBar(false);
+      // The 'bars' claim used by firestore.rules is stamped
+      // asynchronously by the onUserRoleChange Cloud Function and only
+      // reflected on this client's ID token after a refresh. Force one
+      // now so hasRole()-gated reads (requests, notices) don't spend
+      // up to an hour denied while the cached token is stale.
+      await user.getIdToken(true).catch((e) => console.error('Token refresh after join failed', e));
+    } catch (e) {
+      console.error('Failed to join bar', e);
+      alert('Failed to join this bar. Please try again.');
     }
   };
 
@@ -815,6 +881,7 @@ function App() {
     });
     // Cleanup local state.
     setBarId(null);
+    setJustCreatedBar(false);
     localStorage.removeItem('barId');
     setShowOffClockDialog(false);
   };
@@ -822,7 +889,32 @@ function App() {
   // Switch to another bar without clocking out (unless inactive).
   const handleSwitchBar = async () => {
     setBarId(null);
+    setJustCreatedBar(false);
     localStorage.removeItem('barId');
+  };
+
+  // Approve/reject a user waiting on this bar's 'approval' joinPolicy
+  // (WhoIsOnDialog, Manager+ only). Without this, a pending user had
+  // no path off the "Approval Pending" screen — nothing in the app
+  // could ever flip their status to 'active'.
+  const approveUser = async (userId: string) => {
+    if (!barId) return;
+    try {
+      await updateDoc(doc(db, `bars/${barId}/users`, userId), { status: 'active' });
+    } catch (e) {
+      console.error('Failed to approve user', e);
+      alert('Failed to approve. Please try again.');
+    }
+  };
+
+  const rejectUser = async (userId: string) => {
+    if (!barId) return;
+    try {
+      await deleteDoc(doc(db, `bars/${barId}/users`, userId));
+    } catch (e) {
+      console.error('Failed to reject user', e);
+      alert('Failed to reject. Please try again.');
+    }
   };
 
   // Request mutations: submit (+ ntfy fanout), claim, cancel.
@@ -867,6 +959,7 @@ function App() {
         joinedBars: arrayRemove(barId)
     }).catch(() => {});
     setBarId(null);
+    setJustCreatedBar(false);
     localStorage.removeItem('barId');
     setShowAccountDialog(false);
   };
@@ -998,7 +1091,7 @@ function App() {
         )}
 
         <BarSearch onJoin={async (b) => {
-          if(b.id) {
+          if(b.id && user) {
             const barRef = doc(db, 'bars', b.id);
             const existingSnap = await getDoc(barRef);
 
@@ -1013,8 +1106,17 @@ function App() {
                   phone: b.phone || '',
                   status: b.status || 'verified',
                   type: b.type || 'bar',
-                  buttons: []
+                  buttons: [],
+                  ...(b.osmId ? { osmId: b.osmId } : {}),
+                  ...(b.osmType ? { osmType: b.osmType } : {}),
+                  // Names this user as the bar's creator — checked by
+                  // firestore.rules to grant them 'Owner' on their own
+                  // upcoming self-create of bars/{id}/users/{uid}.
+                  ownerId: user.uid,
                 });
+                setJustCreatedBar(true);
+            } else {
+                setJustCreatedBar(false);
             }
 
             setBarId(b.id);
@@ -1045,10 +1147,10 @@ function App() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black">
         <div className="flex w-full justify-between items-center max-w-[300px]">
-            <md-icon-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}><md-icon>arrow_back</md-icon></md-icon-button>
+            <md-icon-button onClick={() => { setBarId(null); setJustCreatedBar(false); localStorage.removeItem('barId'); }}><md-icon>arrow_back</md-icon></md-icon-button>
             <md-text-button onClick={signOut}>Sign Out</md-text-button>
         </div>
-        <RoleSelector onSelect={confirmRole} initialName={user?.displayName || ''} key={user?.displayName || 'default'} />
+        <RoleSelector onSelect={confirmRole} initialName={user?.displayName || ''} key={user?.displayName || 'default'} isNewBar={justCreatedBar} />
       </div>
     );
   }
@@ -1094,7 +1196,7 @@ function App() {
             <md-icon style={{ fontSize: 64 }} className="text-yellow-500">hourglass_empty</md-icon>
             <h2 className="text-2xl font-bold text-white">Approval Pending</h2>
             <p className="text-gray-400">A manager must approve your request to join {barName}.</p>
-            <md-text-button onClick={() => { setBarId(null); localStorage.removeItem('barId'); }}>Cancel</md-text-button>
+            <md-text-button onClick={() => { setBarId(null); setJustCreatedBar(false); localStorage.removeItem('barId'); }}>Cancel</md-text-button>
         </div>
       );
   }
@@ -1140,13 +1242,16 @@ function App() {
         open={showWhoIsOn}
         onClose={() => setShowWhoIsOn(false)}
         users={allUsers as BarUser[]}
+        isManagerPlus={isManagerPlus}
+        onApprove={approveUser}
+        onReject={rejectUser}
       />
 
       <NotificationSettings
         open={showNotificationSettings}
         onClose={() => setShowNotificationSettings(false)}
         onSave={saveNotificationPreferences}
-        userRole={userRole || ''}
+        userRole={jobTitle || userRole || ''}
         currentPreferences={notificationPreferences}
         currentNtfyTopic={ntfyTopic}
         allButtons={buttons}
@@ -1181,7 +1286,7 @@ function App() {
         })()}
       />
 
-      <md-dialog open={quantityPicker.open || undefined} onClose={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>
+      <MdDialog open={quantityPicker.open} onClose={() => setQuantityPicker(prev => ({ ...prev, open: false }))}>
         <div slot="headline">Select Quantity</div>
         <div slot="content" className="flex items-center justify-center gap-6 py-6">
            <md-filled-tonal-button onClick={() => setQuantityPicker(prev => ({ ...prev, currentQty: Math.max(1, prev.currentQty - 1) }))}>
@@ -1200,9 +1305,9 @@ function App() {
              setNavStack([]);
           }}>Send</md-filled-button>
         </div>
-      </md-dialog>
+      </MdDialog>
 
-      <md-dialog open={isAddingNotice || undefined} onClose={() => setIsAddingNotice(false)}>
+      <MdDialog open={isAddingNotice} onClose={() => setIsAddingNotice(false)}>
         <div slot="headline">Add Notice</div>
         <div slot="content" className="flex flex-col gap-4">
             <md-filled-text-field
@@ -1218,18 +1323,19 @@ function App() {
             <md-text-button onClick={() => setIsAddingNotice(false)}>Cancel</md-text-button>
             <md-filled-button onClick={() => saveNotice(noticeText)}>Post</md-filled-button>
         </div>
-      </md-dialog>
+      </MdDialog>
 
-      <md-dialog open={showOffClockDialog || undefined} onClose={() => setShowOffClockDialog(false)}>
+      <MdDialog open={showOffClockDialog} onClose={() => setShowOffClockDialog(false)}>
         <div slot="headline">Abandon Ship?</div>
         <div slot="content">
-          Going off clock stops all notifications and signs you out. The bar will be unprotected. Are you sure?
+          Going off clock stops all notifications for you. You can clock back in any time by
+          reopening this bar — the bar itself stays open, this only affects your own device.
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setShowOffClockDialog(false)}>Stay</md-text-button>
           <md-filled-button onClick={goOffClock} className="btn-alert">Clock Out</md-filled-button>
         </div>
-      </md-dialog>
+      </MdDialog>
 
       {/* --- Navbar --- */}
       <div className="flex-none flex flex-wrap justify-between items-center py-12 px-6 bg-[#121212] border-b border-[#333] z-10 gap-4">
@@ -1241,7 +1347,7 @@ function App() {
             <span className="whitespace-pre">    </span>
             <span className="text-white font-bold text-xl truncate">{displayName}</span>
             <span className="text-white text-xl whitespace-pre">        </span>
-            <span className="bg-gray-800 px-4 py-2 rounded text-base text-gray-300 whitespace-nowrap">{userRole}</span>
+            <span className="bg-gray-800 px-4 py-2 rounded text-base text-gray-300 whitespace-nowrap">{jobTitle || userRole}</span>
         </div>
 
         {/* Right Side Actions */}
@@ -1283,9 +1389,9 @@ function App() {
                     </md-icon-button>
 
                     <md-menu
+                        ref={menuRef}
                         anchor="menu-anchor"
                         open={menuOpen}
-                        onClosed={() => setMenuOpen(false)}
                         positioning="fixed"
                         quick
                         style={{ zIndex: 2000 }}
@@ -1302,7 +1408,7 @@ function App() {
                             <md-icon slot="start">store</md-icon>
                             <div slot="headline">Manage Bar</div>
                         </md-menu-item>
-                        {isPremium && (userRole === 'Owner' || userRole === 'Manager') && (
+                        {isPremium && isManagerPlus && (
                           <md-menu-item onClick={() => setShowThemeEditor(true)}>
                               <md-icon slot="start">palette</md-icon>
                               <div slot="headline">Customize Theme</div>
@@ -1358,7 +1464,7 @@ function App() {
           </div>
       )}
 
-      <md-dialog open={showNameEditDialog || undefined} onClose={() => { setShowNameEditDialog(false); setEditNameError(null); }}>
+      <MdDialog open={showNameEditDialog} onClose={() => { setShowNameEditDialog(false); setEditNameError(null); }}>
         <div slot="headline">Edit Name</div>
         <div slot="content" className="flex flex-col gap-4 pt-4">
             <md-filled-text-field
@@ -1391,10 +1497,10 @@ function App() {
                 }
             }}>Save</md-filled-button>
         </div>
-      </md-dialog>
+      </MdDialog>
 
       {/* Account Dialog */}
-      <md-dialog open={showAccountDialog || undefined} onClose={() => setShowAccountDialog(false)}>
+      <MdDialog open={showAccountDialog} onClose={() => setShowAccountDialog(false)}>
         <div slot="headline">Account Options</div>
         <div slot="content" className="flex flex-col gap-4 pt-4">
             <p className="text-gray-300">Manage your account for <strong>{barName}</strong>.</p>
@@ -1419,7 +1525,7 @@ function App() {
                 </div>
             </div>
         </div>
-      </md-dialog>
+      </MdDialog>
 
       {/* --- Main Content Area --- */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden w-full relative pb-[35vh]">
@@ -1449,7 +1555,7 @@ function App() {
                   {currentButtons.map(btn => (
                     <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
                       <md-filled-tonal-button style={{ height: '100px', fontSize: '18px', width: '100%', pointerEvents: 'none', border: '8px solid #000000', boxSizing: 'border-box' }}>
-                        <span className="text-red-500 font-bold text-3xl">{btn.label}</span>
+                        <span className="font-bold text-3xl line-clamp-2 text-center px-1" style={{ color: 'var(--bb-button-label-color)' }}>{btn.label}</span>
                       </md-filled-tonal-button>
                     </SortableButton>
                   ))}
@@ -1491,8 +1597,8 @@ function App() {
                 <SortableButton key={btn.id} id={btn.id} onClick={() => handleButtonClick(btn)}>
                   <md-filled-tonal-button className={isPending ? 'btn-alert' : ''} style={{ height: '120px', width: '100%', pointerEvents: 'none', border: isPending ? '8px solid #EF4444' : '8px solid #000000', boxSizing: 'border-box' }}>
                       <div className="flex flex-col items-center gap-2">
-                      <md-icon style={{ fontSize: 32 }} className="text-red-500">{btn.icon || 'circle'}</md-icon>
-                      <span className="text-3xl font-bold leading-none text-red-500">{btn.label}</span>
+                      <md-icon style={{ fontSize: 32, color: 'var(--bb-button-label-color)' }}>{btn.icon || 'circle'}</md-icon>
+                      <span className="text-3xl font-bold leading-none line-clamp-2 text-center px-1" style={{ color: 'var(--bb-button-label-color)' }}>{btn.label}</span>
                       {isPending && <span className="text-xs opacity-80 text-red-500">PENDING</span>}
                       </div>
                   </md-filled-tonal-button>
@@ -1528,7 +1634,7 @@ function App() {
             {/* Show Pending Approvals Badge for Managers */}
             {showApprovals && (
                 <md-filled-button
-                    onClick={() => setShowBarManager(true)}
+                    onClick={() => setShowWhoIsOn(true)}
                     style={{ height: '24px', fontSize: '12px', ...{ '--md-filled-button-container-color': '#EAB308', '--md-filled-button-label-text-color': '#000' } as React.CSSProperties }}
                 >
                     {pendingUsers.length} Approvals
@@ -1557,7 +1663,9 @@ function App() {
 
                         {/* Claim Button */}
                         <md-filled-button
-                            onClick={() => claimRequest(req.id)}
+                            onClick={() => claimRequest(req.id).catch(() => {
+                                alert('Someone else already claimed this request.');
+                            })}
                             className={`w-full ${isIgnored ? '' : 'btn-alert'}`}
                             style={{ height: '48px', minWidth: '100px' }}
                         >

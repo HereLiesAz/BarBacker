@@ -92,7 +92,7 @@ service cloud.firestore {
         allow create: if isAuthed() && request.auth.uid == userId &&
           request.resource.data.keys().hasOnly([
             'role', 'jobTitle', 'status', 'displayName', 'email',
-            'joinedAt', 'lastSeen', 'notificationPreferences', 'ntfyTopic'
+            'joinedAt', 'lastSeen', 'notificationPreferences'
           ]) &&
           (
             (request.resource.data.role == 'Staff') ||
@@ -112,11 +112,21 @@ service cloud.firestore {
         // lets a user clock in and back out on their own without
         // being able to self-approve out of 'pending'/'rejected'.
         // The lastNoticeAt cooldown stamp is included so saveNotice's
-        // batched write succeeds.
+        // batched write succeeds. ntfyTopic deliberately is NOT
+        // writable here (or readable — see the `read` rule above,
+        // which still exposes this whole doc to any hasRole() peer):
+        // it used to be mirrored onto this doc so client-side fanout
+        // could read every member's topic to compute who to notify,
+        // which is exactly what made it possible for any bar member
+        // to read (and keep, even after being kicked) a colleague's
+        // ntfy topic. Fanout is now server-side (onRequestCreated
+        // Cloud Function, Admin SDK), which reads the topic off the
+        // global users/{uid} doc instead — self-only, see that match
+        // block above.
         allow write: if isAuthed() && request.auth.uid == userId &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['displayName', 'lastSeen', 'notificationPreferences',
-                      'ntfyTopic', 'email', 'status', 'lastNoticeAt', 'jobTitle']) &&
+                      'email', 'status', 'lastNoticeAt', 'jobTitle']) &&
           (!('status' in request.resource.data.diff(resource.data).affectedKeys()) ||
            request.resource.data.status == 'off_clock' ||
            (request.resource.data.status == 'active' && resource.data.status == 'off_clock'));
@@ -249,6 +259,19 @@ service cloud.firestore {
         && request.resource.data.label == resource.data.label
         && resource.data.status == 'pending'
         && request.resource.data.status == 'claimed'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'claimedBy', 'claimerName', 'claimedAt']);
+      // Unclaim: claimed -> pending, only by whoever holds the claim.
+      // Without this a claim that goes stale (the claimer got pulled
+      // away mid-task) is invisible forever — nothing could ever move
+      // it back into anyone's active list.
+      allow update: if isAuthed() && hasRole(resource.data.barId)
+        && request.resource.data.barId == resource.data.barId
+        && request.resource.data.requesterId == resource.data.requesterId
+        && request.resource.data.label == resource.data.label
+        && resource.data.status == 'claimed'
+        && resource.data.claimedBy == request.auth.uid
+        && request.resource.data.status == 'pending'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'claimedBy', 'claimerName', 'claimedAt']);
       allow delete: if isAuthed() && (

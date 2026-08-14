@@ -1,8 +1,6 @@
 // Import the 'ButtonConfig' interface to type the default button structures.
 import { ButtonConfig } from './types';
 
-export const NTFY_DISPATCH_CONCURRENCY = 5;
-
 // Job titles a joining user can self-select. This is deliberately
 // NOT the privilege list — 'Owner' is auto-assigned to whoever
 // creates the bar and 'Manager' can only be granted by promotion, so

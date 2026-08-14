@@ -96,6 +96,9 @@ export interface Request {
   buttonId?: string;
   // Optional: The name of the user who claimed the request.
   claimerName?: string;
+  // Optional: The uid of the user who claimed the request. Lets the
+  // claimer (and only the claimer) release it back to pending.
+  claimedBy?: string;
   // Optional: The timestamp of the last notification sent for this request (used for throttling).
   lastNotification?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
@@ -158,8 +161,6 @@ export interface BarUser {
   email?: string;
   // Optional: List of button IDs the user wants to be notified about.
   notificationPreferences?: string[];
-  // Optional: The ntfy topic ID for iOS notifications.
-  ntfyTopic?: string;
   // Optional: Server timestamp of the user's most recent notice
   // post. Used by firestore.rules to enforce a 5s cooldown between
   // notice creates. Bumped atomically by saveNotice (batched write).

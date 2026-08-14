@@ -10,6 +10,7 @@ import '@material/web/icon/icon.js';
 import '@material/web/iconbutton/icon-button.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
+import '@material/web/textfield/filled-text-field.js';
 
 // Import the ButtonConfig type definition.
 import { ButtonConfig } from '../types';
@@ -34,13 +35,38 @@ interface BarManagerProps {
   isPremium?: boolean;
   // Callback function to unhide/restore a button.
   onUnhideButton?: (id: string) => void;
+  // Whether the current user can send invites (Manager+).
+  isManagerPlus?: boolean;
+  // Sends an invite for the given email at the given (non-Owner) role.
+  onInvite?: (email: string, role: 'Staff' | 'Manager') => Promise<void>;
 }
 
 // The BarManager component provides an interface for managers to configure which buttons are visible on the dashboard.
 // Currently, it only supports "hiding" (soft deleting) buttons.
-const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHideButton, isPremium, onUnhideButton }: BarManagerProps) => {
+const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHideButton, isPremium, onUnhideButton, isManagerPlus, onInvite }: BarManagerProps) => {
   // State to track the ID of the button currently selected for deletion confirmation.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'Staff' | 'Manager'>('Staff');
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
+
+  const handleSendInvite = async () => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email || !onInvite) return;
+    setInviteSending(true);
+    setInviteMessage(null);
+    try {
+      await onInvite(email, inviteRole);
+      setInviteEmail('');
+      setInviteMessage(`Invite sent to ${email}.`);
+    } catch (e) {
+      console.error('Failed to send invite', e);
+      setInviteMessage('Failed to send invite. Please try again.');
+    } finally {
+      setInviteSending(false);
+    }
+  };
 
   // Create a Set for O(1) lookups of hidden IDs.
   const hiddenButtonSet = useMemo(() => new Set(hiddenButtonIds), [hiddenButtonIds]);
@@ -105,6 +131,36 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
                 )}
                 </md-list>
            </div>
+
+           {/* Invite (Manager+ only) */}
+           {isManagerPlus && onInvite && (
+             <div className="mt-2 border border-gray-800 rounded p-3 flex flex-col gap-2">
+               <div className="text-xs font-bold text-gray-400 uppercase">Invite Staff</div>
+               <md-filled-text-field
+                 label="Email"
+                 type="email"
+                 value={inviteEmail}
+                 onInput={(e: any) => setInviteEmail(e.target.value)}
+               />
+               <div className="flex gap-4 items-center">
+                 <label className="flex items-center gap-1 text-sm text-gray-300 cursor-pointer">
+                   <input type="radio" name="inviteRole" checked={inviteRole === 'Staff'} onChange={() => setInviteRole('Staff')} />
+                   Staff
+                 </label>
+                 <label className="flex items-center gap-1 text-sm text-gray-300 cursor-pointer">
+                   <input type="radio" name="inviteRole" checked={inviteRole === 'Manager'} onChange={() => setInviteRole('Manager')} />
+                   Manager
+                 </label>
+               </div>
+               <md-filled-button disabled={!inviteEmail.trim() || inviteSending || undefined} onClick={handleSendInvite}>
+                 {inviteSending ? 'Sending...' : 'Send Invite'}
+               </md-filled-button>
+               {inviteMessage && <div className="text-xs text-gray-400">{inviteMessage}</div>}
+               <div className="text-[10px] text-gray-600">
+                 They'll be added automatically the next time they open this bar while signed in with that email.
+               </div>
+             </div>
+           )}
 
            {/* Hidden Buttons (Premium Only) */}
            {isPremium && hiddenButtons.length > 0 && (

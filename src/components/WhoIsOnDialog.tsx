@@ -21,15 +21,25 @@ interface WhoIsOnDialogProps {
   isManagerPlus?: boolean;
   onApprove?: (userId: string) => void;
   onReject?: (userId: string) => void;
+  // Pending ownership claims (Manager+ only), and handlers to approve
+  // or reject them. See functions/src/ownershipClaims.ts — writes to
+  // this collection are Cloud-Function-only.
+  pendingOwnershipClaims?: Array<{ id: string; claimantName?: string; justification?: string }>;
+  onApproveOwnershipClaim?: (claimId: string) => void;
+  onRejectOwnershipClaim?: (claimId: string) => void;
 }
 
 // Dialog to show list of users in the current bar, and — for
-// Manager+ — approve or reject anyone waiting on 'approval' joinPolicy.
-// This is the other half of a policy firestore.rules already
-// enforces (self-create writes status:'pending' for that policy):
-// without an approve action anywhere in the app, a pending user had
-// no way to ever be let in.
-export const WhoIsOnDialog = ({ open, onClose, users, isManagerPlus, onApprove, onReject }: WhoIsOnDialogProps) => {
+// Manager+ — approve or reject anyone waiting on 'approval' joinPolicy,
+// plus any pending ownership claims. This is the other half of two
+// policies firestore.rules already enforces (self-create writes
+// status:'pending' for that policy; ownershipClaims writes are
+// Cloud-Function-only) but that nothing in the app previously acted
+// on — a pending user or a filed claim had no path to ever resolve.
+export const WhoIsOnDialog = ({
+  open, onClose, users, isManagerPlus, onApprove, onReject,
+  pendingOwnershipClaims, onApproveOwnershipClaim, onRejectOwnershipClaim,
+}: WhoIsOnDialogProps) => {
   // Filter for active users (clocked in).
   // Note: users with undefined status are treated as active for backward compatibility.
   const clockedInUsers = users.filter(u => u.status === 'active' || u.status === undefined);
@@ -56,6 +66,30 @@ export const WhoIsOnDialog = ({ open, onClose, users, isManagerPlus, onApprove, 
                     <div slot="end" className="flex gap-2">
                       <md-outlined-button onClick={() => onReject?.(u.id)}>Reject</md-outlined-button>
                       <md-filled-button onClick={() => onApprove?.(u.id)}>Approve</md-filled-button>
+                    </div>
+                  </md-list-item>
+                ))}
+              </md-list>
+            </div>
+          </div>
+        )}
+
+        {/* Section: Pending Ownership Claims (Manager+ only) */}
+        {isManagerPlus && pendingOwnershipClaims && pendingOwnershipClaims.length > 0 && (
+          <div>
+            <h3 className="text-blue-400 font-bold text-sm uppercase tracking-wide mb-2">
+              Ownership Claims ({pendingOwnershipClaims.length})
+            </h3>
+            <div className="border border-blue-900 rounded overflow-hidden">
+              <md-list>
+                {pendingOwnershipClaims.map(c => (
+                  <md-list-item key={c.id}>
+                    <div slot="headline" className="text-white">{c.claimantName || 'Unknown'}</div>
+                    {c.justification && <div slot="supporting-text" className="text-gray-400">{c.justification}</div>}
+                    <md-icon slot="start" className="text-blue-400">verified</md-icon>
+                    <div slot="end" className="flex gap-2">
+                      <md-outlined-button onClick={() => onRejectOwnershipClaim?.(c.id)}>Reject</md-outlined-button>
+                      <md-filled-button onClick={() => onApproveOwnershipClaim?.(c.id)}>Approve</md-filled-button>
                     </div>
                   </md-list-item>
                 ))}

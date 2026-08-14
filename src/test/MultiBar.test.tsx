@@ -37,7 +37,7 @@ vi.mock('firebase/auth', () => ({
 vi.mock('firebase/firestore', () => {
     return {
         getFirestore: vi.fn(),
-        collection: vi.fn(() => ({ type: 'collection' })),
+        collection: vi.fn((_db, path) => ({ type: 'collection', path })),
         doc: vi.fn((db, path, ...args) => {
             const fullPath = path + (args.length ? '/' + args.join('/') : '');
             return { type: 'doc', path: fullPath };
@@ -77,7 +77,17 @@ vi.mock('firebase/firestore', () => {
         arrayUnion: arrayUnionSpy,
         arrayRemove: arrayRemoveSpy,
         increment: vi.fn(),
-        getDocs: vi.fn(async () => {
+        getDocs: vi.fn(async (q: any) => {
+             // Only the useMyBars "bars" name lookup (collection(db, 'bars'))
+             // should resolve with a bar — anything else (e.g. App.tsx's
+             // per-bar invite check, collection(db, `bars/{barId}/invites`))
+             // must come back empty, or the invite-check effect treats this
+             // fixture's single fake doc as a real pending invite and never
+             // clears its "Checking for an invite..." screen.
+             const path = q?.args?.[0]?.path;
+             if (path !== 'bars') {
+                 return { forEach: () => {}, docs: [] };
+             }
              return {
                  forEach: (cb: any) => {
                      cb({ id: 'bar-1', data: () => ({ name: 'Bar One' }), exists: () => true });

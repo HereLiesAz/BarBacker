@@ -75,8 +75,11 @@ export function useRequestActions({
         prefs = ROLE_NOTIFICATION_DEFAULTS[u.role] || [];
       }
 
-      // BREAK requests always fan out to everyone.
-      if (label.includes('BREAK') || btnId === 'break') {
+      // BREAK requests always fan out to everyone. Exact resolved-id
+      // match only — a substring check on the label would let free
+      // text like "BREAKAGE AT WELL 3" mass-notify everyone regardless
+      // of preferences.
+      if (btnId === 'break') {
         topics.add(u.ntfyTopic);
         return;
       }

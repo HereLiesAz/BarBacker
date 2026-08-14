@@ -17,8 +17,9 @@ const MAX_LABEL_LENGTH = 60;
 interface InputDialogProps {
   // Is the dialog open?
   open: boolean;
-  // The context mode: searching for a brand, type, or adding a well.
-  mode: 'brand' | 'type' | 'well';
+  // The context mode: searching for a brand, type, adding a well, or
+  // a free-text custom request.
+  mode: 'brand' | 'type' | 'well' | 'custom';
   // The current text in the input field.
   searchTerm: string;
   // Callback when input changes.
@@ -58,11 +59,12 @@ const InputDialog = ({ open, mode, searchTerm, onSearchChange, onClose, onSelect
         {mode === 'brand' && 'Select or Add Brand'}
         {mode === 'type' && 'Select or Add Type'}
         {mode === 'well' && 'Add Well'}
+        {mode === 'custom' && 'Custom Request'}
       </div>
       <div slot="content" className="flex flex-col gap-4 min-w-[300px] h-[300px]">
          {/* Input Field */}
          <md-filled-text-field
-           label={mode === 'well' ? 'Well Name' : 'Search...'}
+           label={mode === 'well' ? 'Well Name' : mode === 'custom' ? 'What do you need?' : 'Search...'}
            value={searchTerm}
            onInput={(e: any) => onSearchChange(e.target.value)}
            style={{ width: '100%' }}

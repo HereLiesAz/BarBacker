@@ -53,7 +53,10 @@ const ROLE_NOTIFICATION_DEFAULTS = {
 // (or was explicitly excluded, e.g. off-clock) in the first place.
 function shouldNagUserAbout(req, member) {
   if (member.status !== 'active' && member.status !== undefined) return false;
-  if ((req.label || '').includes('BREAK') || req.buttonId === 'break') return true;
+  // Exact resolved-id match only, matching useRequestActions.ts — a
+  // substring check on the label would let free text like "BREAKAGE
+  // AT WELL 3" mass-notify everyone regardless of preferences.
+  if (req.buttonId === 'break') return true;
   // No resolvable button (free-text/custom request): shown to
   // everyone in-app as a safety default, so nag everyone too.
   if (!req.buttonId) return true;

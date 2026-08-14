@@ -19,7 +19,13 @@ describe('pMap', () => {
         }, 3); // Concurrency 3
 
         expect(results).toEqual([2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
-        expect(maxRunning).toBeLessThanOrEqual(3);
+        // Exact equality, not just an upper bound: all 3 workers start
+        // synchronously and increment `running` before their first
+        // await, so with 10 equal-duration items this deterministically
+        // reaches the concurrency limit. A `<=` check here would also
+        // pass for a fully serial implementation (maxRunning === 1),
+        // which is the actual regression this test exists to catch.
+        expect(maxRunning).toBe(3);
     });
 
     it('handles empty array', async () => {

@@ -46,6 +46,8 @@ export function useRequestActions({
     if (!user || !barId) return;
     if (navigator.vibrate) navigator.vibrate(100);
 
+    const btnId = getButtonIdForLabel(label);
+
     await addDoc(collection(db, 'requests'), {
       barId,
       label,
@@ -55,9 +57,13 @@ export function useRequestActions({
       status: 'pending',
       timestamp: serverTimestamp(),
       lastNotification: serverTimestamp(),
+      // Persisted so the (separate, Admin-SDK) nag-bot script can
+      // apply the same notificationPreferences filtering as this
+      // in-app fanout without re-deriving it from the bar's button
+      // config, which it has no access to.
+      ...(btnId ? { buttonId: btnId } : {}),
     });
 
-    const btnId = getButtonIdForLabel(label);
     const topics = new Set<string>();
 
     allUsers.forEach(u => {

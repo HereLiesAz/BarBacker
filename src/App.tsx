@@ -120,6 +120,16 @@ function App() {
   // --- Routing & Bar State ---
   // Access URL query parameters.
   const [searchParams, setSearchParams] = useSearchParams();
+  // react-router's setSearchParams is not identity-stable across the
+  // URL change it itself causes (its identity depends on
+  // location.search) — depending on it directly in the listener
+  // effect below made that effect re-run a second time immediately
+  // after mount purely because it had just called setSearchParams,
+  // tearing down and re-establishing all three listeners for no
+  // reason. Route calls through a ref instead so the effect only
+  // depends on values that should actually trigger it.
+  const setSearchParamsRef = useRef(setSearchParams);
+  useEffect(() => { setSearchParamsRef.current = setSearchParams; }, [setSearchParams]);
   // Get the 'bar' param from URL or fallback to localStorage.
   const initialBarId = searchParams.get('bar') || localStorage.getItem('barId');
   // Store the current Bar ID.
@@ -367,7 +377,7 @@ function App() {
     if (!user || !barId) return;
 
     // Persist Bar ID to URL and LocalStorage.
-    setSearchParams({ bar: barId });
+    setSearchParamsRef.current({ bar: barId });
     localStorage.setItem('barId', barId);
 
     // References to Firestore documents.
@@ -455,7 +465,7 @@ function App() {
     // so they can re-subscribe on the hourly windowEpoch without
     // tearing these down.
     return () => { unsubUser(); unsubBar(); unsubAllUsers(); };
-  }, [user, barId, setSearchParams, isDraggingRef]);
+  }, [user, barId, isDraggingRef]);
 
   // Time-window epoch. Bumped every hour so the requests/notices
   // listeners below re-subscribe with a fresh "now" lower bound. In a

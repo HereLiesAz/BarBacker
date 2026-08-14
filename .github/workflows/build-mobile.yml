@@ -27,20 +27,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Inject Google Services
+      - name: Inject ARCore API Key
         env:
-          GOOGLE_SERVICES_API_KEY: ${{ secrets.GOOGLE_SERVICES_API_KEY }}
-          PROJECT_ID: ${{ secrets.PROJECT_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
           ARCORE_API_KEY: ${{ secrets.ARCORE_API_KEY }}
         run: |
-          if [ -f "app/google-services.json.template" ]; then
-            echo "Template found. Injecting secrets..."
-            sed -e 's/{{\([^}]*\)}}/${\1}/g' app/google-services.json.template | envsubst > app/google-services.json
-          else
-            echo "Warning: google-services.json.template not found. Skipping injection."
-          fi
-
           # Inject ARCore API Key into local.properties for build.gradle.kts to pick up
           echo "ARCORE_API_KEY=$ARCORE_API_KEY" >> local.properties
 
@@ -63,14 +53,19 @@ jobs:
               -name "$KEY_ALIAS" -out keystore.p12 \
               -password pass:"$KEYSTORE_PASSWORD"
 
-            # Convert the PKCS12 file to a JKS keystore
+            # Convert the PKCS12 file to a JKS keystore. Written under
+            # android/app/ — the Capacitor Android app's actual
+            # location; this previously wrote to app/keystore.jks (a
+            # directory that doesn't exist in this repo), so the
+            # existence check below always failed and every release
+            # silently fell back to the default debug keystore.
             keytool -importkeystore -srckeystore keystore.p12 -srcstoretype PKCS12 \
-              -destkeystore app/keystore.jks -deststoretype JKS \
+              -destkeystore android/app/keystore.jks -deststoretype JKS \
               -srcstorepass "$KEYSTORE_PASSWORD" \
               -deststorepass "$KEYSTORE_PASSWORD" \
               -alias "$KEY_ALIAS" -noprompt
 
-            echo "Keystore generated successfully at app/keystore.jks"
+            echo "Keystore generated successfully at android/app/keystore.jks"
 
             # Clean up temporary files
             rm private_key.pem certificate_chain.crt keystore.p12
@@ -87,7 +82,35 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Generate google-services.json
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: |
+          # The step that used to live here looked for
+          # app/google-services.json.template using secret names
+          # (GOOGLE_SERVICES_API_KEY, PROJECT_ID, CLIENT_ID) that exist
+          # nowhere else in this repo, at a path ("app/") that isn't
+          # where the Capacitor Android app lives ("android/app/"), and
+          # no such template file was ever checked in — so the
+          # injection silently no-op'd on every run and every built APK
+          # shipped with FCM compiled out. This script writes directly
+          # to android/app/google-services.json from the same
+          # VITE_FIREBASE_* secrets used for the web build below.
+          node scripts/generate-google-services.js
+
       - name: Build Web App
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_VAPID_KEY: ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
         run: npm run build
 
       - name: Sync Capacitor
@@ -118,10 +141,10 @@ jobs:
           export BUILD_NUMBER=$(git rev-list --count HEAD)
           
           # Build the APK
-          if [ -f "app/keystore.jks" ]; then
+          if [ -f "android/app/keystore.jks" ]; then
             echo "Building with custom keystore..."
             ./android/gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache \
-              -Pandroid.injected.signing.store.file=$(pwd)/app/keystore.jks \
+              -Pandroid.injected.signing.store.file=$(pwd)/android/app/keystore.jks \
               -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
               -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
               -Pandroid.injected.signing.key.password=$KEY_PASSWORD \

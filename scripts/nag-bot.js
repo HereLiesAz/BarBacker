@@ -33,11 +33,40 @@ initializeApp({
 const db = getFirestore();
 const messaging = getMessaging();
 
+// Mirrors src/constants.ts's ROLE_NOTIFICATION_DEFAULTS. This script
+// runs standalone under plain Node (no Vite/TS build step), so it
+// can't import the TypeScript source directly — keep this in sync by
+// hand if the defaults there change.
+const ROLE_NOTIFICATION_DEFAULTS = {
+  'Owner': ['manager', 'security', 'keg', 'trash', 'ice', 'glass', 'fruit', 'restock', 'mixers', 'restock_beer', 'break'],
+  'Manager': ['manager', 'security', 'keg', 'trash', 'break'],
+  'Bartender': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer'],
+  'Barback': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer', 'break'],
+  'Server': [],
+  'Runner': ['ice', 'glass', 'restock', 'mixers', 'restock_beer'],
+  'Security': ['security', 'manager', 'break'],
+};
+
+// Given a pending request and a bar member, decide whether this nag
+// should mention it — mirrors useRequestActions.ts's immediate fanout
+// so a "reminder" push doesn't reach someone who was never subscribed
+// (or was explicitly excluded, e.g. off-clock) in the first place.
+function shouldNagUserAbout(req, member) {
+  if (member.status !== 'active' && member.status !== undefined) return false;
+  if ((req.label || '').includes('BREAK') || req.buttonId === 'break') return true;
+  // No resolvable button (free-text/custom request): shown to
+  // everyone in-app as a safety default, so nag everyone too.
+  if (!req.buttonId) return true;
+  const prefs = member.notificationPreferences
+    || ROLE_NOTIFICATION_DEFAULTS[member.jobTitle] || ROLE_NOTIFICATION_DEFAULTS[member.role] || [];
+  return prefs.includes(req.buttonId);
+}
+
 // Main function to check for ignored requests and send reminders ("Nags").
 async function nag() {
   // Define the threshold for "ignored": 5 minutes since the last notification/creation.
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-  
+
   // --- Step 1: Query Ignored Requests ---
   // Find requests that are 'pending' AND haven't been notified about since 'fiveMinutesAgo'.
   const snapshot = await db.collection('requests')
@@ -55,61 +84,88 @@ async function nag() {
   // --- Step 2: Group by Bar ---
   // We group requests by Bar ID to send a single consolidated notification per bar,
   // preventing notification spam if there are multiple pending items (e.g., 10 "Ice" requests).
-  const barUpdates = {}; // Map of barId -> [requestLabels]
+  const barUpdates = {}; // Map of barId -> [{ label, buttonId }]
 
   snapshot.docs.forEach(doc => {
     const data = doc.data();
     if (!barUpdates[data.barId]) barUpdates[data.barId] = [];
-    barUpdates[data.barId].push(data.label);
+    barUpdates[data.barId].push({ label: data.label, buttonId: data.buttonId });
   });
 
   // --- Step 3: Send Notifications per Bar ---
-  for (const [barId, labels] of Object.entries(barUpdates)) {
-    // Fetch all user tokens associated with this bar.
-    // In BarBacker, `bars/{barId}/tokens` contains documents where the ID is the User UID and the data contains the FCM token.
-    const tokensSnap = await db.collection(`bars/${barId}/tokens`).get();
-    const tokens = tokensSnap.docs.map(d => d.data().token).filter(t => t);
+  for (const [barId, requests] of Object.entries(barUpdates)) {
+    // Fetch bar members (for status/prefs filtering) and tokens
+    // together — `bars/{barId}/tokens` has one doc per uid holding
+    // the FCM token; `bars/{barId}/users` has the same uid holding
+    // status/notificationPreferences/jobTitle.
+    const [tokensSnap, usersSnap] = await Promise.all([
+      db.collection(`bars/${barId}/tokens`).get(),
+      db.collection(`bars/${barId}/users`).get(),
+    ]);
+    const membersById = new Map(usersSnap.docs.map(d => [d.id, d.data()]));
 
-    // If no devices are registered, skip.
-    if (tokens.length === 0) continue;
+    // Group recipients by the exact subset of requests they should be
+    // nagged about, so someone who only cares about ICE doesn't get
+    // paged about a KEG request too, and so we send the minimum
+    // number of distinct multicast calls.
+    const groups = new Map(); // key (sorted buttonId/label list) -> { labels, tokens }
+    for (const tokenDoc of tokensSnap.docs) {
+      const token = tokenDoc.data().token;
+      if (!token) continue;
+      const member = membersById.get(tokenDoc.id);
+      if (!member) continue; // Token orphaned from a removed member.
 
-    // Construct the notification payload.
-    const summary = labels.join(', ');
-    const title = `IGNORED: ${labels.length} TASKS`;
-    const body = `${summary} are still waiting. DO YOUR JOB.`;
+      const relevant = requests.filter(r => shouldNagUserAbout(r, member));
+      if (relevant.length === 0) continue;
 
-    // Send the Multicast Push Notification to all tokens.
-    // This uses FCM to reach Android and iOS devices.
-    await messaging.sendEachForMulticast({
-      tokens: tokens,
-      notification: {
-        title: title,
-        body: body,
-      },
-      data: {
-        type: 'nag_alert',
-        barId: barId
-      },
-      // Android specific config for high priority.
-      android: {
-        priority: 'high',
+      const key = relevant.map(r => r.buttonId || r.label).sort().join('|');
+      if (!groups.has(key)) groups.set(key, { labels: relevant.map(r => r.label), tokens: [] });
+      groups.get(key).tokens.push(token);
+    }
+
+    if (groups.size === 0) {
+      console.log(`No subscribed/active recipients for bar ${barId}; skipping.`);
+      continue;
+    }
+
+    for (const { labels, tokens } of groups.values()) {
+      const summary = labels.join(', ');
+      const title = `IGNORED: ${labels.length} TASK${labels.length === 1 ? '' : 'S'}`;
+      const body = `${summary} still waiting. DO YOUR JOB.`;
+
+      // Send the Multicast Push Notification to this recipient group.
+      // This uses FCM to reach Android and iOS devices.
+      await messaging.sendEachForMulticast({
+        tokens,
         notification: {
-          sound: 'default',
-          channelId: 'urgent_alerts'
-        }
-      },
-      // APNs (iOS) specific config.
-      apns: {
-        payload: {
-          aps: {
+          title: title,
+          body: body,
+        },
+        data: {
+          type: 'nag_alert',
+          barId: barId
+        },
+        // Android specific config for high priority.
+        android: {
+          priority: 'high',
+          notification: {
             sound: 'default',
-            'content-available': 1
+            channelId: 'urgent_alerts'
+          }
+        },
+        // APNs (iOS) specific config.
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              'content-available': 1
+            }
           }
         }
-      }
-    });
+      });
 
-    console.log(`Nagged bar ${barId} regarding: ${summary}`);
+      console.log(`Nagged ${tokens.length} recipient(s) at bar ${barId} regarding: ${summary}`);
+    }
   }
 
   // --- Step 4: Update Last Notification Timestamp ---

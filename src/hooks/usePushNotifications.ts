@@ -36,6 +36,24 @@ export function usePushNotifications() {
           // Capacitor's plugin registry is the source of truth.
           await PushNotifications.removeAllListeners();
 
+          // nag-bot.js sends Android pushes with
+          // android.notification.channelId: 'urgent_alerts', but on
+          // Android 8+ a channel that was never created falls back to
+          // a default-importance one — the message still arrives, but
+          // silently, with no heads-up popup or sound. Create it once
+          // up front; createChannel() is a no-op if it already exists.
+          if (Capacitor.getPlatform() === 'android') {
+            await PushNotifications.createChannel({
+              id: 'urgent_alerts',
+              name: 'Urgent Alerts',
+              description: 'Reminders for pending requests nobody has claimed yet.',
+              importance: 4, // HIGH: heads-up popup + sound.
+              visibility: 1, // PUBLIC: shows full content on the lock screen.
+              sound: 'default',
+              vibration: true,
+            }).catch((e) => console.error('Failed to create urgent_alerts channel', e));
+          }
+
           await PushNotifications.addListener('registration', token => {
             setFcmToken(token.value);
           });

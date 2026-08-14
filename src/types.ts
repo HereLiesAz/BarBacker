@@ -88,6 +88,12 @@ export interface Request {
   claimedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
   // The ID of the bar this request belongs to.
   barId: string;
+  // Optional: the top-level button id this request resolved to at
+  // creation time (see getButtonIdForLabel), if any — free-text
+  // custom requests have none. Persisted so nag-bot.js can filter by
+  // notification preference without re-deriving it from the bar's
+  // button config.
+  buttonId?: string;
   // Optional: The name of the user who claimed the request.
   claimerName?: string;
   // Optional: The timestamp of the last notification sent for this request (used for throttling).

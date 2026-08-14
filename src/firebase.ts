@@ -22,6 +22,10 @@ import {
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 // Import Firebase Storage for file uploads (e.g., bar logos).
 import { getStorage } from "firebase/storage";
+// Import Firebase Functions for calling the ownership-claim callables
+// (ownershipClaims writes go through Cloud Functions only — see
+// firestore.rules and functions/src/ownershipClaims.ts).
+import { getFunctions } from "firebase/functions";
 
 // Define the Firebase configuration object using environment variables.
 // These variables are injected by Vite at build time.
@@ -59,6 +63,10 @@ export const messaging = getMessaging(app);
 // Initialize and export the Firebase Storage service instance for
 // file uploads (bar logo uploads from ThemeEditor).
 export const storage = getStorage(app);
+
+// Initialize and export the Firebase Functions service instance for
+// calling onCall callables (ownership-claim filing/review).
+export const functions = getFunctions(app);
 
 // --- Auth Providers ---
 

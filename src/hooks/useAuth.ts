@@ -21,9 +21,17 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
+  // True until onAuthStateChanged's first callback. Without this, a
+  // returning signed-in user briefly sees the login form (App.tsx's
+  // `!user` screen) on every cold start, since `user` starts out null
+  // regardless of whether a session is about to be restored.
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -51,6 +59,7 @@ export function useAuth() {
 
   return {
     user,
+    loading,
     authError,
     isRegistering,
     setIsRegistering,

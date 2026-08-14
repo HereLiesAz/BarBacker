@@ -4,42 +4,39 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ROLE_NOTIFICATION_DEFAULTS, NTFY_DISPATCH_CONCURRENCY } from '../constants';
-import { pMap } from '../utils/async';
-import type { BarUser } from '../types';
 
 interface UseRequestActionsArgs {
   user: User | null;
   barId: string | null;
   displayName: string;
   userRole: string | null;
-  allUsers: BarUser[];
   getButtonIdForLabel: (label: string) => string | undefined;
 }
 
 // Owns the three request mutations:
-//   - submitRequest(label): writes to /requests, vibrates, fans out
-//     ntfy.sh notifications to every active member subscribed to this
-//     button. BREAK requests are sent to everyone regardless of prefs.
+//   - submitRequest(label): writes to /requests and vibrates for
+//     immediate haptic feedback. Delivery (FCM push + ntfy.sh) is
+//     handled server-side by the onRequestCreated Cloud Function,
+//     which fires on every new /requests doc — this used to fan out
+//     ntfy.sh calls from the client itself, which required every
+//     client to be able to read every bar member's ntfy topic (see
+//     firestore.rules' notes on the per-bar user doc) purely so it
+//     could compute who to notify. Moving it server-side closed that
+//     exposure and also means a request gets an instant native push
+//     instead of waiting for nag-bot's 5-minute cron.
 //   - claimRequest(reqId): marks a request as claimed.
 //   - cancelRequest(reqId): deletes a request the user created.
-//
-// ntfy fanout: the per-topic mapper catches its own errors so pMap
-// never rejects and one bad topic cannot abort the rest. We await
-// pMap so submitRequest only resolves once dispatch attempts are
-// complete — this is what gives the inactivity timer and UI a clean
-// "done" signal.
 export function useRequestActions({
   user,
   barId,
   displayName,
   userRole,
-  allUsers,
   getButtonIdForLabel,
 }: UseRequestActionsArgs) {
   const submitRequest = useCallback(async (label: string) => {
@@ -57,69 +54,13 @@ export function useRequestActions({
       status: 'pending',
       timestamp: serverTimestamp(),
       lastNotification: serverTimestamp(),
-      // Persisted so the (separate, Admin-SDK) nag-bot script can
-      // apply the same notificationPreferences filtering as this
-      // in-app fanout without re-deriving it from the bar's button
-      // config, which it has no access to.
+      // Persisted so onRequestCreated (server-side fanout) and
+      // nag-bot.js can apply the same notificationPreferences
+      // filtering without re-deriving it from the bar's button
+      // config, which neither has access to.
       ...(btnId ? { buttonId: btnId } : {}),
     });
-
-    const topics = new Set<string>();
-
-    allUsers.forEach(u => {
-      const isActive = u.status === 'active' || u.status === undefined;
-      if (!isActive || u.id === user.uid || !u.ntfyTopic) return;
-
-      let prefs = u.notificationPreferences;
-      if (!prefs && u.role) {
-        prefs = ROLE_NOTIFICATION_DEFAULTS[u.role] || [];
-      }
-
-      // BREAK requests always fan out to everyone. Exact resolved-id
-      // match only — a substring check on the label would let free
-      // text like "BREAKAGE AT WELL 3" mass-notify everyone regardless
-      // of preferences.
-      if (btnId === 'break') {
-        topics.add(u.ntfyTopic);
-        return;
-      }
-
-      // Free-text / unrecognized labels (custom requests, "(Ask Me)"
-      // auto-submits) have no btnId to check preferences against.
-      // activeRequests in App.tsx treats this the same way — shown to
-      // everyone as a safety default — so mirror that here instead of
-      // silently notifying nobody.
-      if (!btnId) {
-        topics.add(u.ntfyTopic);
-        return;
-      }
-
-      if (prefs && prefs.includes(btnId)) {
-        topics.add(u.ntfyTopic);
-      }
-    });
-
-    await pMap(
-      Array.from(topics),
-      async (topic) => {
-        try {
-          return await fetch(`https://ntfy.sh/${topic}`, {
-            method: 'POST',
-            body: `New Request: ${label} (by ${displayName})`,
-            headers: {
-              'Title': 'BarBacker Alert',
-              'Priority': 'high',
-              'Tags': 'bell,bar_chart',
-            },
-          });
-        } catch (err) {
-          console.error('Failed to send ntfy', err);
-          return undefined;
-        }
-      },
-      NTFY_DISPATCH_CONCURRENCY,
-    );
-  }, [user, barId, displayName, userRole, allUsers, getButtonIdForLabel]);
+  }, [user, barId, displayName, userRole, getButtonIdForLabel]);
 
   // Firestore serializes writes to a single document, and
   // firestore.rules requires resource.data.status == 'pending' for
@@ -142,9 +83,26 @@ export function useRequestActions({
     }
   }, [user, displayName]);
 
+  // Release a claim back to pending — the claimer got pulled away
+  // mid-task, or claimed the wrong one. firestore.rules only permits
+  // this transition for whoever currently holds the claim.
+  const unclaimRequest = useCallback(async (reqId: string) => {
+    try {
+      await updateDoc(doc(db, 'requests', reqId), {
+        status: 'pending',
+        claimedBy: deleteField(),
+        claimerName: deleteField(),
+        claimedAt: deleteField(),
+      });
+    } catch (e) {
+      console.error('Failed to unclaim request', e);
+      throw e;
+    }
+  }, []);
+
   const cancelRequest = useCallback(async (reqId: string) => {
     await deleteDoc(doc(db, 'requests', reqId));
   }, []);
 
-  return { submitRequest, claimRequest, cancelRequest };
+  return { submitRequest, claimRequest, unclaimRequest, cancelRequest };
 }

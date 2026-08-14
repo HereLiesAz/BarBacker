@@ -11,6 +11,7 @@ import {
   getDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   collection,
   addDoc,
 } from 'firebase/firestore';
@@ -234,6 +235,33 @@ describe('Firestore security rules', () => {
     it('allows a requester to delete (cancel) their own request', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
       await assertSucceeds(deleteDoc(doc(db, 'requests', 'r-a')));
+    });
+
+    it('lets the claimer release a claim back to pending (unclaim)', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'requests', 'r-a'), {
+          barId: BAR_A, label: 'ICE', requesterId: ALICE, status: 'claimed',
+          claimedBy: MANAGER, claimerName: 'M', timestamp: new Date(), claimedAt: new Date(),
+        });
+      });
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(updateDoc(doc(db, 'requests', 'r-a'), {
+        status: 'pending', claimedBy: deleteField(), claimerName: deleteField(), claimedAt: deleteField(),
+      }));
+    });
+
+    it('denies unclaiming a request someone else is holding', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'requests', 'r-a'), {
+          barId: BAR_A, label: 'ICE', requesterId: ALICE, status: 'claimed',
+          claimedBy: MANAGER, claimerName: 'M', timestamp: new Date(), claimedAt: new Date(),
+        });
+      });
+      // Alice has a role at bar A but never claimed this request.
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(updateDoc(doc(db, 'requests', 'r-a'), {
+        status: 'pending', claimedBy: deleteField(), claimerName: deleteField(), claimedAt: deleteField(),
+      }));
     });
 
     it('allows an admin to read across bars', async () => {

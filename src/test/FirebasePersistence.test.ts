@@ -46,6 +46,11 @@ vi.mock('firebase/storage', () => ({
   getStorage: vi.fn(() => ({})),
 }));
 
+// Mock firebase/functions (used for the ownership-claim callables)
+vi.mock('firebase/functions', () => ({
+  getFunctions: vi.fn(() => ({})),
+}));
+
 describe('Firebase Persistence', () => {
   afterEach(() => {
     vi.clearAllMocks();

@@ -22,6 +22,7 @@ import {
   serverTimestamp,
   setDoc,
   getDoc,
+  getDocs,
   addDoc,
   deleteDoc,
   arrayUnion,
@@ -30,8 +31,10 @@ import {
 // Import initialized Firebase instances and helper functions.
 import {
   db,
+  functions,
   requestNotificationPermission,
 } from './firebase';
+import { httpsCallable } from 'firebase/functions';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
 import { usePwaInstallPrompt } from './hooks/usePwaInstallPrompt';
@@ -109,6 +112,7 @@ function App() {
   // Auth state + actions (sign in, sign up, sign out, google).
   const {
     user,
+    loading: authLoading,
     authError,
     isRegistering,
     setIsRegistering,
@@ -159,9 +163,6 @@ function App() {
   const [barJoinPolicy, setBarJoinPolicy] = useState<'open' | 'approval'>('open');
   // Store the user's notification preferences (list of button IDs).
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
-  // Store the ntfy topic ID for iOS notifications (per-bar snapshot
-  // of the global topic, kept in sync via the bar listener).
-  const [ntfyTopic, setNtfyTopic] = useState<string | null>(null);
 
   // --- Data State ---
   // Store the list of active requests.
@@ -424,17 +425,6 @@ function App() {
           setNotificationPreferences(ROLE_NOTIFICATION_DEFAULTS[defaultsKey] || []);
         }
 
-        // Auto-coordinate ntfy topic. Mirror the global topic from
-        // users/{uid} into this bar's user profile so the fanout
-        // (which reads ntfyTopic off the per-bar user docs) stays in
-        // sync. If the global topic hasn't loaded yet, leave the
-        // per-bar value alone and pick it up on the next snapshot.
-        if (globalNtfyTopic && data.ntfyTopic !== globalNtfyTopic) {
-            updateDoc(userRef, { ntfyTopic: globalNtfyTopic }).catch(console.error);
-            setNtfyTopic(globalNtfyTopic);
-        } else {
-            setNtfyTopic(data.ntfyTopic || globalNtfyTopic);
-        }
       } else {
         // User document doesn't exist (new user).
         setUserRole(null);
@@ -550,19 +540,48 @@ function App() {
     return () => unsub();
   }, [barId, isPremium, userRole]);
 
-  // Mirror globalNtfyTopic into the per-bar user doc whenever the
-  // account-level topic changes. The per-bar user snapshot above also
-  // mirrors it on its own update, but if the global topic changes
-  // while the per-bar user doc is otherwise quiet (no role change,
-  // status flip, etc.) the snapshot wouldn't fire and the per-bar
-  // value would stay stale. This effect plugs that gap without
-  // re-subscribing the listeners.
+  // Pending ownership-claim listener (Manager+ only — matches the
+  // read rule on ownershipClaims). Writes to this collection are
+  // Cloud-Function-only (see functions/src/ownershipClaims.ts); this
+  // just surfaces what's pending for review in WhoIsOnDialog.
+  const [pendingOwnershipClaims, setPendingOwnershipClaims] = useState<Array<{ id: string; claimantName?: string; justification?: string }>>([]);
   useEffect(() => {
-    if (!user || !barId || !globalNtfyTopic) return;
-    const userRef = doc(db, `bars/${barId}/users`, user.uid);
-    updateDoc(userRef, { ntfyTopic: globalNtfyTopic }).catch(console.error);
-    setNtfyTopic(globalNtfyTopic);
-  }, [user, barId, globalNtfyTopic]);
+    if (!barId || !isManagerPlus) {
+      setPendingOwnershipClaims([]);
+      return;
+    }
+    const q = query(collection(db, `bars/${barId}/ownershipClaims`), where('status', '==', 'pending'));
+    const unsub = onSnapshot(q, (s) => {
+      setPendingOwnershipClaims(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error('Ownership claims listener failed', err));
+    return () => unsub();
+  }, [barId, isManagerPlus]);
+
+  // File a claim requesting ownership of the current bar (Account
+  // dialog). Writes go through the Cloud Function only — the client
+  // never touches ownershipClaims directly (allow write: if false).
+  const fileOwnershipClaim = async () => {
+    if (!barId) return;
+    try {
+      await httpsCallable(functions, 'fileOwnershipClaim')({ barId });
+      alert('Ownership claim filed. A manager or the current owner needs to approve it.');
+    } catch (e) {
+      console.error('Failed to file ownership claim', e);
+      alert(e instanceof Error ? e.message : 'Failed to file ownership claim.');
+    }
+  };
+
+  // Approve/reject a pending ownership claim (WhoIsOnDialog, Manager+).
+  const reviewOwnershipClaim = async (claimId: string, approve: boolean) => {
+    if (!barId) return;
+    try {
+      await httpsCallable(functions, 'reviewOwnershipClaim')({ barId, claimId, approve });
+    } catch (e) {
+      console.error('Failed to review ownership claim', e);
+      alert(e instanceof Error ? e.message : 'Failed to review ownership claim.');
+    }
+  };
+
 
   // --- 2.5 Auto-Clock In (Token Update) ---
   useEffect(() => {
@@ -960,9 +979,69 @@ function App() {
     }
   };
 
+  // Manager+ invites someone by email (BarManager). Consumption and
+  // role-granting happen server-side — see the invite-check effect
+  // below and functions/src/onInviteConsumed.ts.
+  const sendInvite = async (email: string, role: 'Staff' | 'Manager') => {
+    if (!user || !barId) return;
+    await addDoc(collection(db, `bars/${barId}/invites`), {
+      email,
+      role,
+      createdBy: user.uid,
+      createdByName: displayName,
+      createdAt: serverTimestamp(),
+      consumed: false,
+    });
+  };
+
+  // True while checking for (and possibly consuming) a pending invite
+  // for this bar/email as soon as the user lands here with no role
+  // yet. Gates the Role Selection screen so an invited user doesn't
+  // see "pick a job title" for the instant before their invited role
+  // lands — falls back to the normal flow if no invite is found, or
+  // after a timeout if granting is taking unexpectedly long.
+  const [checkingInvite, setCheckingInvite] = useState(false);
+  useEffect(() => {
+    if (userRole) setCheckingInvite(false);
+  }, [userRole]);
+  useEffect(() => {
+    if (!user || !barId || userRole || !user.email) return;
+    let cancelled = false;
+    setCheckingInvite(true);
+    const timeoutId = setTimeout(() => { if (!cancelled) setCheckingInvite(false); }, 8000);
+    (async () => {
+      try {
+        const q = query(
+          collection(db, `bars/${barId}/invites`),
+          where('email', '==', user.email!.toLowerCase()),
+          where('consumed', '==', false),
+          limit(1),
+        );
+        const snap = await getDocs(q);
+        if (cancelled) return;
+        if (snap.empty) {
+          setCheckingInvite(false);
+          return;
+        }
+        await updateDoc(snap.docs[0].ref, {
+          consumed: true,
+          consumedBy: user.uid,
+          consumedAt: serverTimestamp(),
+        });
+        // Leave checkingInvite true — the per-bar user listener will
+        // clear it (via the effect above) once onInviteConsumed grants
+        // the role, or the timeout above will if that takes too long.
+      } catch (e) {
+        console.error('Invite check failed', e);
+        if (!cancelled) setCheckingInvite(false);
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(timeoutId); };
+  }, [user, barId, userRole]);
+
   // Request mutations: submit (+ ntfy fanout), claim, cancel.
-  const { submitRequest, claimRequest, cancelRequest } = useRequestActions({
-    user, barId, displayName, userRole, allUsers, getButtonIdForLabel,
+  const { submitRequest, claimRequest, unclaimRequest, cancelRequest } = useRequestActions({
+    user, barId, displayName, userRole, getButtonIdForLabel,
   });
 
   // True while a request submission is in flight. Guards against a
@@ -992,15 +1071,13 @@ function App() {
   // persisted. The per-bar user snapshot will also reconcile this
   // state once the write lands, so the local set is mostly a latency
   // smoother now.
-  const saveNotificationPreferences = async (prefs: string[], topic: string) => {
+  const saveNotificationPreferences = async (prefs: string[]) => {
     if (!user || !barId) return;
     try {
       await setDoc(doc(db, `bars/${barId}/users`, user.uid), {
         notificationPreferences: prefs,
-        ntfyTopic: topic,
       }, { merge: true });
       setNotificationPreferences(prefs);
-      setNtfyTopic(topic);
     } catch (e) {
       console.error('Failed to save notification preferences', e);
     }
@@ -1105,6 +1182,16 @@ function App() {
   };
 
   // --- Views ---
+
+  // 0. Auth still restoring — without this a returning signed-in user
+  // sees the login form flash before onAuthStateChanged resolves.
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-black">
+        <md-circular-progress indeterminate style={{ width: '32px', height: '32px' }} />
+      </div>
+    );
+  }
 
   // 1. Auth Screen
   if (!user) {
@@ -1212,6 +1299,14 @@ function App() {
 
   // 3. Role Selection Screen
   if (!userRole) {
+    if (checkingInvite) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-4 bg-black">
+          <md-circular-progress indeterminate style={{ width: '32px', height: '32px' }} />
+          <p className="text-gray-400 text-sm">Checking for an invite...</p>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 space-y-6 bg-black">
         <div className="flex w-full justify-between items-center max-w-[300px]">
@@ -1292,6 +1387,8 @@ function App() {
         onHideButton={hideButton}
         isPremium={isPremium}
         onUnhideButton={unhideButton}
+        isManagerPlus={isManagerPlus}
+        onInvite={sendInvite}
       />
 
       <EightySixDialog
@@ -1322,6 +1419,9 @@ function App() {
         isManagerPlus={isManagerPlus}
         onApprove={approveUser}
         onReject={rejectUser}
+        pendingOwnershipClaims={pendingOwnershipClaims}
+        onApproveOwnershipClaim={(id) => reviewOwnershipClaim(id, true)}
+        onRejectOwnershipClaim={(id) => reviewOwnershipClaim(id, false)}
       />
 
       <NotificationSettings
@@ -1330,7 +1430,7 @@ function App() {
         onSave={saveNotificationPreferences}
         userRole={jobTitle || userRole || ''}
         currentPreferences={notificationPreferences}
-        currentNtfyTopic={ntfyTopic}
+        currentNtfyTopic={globalNtfyTopic}
         allButtons={buttons}
       />
 
@@ -1595,6 +1695,16 @@ function App() {
                 <md-icon slot="icon">edit</md-icon>
                 Edit Name
             </md-outlined-button>
+            {userRole !== 'Owner' && (
+                <md-outlined-button onClick={() => {
+                    if (confirm(`File a claim requesting ownership of ${barName}? A manager or the current owner will need to approve it.`)) {
+                        fileOwnershipClaim();
+                    }
+                }}>
+                    <md-icon slot="icon">verified</md-icon>
+                    Claim Ownership
+                </md-outlined-button>
+            )}
         </div>
         <div slot="actions">
             <div className="flex flex-col gap-2 w-full items-end">
@@ -1800,6 +1910,16 @@ function App() {
                  {req.claimerName || 'Someone'} claimed {req.claimedAt ? formatTime(req.claimedAt) : ''} • Asked {formatTime(req.timestamp)}
               </div>
               <md-icon slot="start" className="text-green-800">check_circle</md-icon>
+              {/* Let the claimer release a stale/mistaken claim back to
+                  pending — otherwise a claim that goes stale (they got
+                  pulled away mid-task) is invisible forever. */}
+              {user && req.claimedBy === user.uid && (
+                <md-text-button slot="end" onClick={() => unclaimRequest(req.id).catch(() => {
+                    alert('Failed to unclaim. Please try again.');
+                })}>
+                  Unclaim
+                </md-text-button>
+              )}
             </md-list-item>
           ))}
         </md-list>

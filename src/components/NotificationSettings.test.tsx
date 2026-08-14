@@ -54,7 +54,7 @@ describe('NotificationSettings', () => {
 
         // Click Save immediately
         fireEvent.click(screen.getByText('Save'));
-        expect(mockOnSave).toHaveBeenCalledWith(['ice'], '');
+        expect(mockOnSave).toHaveBeenCalledWith(['ice']);
     });
 
     it('toggles preferences', async () => {
@@ -93,7 +93,7 @@ describe('NotificationSettings', () => {
         fireEvent.click(screen.getByText('Save'));
 
         // Should now include 'ice' and 'security'
-        expect(mockOnSave).toHaveBeenCalledWith(['ice', 'security'], '');
+        expect(mockOnSave).toHaveBeenCalledWith(['ice', 'security']);
     });
 
     it('resets to defaults', async () => {
@@ -127,5 +127,36 @@ describe('NotificationSettings', () => {
         expect(saved).toContain('glass');
         expect(saved).toContain('keg'); // Default
         expect(saved).not.toContain('security'); // Bartender doesn't have security default
+    });
+
+    it('shows a Loading badge (not a hardcoded Active) before the ntfy topic arrives', () => {
+        render(
+            <NotificationSettings
+                open={true}
+                onClose={mockOnClose}
+                onSave={mockOnSave}
+                userRole="Bartender"
+                currentPreferences={[]}
+                currentNtfyTopic={null}
+                allButtons={MOCK_BUTTONS}
+            />
+        );
+        expect(screen.getAllByText('Loading...').length).toBeGreaterThan(0);
+        expect(screen.queryByText('Active')).not.toBeInTheDocument();
+    });
+
+    it('shows an Active badge once the ntfy topic has loaded', () => {
+        render(
+            <NotificationSettings
+                open={true}
+                onClose={mockOnClose}
+                onSave={mockOnSave}
+                userRole="Bartender"
+                currentPreferences={[]}
+                currentNtfyTopic="barbacker-abc123"
+                allButtons={MOCK_BUTTONS}
+            />
+        );
+        expect(screen.getByText('Active')).toBeInTheDocument();
     });
 });

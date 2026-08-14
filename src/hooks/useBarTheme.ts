@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import type { BarTheme } from '../types';
 import { getContrastColor } from '../utils/color';
 
@@ -7,7 +7,10 @@ import { getContrastColor } from '../utils/color';
  * Removes custom properties when theme is undefined or bar is not premium.
  */
 export function useBarTheme(theme: BarTheme | undefined, isPremium: boolean): void {
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) applies the CSS variables
+  // synchronously before the browser paints, avoiding a one-frame
+  // flash of the previous/default colors on every theme change.
+  useLayoutEffect(() => {
     const root = document.documentElement;
 
     if (!isPremium || !theme) {

@@ -18,8 +18,8 @@ import { MdDialog } from './MdDialog';
 interface NotificationSettingsProps {
   open: boolean;
   onClose: () => void;
-  // Callback to save: returns the list of enabled button IDs and the ntfy topic.
-  onSave: (preferences: string[], ntfyTopic: string) => void;
+  // Callback to save the list of enabled button IDs.
+  onSave: (preferences: string[]) => void;
   userRole: string;
   currentPreferences: string[]; // List of enabled IDs
   currentNtfyTopic?: string | null;
@@ -38,16 +38,36 @@ const NotificationSettings = ({
 }: NotificationSettingsProps) => {
   // Local state for the list of enabled IDs.
   const [preferences, setPreferences] = useState<string[]>([]);
-  // Local state for the ntfy topic (read-only mostly, but passed back).
-  const [ntfyTopic, setNtfyTopic] = useState<string>('');
 
   // Initialize preferences when the dialog opens or props change.
   useEffect(() => {
     if (open) {
       setPreferences(currentPreferences);
-      setNtfyTopic(currentNtfyTopic || '');
     }
-  }, [open, currentPreferences, currentNtfyTopic]);
+  }, [open, currentPreferences]);
+
+  // The "Active" badge used to be hardcoded regardless of whether
+  // notifications actually work. This checks the one signal available
+  // cross-platform from plain web APIs: on web, the Notification
+  // permission; the ntfy topic itself is the other precondition
+  // (still loading right after signup). Native (Capacitor) apps don't
+  // have a `Notification` global at all, so they fall through to
+  // "assume granted" here — the OS-level permission prompt is handled
+  // by usePushNotifications on that path and isn't re-checked in this
+  // dialog.
+  const [webPermission, setWebPermission] = useState<NotificationPermission | 'unsupported'>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+  );
+  useEffect(() => {
+    if (!open || typeof Notification === 'undefined') return;
+    setWebPermission(Notification.permission);
+  }, [open]);
+
+  const status: { label: string; className: string } = !currentNtfyTopic
+    ? { label: 'Loading...', className: 'text-gray-400 bg-gray-800/50' }
+    : webPermission === 'denied'
+      ? { label: 'Blocked', className: 'text-red-400 bg-red-900/30' }
+      : { label: 'Active', className: 'text-green-400 bg-green-900/30' };
 
   // Handler for toggling a specific button's notification.
   const handleToggle = (id: string, selected: boolean) => {
@@ -68,7 +88,7 @@ const NotificationSettings = ({
 
   // Save changes.
   const handleSave = () => {
-    onSave(preferences, ntfyTopic);
+    onSave(preferences);
     onClose();
   };
 
@@ -84,18 +104,23 @@ const NotificationSettings = ({
         <div className="p-4 bg-[#2D2D2D] rounded-lg border border-[#444] flex flex-col gap-3">
              <div className="flex items-center justify-between">
                  <span className="font-bold text-gray-300">iOS Alerts (ntfy)</span>
-                 <span className="text-xs text-green-400 font-mono bg-green-900/30 px-2 py-1 rounded">Active</span>
+                 <span className={`text-xs font-mono px-2 py-1 rounded ${status.className}`}>{status.label}</span>
              </div>
+             {status.label === 'Blocked' && (
+                 <p className="text-xs text-red-400">
+                     Notifications are blocked in this browser. Enable them in your browser/OS settings, then reopen this dialog.
+                 </p>
+             )}
 
              {/* Display Topic ID */}
              <div className="text-xs text-gray-400 font-mono break-all p-2 bg-black/50 rounded select-all">
-                {ntfyTopic || 'Loading...'}
+                {currentNtfyTopic || 'Loading...'}
              </div>
 
              {/* Subscribe Link (Deep Link) */}
-             {ntfyTopic && (
+             {currentNtfyTopic && (
                  <a
-                    href={`ntfy://subscribe/${ntfyTopic}`}
+                    href={`ntfy://subscribe/${currentNtfyTopic}`}
                     className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-sm transition-colors text-center no-underline"
                  >
                     <md-icon style={{ fontSize: '18px' }}>notifications_active</md-icon>

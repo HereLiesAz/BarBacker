@@ -64,6 +64,20 @@ describe("bar rules", () => {
     }));
   });
 
+  it("Staff cannot self-write ntfyTopic on the per-bar user doc", async () => {
+    // ntfyTopic used to be mirrored here so client-side fanout could
+    // read every member's topic — which is exactly what made it
+    // possible for any bar member to read (and keep, even after being
+    // kicked) a colleague's ntfy topic. Fanout is now server-side
+    // (onRequestCreated), reading the topic off the global,
+    // self-only users/{uid} doc instead — this field should no longer
+    // be writable (or meaningfully readable by peers) here at all.
+    const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
+    await assertFails(updateDoc(doc(db, "bars/bar_A/users/staff_bob"), {
+      ntfyTopic: "some-topic",
+    }));
+  });
+
   it("Staff cannot escalate role via combined-field self-write", async () => {
     const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
     // Attempt to set status:off_clock AND role:Manager in one update.

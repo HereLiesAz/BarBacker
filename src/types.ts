@@ -239,3 +239,26 @@ export interface OwnershipClaim {
   status: 'pending' | 'approved' | 'rejected';
   createdAt: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
+
+// POS integration (Phase 3). Client-visible status only — the actual
+// OAuth tokens live server-side (bars/{barId}/posSecrets), never
+// readable from the client. See functions/src/pos/.
+export interface POSConnectionStatus {
+  provider: string;
+  connected: boolean;
+  merchantId?: string;
+  error?: string | null;
+  connectedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  lastSyncedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  lastSyncedCount?: number;
+}
+
+// A menu item synced in from a connected POS via posSyncMenu.
+export interface POSMenuItem {
+  id: string;
+  name: string;
+  price: number; // integer cents
+  category?: string;
+  provider: string;
+  syncedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}

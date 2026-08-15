@@ -229,6 +229,38 @@ service cloud.firestore {
                        (isAuthed() && resource.data.claimantId == request.auth.uid);
         allow write: if false;
       }
+
+      // POS integration (Phase 3 — see
+      // docs/plans/2026-05-21-feature-set-purr-design.md). Connection
+      // *status* (connected/merchantId/lastSyncedAt/error — never a
+      // token) is Manager+-readable so POS Settings can show it;
+      // writes are Cloud-Function-only (posConnectToast, oauthCallback,
+      // posDisconnect, posSyncMenu). The actual encrypted tokens live
+      // in posSecrets, a separate collection with no client access at
+      // all — splitting them out means a client read of posConnection
+      // can never leak a credential, since Firestore rules can't do
+      // field-level read redaction within a single document.
+      match /posConnection/{provider} {
+        allow read: if isManagerPlus(barId);
+        allow write: if false;
+      }
+      match /posSecrets/{provider} {
+        allow read, write: if false;
+      }
+
+      // Menu synced from a connected POS (posSyncMenu). Any bar
+      // member can see the current menu; writes are Cloud-Function-only.
+      match /menu/{itemId} {
+        allow read: if hasRole(barId);
+        allow write: if false;
+      }
+    }
+
+    // Ephemeral OAuth state tokens for the POS connect flow (Square) —
+    // see posGetAuthorizeUrl/oauthCallback in functions/src/pos/oauth.ts.
+    // Cloud-Function-only; short-lived and deleted by oauthCallback.
+    match /posOAuthStates/{state} {
+      allow read, write: if false;
     }
 
     // Requests — top-level collection, scoped by barId field.

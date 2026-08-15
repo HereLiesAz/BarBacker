@@ -46,6 +46,7 @@ import { useAuth } from './hooks/useAuth';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { useChat } from './hooks/useChat';
 import { usePOS } from './hooks/usePOS';
+import { useCalendar } from './hooks/useCalendar';
 import { useDragAndDrop } from './hooks/useDragAndDrop';
 import { useRequestActions } from './hooks/useRequestActions';
 
@@ -86,6 +87,8 @@ import InputDialog from './components/InputDialog';
 import { WhoIsOnDialog } from './components/WhoIsOnDialog';
 import { ChatPanel } from './components/ChatPanel';
 import { POSSettings } from './components/POSSettings';
+import { CalendarSettings } from './components/CalendarSettings';
+import { CalendarView } from './components/CalendarView';
 import { SortableButton } from './components/SortableButton';
 import { MdDialog } from './components/MdDialog';
 // Import dnd-kit for drag-and-drop functionality.
@@ -393,6 +396,8 @@ function App() {
   const [showEightySixDialog, setShowEightySixDialog] = useState(false);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [showPOSSettings, setShowPOSSettings] = useState(false);
+  const [showCalendarSettings, setShowCalendarSettings] = useState(false);
+  const [showCalendarView, setShowCalendarView] = useState(false);
 
   // Joined bars + their display names + the account-level ntfy topic
   // — all driven by the global users/{uid} document.
@@ -754,6 +759,36 @@ function App() {
     connectSquare: posConnectSquare, connectToast: posConnectToast,
     disconnect: posDisconnect, syncMenu: posSyncMenu, getSales: posGetSales,
   } = usePOS({ barId, isManagerPlus });
+
+  // Calendar (Phase 4). See docs/plans/2026-05-21-feature-set-purr-design.md.
+  const {
+    events: calendarEvents, googleConnection: calendarGoogleConnection,
+    icalSubscriptions: calendarICalSubscriptions, feedToken: calendarFeedToken,
+    createEvent: createCalendarEvent, updateEvent: updateCalendarEvent, deleteEvent: deleteCalendarEvent,
+    connectGoogle: connectCalendarGoogle, listGoogleCalendars: listCalendarGoogleCalendars,
+    selectGoogleCalendar: selectCalendarGoogleCalendar, disconnectGoogle: disconnectCalendarGoogle,
+    addICalSubscription: addCalendarICalSubscription, removeICalSubscription: removeCalendarICalSubscription,
+    rotateFeedToken: rotateCalendarFeedToken,
+  } = useCalendar({ barId, isManagerPlus });
+
+  // Shift auto-clock-in (Phase 4). If the user is off_clock but has
+  // an active type:'shift' event assigned to them right now, promote
+  // straight to active — connects to the same self-write rule
+  // confirmRole's manual "Clock In" already relies on (off_clock ->
+  // active is always self-allowed; see firestore.rules). Does NOT
+  // apply to 'pending' status — that still requires Manager approval,
+  // same as manual clock-in.
+  useEffect(() => {
+    if (!user || !barId || userStatus !== 'off_clock') return;
+    const now = Date.now();
+    const activeShift = calendarEvents.find((e) =>
+      e.type === 'shift' && e.assignedTo?.includes(user.uid) &&
+      new Date(e.start).getTime() <= now && now <= new Date(e.end).getTime(),
+    );
+    if (!activeShift) return;
+    updateDoc(doc(db, `bars/${barId}/users`, user.uid), { status: 'active' })
+      .catch((e) => console.error('Shift auto-clock-in failed', e));
+  }, [user, barId, userStatus, calendarEvents]);
 
   // Determine children for dynamic buttons (ICE, BEER, etc.).
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
@@ -1467,6 +1502,34 @@ function App() {
         onGetSales={posGetSales}
       />
 
+      <CalendarView
+        open={showCalendarView}
+        onClose={() => setShowCalendarView(false)}
+        events={calendarEvents}
+        isManagerPlus={isManagerPlus}
+        onCreate={createCalendarEvent}
+        onUpdate={updateCalendarEvent}
+        onDelete={deleteCalendarEvent}
+      />
+
+      {barId && (
+        <CalendarSettings
+          open={showCalendarSettings}
+          onClose={() => setShowCalendarSettings(false)}
+          barId={barId}
+          googleConnection={calendarGoogleConnection}
+          icalSubscriptions={calendarICalSubscriptions}
+          feedToken={calendarFeedToken}
+          onConnectGoogle={connectCalendarGoogle}
+          onListGoogleCalendars={listCalendarGoogleCalendars}
+          onSelectGoogleCalendar={selectCalendarGoogleCalendar}
+          onDisconnectGoogle={disconnectCalendarGoogle}
+          onAddICalSubscription={(url) => addCalendarICalSubscription(url, user!.uid)}
+          onRemoveICalSubscription={removeCalendarICalSubscription}
+          onRotateFeedToken={rotateCalendarFeedToken}
+        />
+      )}
+
       <InputDialog
         open={inputDialog.open}
         mode={inputDialog.type}
@@ -1629,6 +1692,16 @@ function App() {
                           <md-menu-item onClick={() => setShowPOSSettings(true)}>
                               <md-icon slot="start">point_of_sale</md-icon>
                               <div slot="headline">POS Integration</div>
+                          </md-menu-item>
+                        )}
+                        <md-menu-item onClick={() => setShowCalendarView(true)}>
+                            <md-icon slot="start">calendar_month</md-icon>
+                            <div slot="headline">Calendar</div>
+                        </md-menu-item>
+                        {isPremium && isManagerPlus && (
+                          <md-menu-item onClick={() => setShowCalendarSettings(true)}>
+                              <md-icon slot="start">event_available</md-icon>
+                              <div slot="headline">Calendar Settings</div>
                           </md-menu-item>
                         )}
                         <md-menu-item onClick={handleShare}>

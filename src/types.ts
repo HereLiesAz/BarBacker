@@ -262,3 +262,43 @@ export interface POSMenuItem {
   provider: string;
   syncedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
 }
+
+// Calendar (Phase 4). A locally-created event has neither
+// externalId nor externalProvider set. Once mirrored out to Google it
+// gains externalId (a sync pointer) but stays locally editable.
+// externalProvider is only ever set by inbound sync (Google webhook
+// or iCal poll) and marks the event as externally-owned — read-only
+// client-side, see firestore.rules.
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string; // ISO 8601
+  end: string; // ISO 8601
+  description?: string;
+  type: 'shift' | 'booking' | 'event' | string;
+  assignedTo?: string[]; // uids, for type:'shift'
+  externalId?: string;
+  externalProvider?: string; // 'google' | 'ical:<url-hash>'
+  lastSyncedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  deletedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}
+
+// Google Calendar connection status. Tokens live server-side
+// (bars/{barId}/calendarSecrets), never readable from the client.
+export interface CalendarConnectionStatus {
+  provider: string;
+  connected: boolean;
+  calendarId?: string | null;
+  error?: string | null;
+  connectedAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+}
+
+// An external .ics URL a Manager+ has subscribed the bar's calendar to.
+export interface ICalSubscription {
+  id: string;
+  url: string;
+  createdBy: string;
+  createdAt: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  lastPolledAt?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  lastError?: string | null;
+}

@@ -1,6 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { requireManagerPlus } from "./authz";
+import { requireManagerPlus } from "../shared/authz";
 import { getConnectedClient } from "./connection";
 import { POSProvider } from "./types";
 

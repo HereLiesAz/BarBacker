@@ -241,6 +241,60 @@ describe('Firestore security rules', () => {
     });
   });
 
+  describe('bars/{barId}/posConnection, posSecrets, menu (Phase 3)', () => {
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/posConnection`, 'square'),
+          { provider: 'square', connected: true, merchantId: 'merch-1' });
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/posSecrets`, 'square'),
+          { accessToken: 'encrypted-blob' });
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/menu`, 'item-1'),
+          { name: 'Well Whiskey', price: 800, provider: 'square' });
+      });
+    });
+
+    it('allows Manager+ to read posConnection status', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(getDoc(doc(db, `bars/${BAR_A}/posConnection`, 'square')));
+    });
+
+    it('denies Staff from reading posConnection status', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(getDoc(doc(db, `bars/${BAR_A}/posConnection`, 'square')));
+    });
+
+    it('denies any client write to posConnection, even by Manager+', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(setDoc(doc(db, `bars/${BAR_A}/posConnection`, 'square'),
+        { provider: 'square', connected: true, merchantId: 'attacker' }));
+    });
+
+    it('denies any client read or write of posSecrets, even by Manager+', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(getDoc(doc(db, `bars/${BAR_A}/posSecrets`, 'square')));
+      await assertFails(setDoc(doc(db, `bars/${BAR_A}/posSecrets`, 'square'), { accessToken: 'stolen' }));
+    });
+
+    it('allows any bar member to read the synced menu', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertSucceeds(getDoc(doc(db, `bars/${BAR_A}/menu`, 'item-1')));
+    });
+
+    it('denies any client write to the menu, even by Manager+', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(setDoc(doc(db, `bars/${BAR_A}/menu`, 'item-1'),
+        { name: 'Free Drinks', price: 0, provider: 'square' }));
+    });
+
+    it('denies any client access to posOAuthStates', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'posOAuthStates', 'state-1'), { barId: BAR_A, provider: 'square' });
+      });
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(getDoc(doc(db, 'posOAuthStates', 'state-1')));
+    });
+  });
+
   describe('requests/{requestId}', () => {
     beforeEach(async () => {
       await env.withSecurityRulesDisabled(async (ctx) => {

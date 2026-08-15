@@ -45,6 +45,7 @@ import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
 import { useAuth } from './hooks/useAuth';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { useChat } from './hooks/useChat';
+import { usePOS } from './hooks/usePOS';
 import { useDragAndDrop } from './hooks/useDragAndDrop';
 import { useRequestActions } from './hooks/useRequestActions';
 
@@ -84,6 +85,7 @@ import ThemeEditor from './components/ThemeEditor';
 import InputDialog from './components/InputDialog';
 import { WhoIsOnDialog } from './components/WhoIsOnDialog';
 import { ChatPanel } from './components/ChatPanel';
+import { POSSettings } from './components/POSSettings';
 import { SortableButton } from './components/SortableButton';
 import { MdDialog } from './components/MdDialog';
 // Import dnd-kit for drag-and-drop functionality.
@@ -390,6 +392,7 @@ function App() {
   const [eightySixEntries, setEightySixEntries] = useState<EightySixEntry[]>([]);
   const [showEightySixDialog, setShowEightySixDialog] = useState(false);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
+  const [showPOSSettings, setShowPOSSettings] = useState(false);
 
   // Joined bars + their display names + the account-level ntfy topic
   // — all driven by the global users/{uid} document.
@@ -744,6 +747,13 @@ function App() {
     togglePin: toggleChatPin,
     deleteMessage: deleteChatMessage,
   } = useChat({ user, barId, displayName, userRole, panelOpen: showChatPanel });
+
+  // POS integration (Phase 3). See docs/plans/2026-05-21-feature-set-purr-design.md.
+  const {
+    connections: posConnections, menu: posMenu,
+    connectSquare: posConnectSquare, connectToast: posConnectToast,
+    disconnect: posDisconnect, syncMenu: posSyncMenu, getSales: posGetSales,
+  } = usePOS({ barId, isManagerPlus });
 
   // Determine children for dynamic buttons (ICE, BEER, etc.).
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
@@ -1445,6 +1455,18 @@ function App() {
         onDelete={deleteChatMessage}
       />
 
+      <POSSettings
+        open={showPOSSettings}
+        onClose={() => setShowPOSSettings(false)}
+        connections={posConnections}
+        menu={posMenu}
+        onConnectSquare={posConnectSquare}
+        onConnectToast={posConnectToast}
+        onDisconnect={posDisconnect}
+        onSyncMenu={posSyncMenu}
+        onGetSales={posGetSales}
+      />
+
       <InputDialog
         open={inputDialog.open}
         mode={inputDialog.type}
@@ -1601,6 +1623,12 @@ function App() {
                           <md-menu-item onClick={() => setShowThemeEditor(true)}>
                               <md-icon slot="start">palette</md-icon>
                               <div slot="headline">Customize Theme</div>
+                          </md-menu-item>
+                        )}
+                        {isPremium && isManagerPlus && (
+                          <md-menu-item onClick={() => setShowPOSSettings(true)}>
+                              <md-icon slot="start">point_of_sale</md-icon>
+                              <div slot="headline">POS Integration</div>
                           </md-menu-item>
                         )}
                         <md-menu-item onClick={handleShare}>

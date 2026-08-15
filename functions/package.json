@@ -2,7 +2,9 @@
   "name": "barbacker-functions",
   "private": true,
   "main": "lib/index.js",
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "20"
+  },
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
@@ -11,13 +13,14 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@google-cloud/kms": "^6.0.0",
     "firebase-admin": "^12.0.0",
     "firebase-functions": "^6.0.0"
   },
   "devDependencies": {
+    "@types/node": "^20.10.0",
     "typescript": "^5.4.0",
-    "vitest": "^4.0.16",
-    "@types/node": "^20.10.0"
+    "vitest": "^4.0.16"
   },
   "overrides": {
     "uuid": "^11.1.1"

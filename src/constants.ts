@@ -109,3 +109,36 @@ export const ROLE_NOTIFICATION_DEFAULTS: Record<string, string[]> = {
   'Security': ['security', 'manager', 'break']
 };
 
+// POS provider picker honesty (Phase 3 — see
+// docs/plans/2026-05-21-feature-set-purr-design.md). Only 'available'
+// providers are selectable in POSSettings; the rest render disabled
+// with a "Coming soon" label. Flipping a provider to real support is
+// a one-line change here once its Cloud Function adapter is built —
+// see functions/src/pos/stubs.ts for the scaffolding those adapters
+// already conform to.
+export const POS_PROVIDERS: { id: string; label: string }[] = [
+  { id: 'square', label: 'Square' },
+  { id: 'toast', label: 'Toast' },
+  { id: 'clover', label: 'Clover' },
+  { id: 'lightspeed', label: 'Lightspeed' },
+  { id: 'spoton', label: 'SpotOn' },
+  { id: 'touchbistro', label: 'TouchBistro' },
+  { id: 'revel', label: 'Revel' },
+  { id: 'lavu', label: 'Lavu' },
+  { id: 'talech', label: 'Talech' },
+  { id: 'aloha', label: 'Aloha' },
+];
+
+export const POS_PROVIDER_STATUS: Record<string, 'available' | 'coming_soon'> = {
+  square: 'available',
+  toast: 'available',
+  clover: 'coming_soon',
+  lightspeed: 'coming_soon',
+  spoton: 'coming_soon',
+  touchbistro: 'coming_soon',
+  revel: 'coming_soon',
+  lavu: 'coming_soon',
+  talech: 'coming_soon',
+  aloha: 'coming_soon',
+};
+

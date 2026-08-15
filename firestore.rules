@@ -254,12 +254,69 @@ service cloud.firestore {
         allow read: if hasRole(barId);
         allow write: if false;
       }
+
+      // Calendar (Phase 4 — see
+      // docs/plans/2026-05-21-feature-set-purr-design.md). Events are
+      // Manager+-writable, but only the ones we own: anything with an
+      // externalProvider set was written by a Cloud Function (Google
+      // sync inbound, or an iCal subscription poll) via the Admin SDK,
+      // which bypasses these rules entirely — a client can create a
+      // purely local event but can never create, edit, or delete one
+      // that's externally-owned, matching "Externally-owned events
+      // are read-only" in the design doc.
+      match /events/{eventId} {
+        allow read: if hasRole(barId);
+        allow create: if isManagerPlus(barId)
+          && request.resource.data.get('externalProvider', null) == null;
+        allow update: if isManagerPlus(barId)
+          && resource.data.get('externalProvider', null) == null
+          && request.resource.data.get('externalProvider', null) == null;
+        allow delete: if isManagerPlus(barId)
+          && resource.data.get('externalProvider', null) == null;
+      }
+
+      // Google Calendar connection — same status/secret split as POS
+      // (see posConnection/posSecrets above), for the same reason.
+      match /calendarConnection/{provider} {
+        allow read: if isManagerPlus(barId);
+        allow write: if false;
+      }
+      match /calendarSecrets/{provider} {
+        allow read, write: if false;
+      }
+
+      // Outbound iCal feed config (the opaque token in the feed URL —
+      // see functions/src/calendar/icalFeed.ts). Manager+-readable so
+      // Calendar Settings can display/copy the URL; the token itself
+      // is only ever minted/rotated by rotateICalFeedToken.
+      match /icalFeed/{doc} {
+        allow read: if isManagerPlus(barId);
+        allow write: if false;
+      }
+
+      // Inbound iCal subscriptions — Manager+ pastes a URL to poll.
+      // Only the scheduled poller (Admin SDK) writes lastPolledAt/
+      // lastError back, so client updates are denied outright.
+      match /icalSubscriptions/{subId} {
+        allow read: if isManagerPlus(barId);
+        allow create: if isManagerPlus(barId)
+          && request.resource.data.keys().hasOnly(['url', 'createdBy', 'createdAt'])
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if false;
+        allow delete: if isManagerPlus(barId);
+      }
     }
 
     // Ephemeral OAuth state tokens for the POS connect flow (Square) —
     // see posGetAuthorizeUrl/oauthCallback in functions/src/pos/oauth.ts.
     // Cloud-Function-only; short-lived and deleted by oauthCallback.
     match /posOAuthStates/{state} {
+      allow read, write: if false;
+    }
+
+    // Same, for the Google Calendar connect flow — see
+    // functions/src/calendar/oauth.ts.
+    match /calendarOAuthStates/{state} {
       allow read, write: if false;
     }
 

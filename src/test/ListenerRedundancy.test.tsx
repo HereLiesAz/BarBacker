@@ -168,20 +168,20 @@ describe('Performance Optimization: Listener Redundancy', () => {
     const calls = onSnapshotSpy.mock.calls.length;
     console.log(`Total onSnapshot calls: ${calls}`);
 
-    // 7 real listeners (user profile, bar doc, bar users, requests,
-    // pinned chat, latest-chat-message, 86'd list) plus 2 legitimate
-    // re-subscribes: the 86'd list query depends on userRole/isPremium,
-    // both of which resolve asynchronously after mount (userRole off
-    // the per-bar user snapshot, isPremium off useGodMode's
-    // getIdTokenResult()), so that listener re-subscribes with the
-    // real query shape once each resolves. This is a tight, exact
-    // bound rather than a loose "<N" — a `setSearchParams`
+    // 8 real listeners (user profile, bar doc, bar users, requests,
+    // pinned chat, latest-chat-message, 86'd list, calendar events)
+    // plus 2 legitimate re-subscribes: the 86'd list query depends on
+    // userRole/isPremium, both of which resolve asynchronously after
+    // mount (userRole off the per-bar user snapshot, isPremium off
+    // useGodMode's getIdTokenResult()), so that listener re-subscribes
+    // with the real query shape once each resolves. This is a tight,
+    // exact bound rather than a loose "<N" — a `setSearchParams`
     // identity-churn bug used to cause 3 more (11 total, on the old
     // 6-listener baseline) by re-running the whole first effect
     // immediately after mount; that's fixed (see the
     // setSearchParamsRef comment in App.tsx), and an exact count here
     // is what actually catches a regression reintroducing it or
     // something like it.
-    expect(calls).toBe(9);
+    expect(calls).toBe(10);
   });
 });

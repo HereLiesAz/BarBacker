@@ -4,8 +4,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { randomBytes } from "node:crypto";
 import { SquarePOSClient } from "./square";
 import { ToastPOSClient } from "./toast";
-import { encryptSecret } from "./kms";
-import { requireManagerPlus } from "./authz";
+import { encryptSecret } from "../shared/kms";
+import { requireManagerPlus } from "../shared/authz";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 

@@ -1,6 +1,6 @@
 import { HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue, DocumentReference, DocumentData } from "firebase-admin/firestore";
-import { decryptSecret, encryptSecret } from "./kms";
+import { decryptSecret, encryptSecret } from "../shared/kms";
 import { createPOSClient } from "./factory";
 import { POSClient, POSProvider } from "./types";
 

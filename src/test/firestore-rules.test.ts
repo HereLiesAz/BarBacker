@@ -295,6 +295,116 @@ describe('Firestore security rules', () => {
     });
   });
 
+  describe('bars/{barId}/events, calendarConnection, calendarSecrets, icalFeed, icalSubscriptions (Phase 4)', () => {
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/events`, 'local-1'),
+          { title: 'Staff Meeting', start: '2026-01-01T18:00:00.000Z', end: '2026-01-01T19:00:00.000Z', type: 'event' });
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/events`, 'external-1'),
+          { title: 'Synced', start: '2026-01-02T18:00:00.000Z', end: '2026-01-02T19:00:00.000Z',
+            type: 'event', externalId: 'g1', externalProvider: 'google' });
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/calendarConnection`, 'google'),
+          { provider: 'google', connected: true, calendarId: 'cal-1' });
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/calendarSecrets`, 'google'),
+          { accessToken: 'encrypted-blob' });
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/icalFeed`, 'config'), { token: 'feed-token' });
+      });
+    });
+
+    it('allows any bar member to read events', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertSucceeds(getDoc(doc(db, `bars/${BAR_A}/events`, 'local-1')));
+    });
+
+    it('allows Manager+ to create a purely local event', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/events`), {
+        title: 'New Event', start: '2026-01-03T18:00:00.000Z', end: '2026-01-03T19:00:00.000Z', type: 'event',
+      }));
+    });
+
+    it('denies Staff from creating an event', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/events`), {
+        title: 'New Event', start: '2026-01-03T18:00:00.000Z', end: '2026-01-03T19:00:00.000Z', type: 'event',
+      }));
+    });
+
+    it('denies creating an event pre-marked as externally-owned', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/events`), {
+        title: 'Spoofed', start: '2026-01-03T18:00:00.000Z', end: '2026-01-03T19:00:00.000Z',
+        type: 'event', externalId: 'fake', externalProvider: 'google',
+      }));
+    });
+
+    it('allows Manager+ to edit a local event', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(updateDoc(doc(db, `bars/${BAR_A}/events`, 'local-1'), { title: 'Renamed' }));
+    });
+
+    it('denies editing an externally-owned event, even by Manager+', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(updateDoc(doc(db, `bars/${BAR_A}/events`, 'external-1'), { title: 'Renamed' }));
+    });
+
+    it('denies deleting an externally-owned event, even by Manager+', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(deleteDoc(doc(db, `bars/${BAR_A}/events`, 'external-1')));
+    });
+
+    it('allows Manager+ to read calendarConnection status but denies Staff', async () => {
+      const managerDb = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(getDoc(doc(managerDb, `bars/${BAR_A}/calendarConnection`, 'google')));
+      const staffDb = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(getDoc(doc(staffDb, `bars/${BAR_A}/calendarConnection`, 'google')));
+    });
+
+    it('denies any client read or write of calendarSecrets, even by Manager+', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(getDoc(doc(db, `bars/${BAR_A}/calendarSecrets`, 'google')));
+      await assertFails(setDoc(doc(db, `bars/${BAR_A}/calendarSecrets`, 'google'), { accessToken: 'stolen' }));
+    });
+
+    it('allows Manager+ to read the iCal feed config but denies Staff', async () => {
+      const managerDb = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(getDoc(doc(managerDb, `bars/${BAR_A}/icalFeed`, 'config')));
+      const staffDb = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(getDoc(doc(staffDb, `bars/${BAR_A}/icalFeed`, 'config')));
+    });
+
+    it('allows Manager+ to add an iCal subscription naming themselves as creator', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/icalSubscriptions`), {
+        url: 'https://example.com/cal.ics', createdBy: MANAGER, createdAt: new Date(),
+      }));
+    });
+
+    it('denies Staff from adding an iCal subscription', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/icalSubscriptions`), {
+        url: 'https://example.com/cal.ics', createdBy: ALICE, createdAt: new Date(),
+      }));
+    });
+
+    it('denies any client update to an iCal subscription (poller-only fields)', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/icalSubscriptions`, 'sub-1'),
+          { url: 'https://example.com/cal.ics', createdBy: MANAGER, createdAt: new Date() });
+      });
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(updateDoc(doc(db, `bars/${BAR_A}/icalSubscriptions`, 'sub-1'), { lastError: 'hacked' }));
+    });
+
+    it('denies any client access to calendarOAuthStates', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'calendarOAuthStates', 'state-1'), { barId: BAR_A });
+      });
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(getDoc(doc(db, 'calendarOAuthStates', 'state-1')));
+    });
+  });
+
   describe('requests/{requestId}', () => {
     beforeEach(async () => {
       await env.withSecurityRulesDisabled(async (ctx) => {

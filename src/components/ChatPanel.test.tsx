@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatPanel } from './ChatPanel';
 import { ChatMessage } from '../types';
@@ -83,19 +83,33 @@ describe('ChatPanel', () => {
     expect(mockOnTogglePin).toHaveBeenCalledWith('m1', true);
   });
 
-  it('sends a message and clears the input', () => {
+  it('sends a message and clears the input on success', async () => {
+    mockOnSend.mockResolvedValueOnce(undefined);
     const { container } = renderPanel();
     const input = container.querySelector('md-filled-text-field') as any;
     input.value = 'New message';
     fireEvent.input(input);
     fireEvent.click(screen.getByText('Send'));
     expect(mockOnSend).toHaveBeenCalledWith('New message', false);
+    await waitFor(() => expect((container.querySelector('md-filled-text-field') as any).value).toBe(''));
   });
 
   it('does not send a blank message', () => {
     renderPanel();
     fireEvent.click(screen.getByText('Send'));
     expect(mockOnSend).not.toHaveBeenCalled();
+  });
+
+  it('keeps the typed text and shows an error when the send fails', async () => {
+    mockOnSend.mockRejectedValueOnce(new Error('Missing or insufficient permissions.'));
+    const { container } = renderPanel();
+    const input = container.querySelector('md-filled-text-field') as any;
+    input.value = 'This should stick around';
+    fireEvent.input(input);
+    fireEvent.click(screen.getByText('Send'));
+
+    await waitFor(() => expect(screen.getByText('Missing or insufficient permissions.')).toBeInTheDocument());
+    expect((container.querySelector('md-filled-text-field') as any).value).toBe('This should stick around');
   });
 
   it('shows a "Load earlier messages" control only when hasMore is true', () => {

@@ -18,7 +18,11 @@ export function usePOS({ barId, isManagerPlus }: UsePOSArgs) {
   const [menu, setMenu] = useState<POSMenuItem[]>([]);
 
   useEffect(() => {
-    if (!barId || !isManagerPlus) { setConnections({}); return; }
+    // Cleared unconditionally so switching bars can't leave the
+    // previous bar's connection status rendering under the new bar's
+    // header if the new listener comes back permission-denied.
+    setConnections({});
+    if (!barId || !isManagerPlus) return;
     const unsub = onSnapshot(
       collection(db, `bars/${barId}/posConnection`),
       (s) => {
@@ -32,7 +36,8 @@ export function usePOS({ barId, isManagerPlus }: UsePOSArgs) {
   }, [barId, isManagerPlus]);
 
   useEffect(() => {
-    if (!barId || !isManagerPlus) { setMenu([]); return; }
+    setMenu([]);
+    if (!barId || !isManagerPlus) return;
     const unsub = onSnapshot(
       collection(db, `bars/${barId}/menu`),
       (s) => setMenu(s.docs.map((d) => ({ id: d.id, ...d.data() } as POSMenuItem))),

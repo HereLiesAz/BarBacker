@@ -6,6 +6,19 @@
   "storage": {
     "rules": "storage.rules"
   },
+  "hosting": {
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "/ical/**",
+        "function": {
+          "functionId": "icalFeed",
+          "region": "us-central1"
+        }
+      }
+    ]
+  },
   "emulators": {
     "firestore": {
       "host": "127.0.0.1",

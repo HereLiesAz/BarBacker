@@ -22,7 +22,12 @@ export function useCalendar({ barId, isManagerPlus }: UseCalendarArgs) {
   const [feedToken, setFeedToken] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!barId) { setEvents([]); return; }
+    // Cleared unconditionally so switching bars can't leave the
+    // previous bar's events rendering under the new bar's header if
+    // the new listener comes back permission-denied (e.g. the role
+    // claim hasn't been stamped onto the ID token yet).
+    setEvents([]);
+    if (!barId) return;
     const unsub = onSnapshot(
       query(collection(db, `bars/${barId}/events`), orderBy('start', 'asc')),
       (s) => setEvents(
@@ -34,7 +39,10 @@ export function useCalendar({ barId, isManagerPlus }: UseCalendarArgs) {
   }, [barId]);
 
   useEffect(() => {
-    if (!barId || !isManagerPlus) { setGoogleConnection(null); setICalSubscriptions([]); setFeedToken(null); return; }
+    setGoogleConnection(null);
+    setICalSubscriptions([]);
+    setFeedToken(null);
+    if (!barId || !isManagerPlus) return;
     const unsubConn = onSnapshot(
       doc(db, `bars/${barId}/calendarConnection/google`),
       (s) => setGoogleConnection(s.exists() ? { provider: 'google', ...s.data() } as CalendarConnectionStatus : null),

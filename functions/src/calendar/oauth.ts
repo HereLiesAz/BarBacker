@@ -3,7 +3,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { randomBytes } from "node:crypto";
 import { requireManagerPlus } from "../shared/authz";
 import { encryptSecret } from "../shared/kms";
-import { exchangeCodeForTokens } from "./google";
+import { exchangeCodeForTokens, stopGoogleChannel } from "./google";
+import { getGoogleAccessToken } from "./connection";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -91,8 +92,24 @@ export const calendarDisconnect = onCall(async (request) => {
   requireManagerPlus(request.auth, barId);
 
   const db = getFirestore();
+  const connRef = db.doc(`bars/${barId}/calendarConnection/google`);
+  const connection = (await connRef.get()).data();
+
+  // Best-effort: stop the live push channel so Google doesn't keep
+  // pinging calendarWebhook for a bar that's no longer connected.
+  // Failure here shouldn't block disconnecting — worst case the
+  // channel just expires on its own on Google's side.
+  if (connection?.watchChannelId && connection?.watchResourceId) {
+    try {
+      const accessToken = await getGoogleAccessToken(barId);
+      await stopGoogleChannel(accessToken, connection.watchChannelId, connection.watchResourceId);
+    } catch (e) {
+      console.error(`Failed to stop Google push channel for bar ${barId}`, e);
+    }
+  }
+
   await db.doc(`bars/${barId}/calendarSecrets/google`).delete();
-  await db.doc(`bars/${barId}/calendarConnection/google`).set({
+  await connRef.set({
     provider: "google", connected: false, calendarId: null, error: null,
     disconnectedAt: FieldValue.serverTimestamp(),
   });

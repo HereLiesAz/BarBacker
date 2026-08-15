@@ -1,6 +1,8 @@
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
+
+const BACKFILL_AGE_MS = 5 * 60 * 1000;
 
 // Fires an FCM push to every bar member when a chat message transitions
 // into pinned — either created pinned (Manager+ create) or pinned via
@@ -19,6 +21,16 @@ export const onChatPinned = onDocumentWritten("bars/{barId}/chat/{messageId}", a
   const wasPinned = before?.pinned === true;
   const isPinned = after.pinned === true;
   if (!isPinned || wasPinned) return;
+
+  // migrateNoticesToChat backfills old notices as pinned:true with
+  // pinnedAt copied from the original notice's own (old) timestamp —
+  // without this check, migrating a bar with a backlog of notices
+  // fires one high-priority push per notice to every device in the
+  // bar the moment anyone first opens chat. A real pin always has
+  // pinnedAt within moments of the write; anything older than that is
+  // a backfill, not news.
+  const pinnedAt = after.pinnedAt as Timestamp | undefined;
+  if (pinnedAt && Date.now() - pinnedAt.toMillis() > BACKFILL_AGE_MS) return;
 
   const { barId } = event.params;
   const db = getFirestore();

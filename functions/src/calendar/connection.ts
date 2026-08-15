@@ -19,13 +19,28 @@ export async function getGoogleAccessToken(barId: string): Promise<string> {
   const expiresAt = secret.expiresAt as number;
   if (expiresAt - Date.now() < JUST_IN_TIME_MARGIN_MS) {
     const refreshToken = await decryptSecret(secret.refreshToken);
-    const refreshed = await refreshGoogleToken(refreshToken);
-    accessToken = refreshed.accessToken;
-    await secretRef.set({
-      accessToken: await encryptSecret(accessToken),
-      expiresAt: refreshed.expiresAt,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
+    try {
+      const refreshed = await refreshGoogleToken(refreshToken);
+      accessToken = refreshed.accessToken;
+      await secretRef.set({
+        accessToken: await encryptSecret(accessToken),
+        expiresAt: refreshed.expiresAt,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } catch (e) {
+      // Every caller of this function (outboundSync's trigger,
+      // syncFromGoogle's webhook handler, resubscribe's scheduled
+      // sweep) previously only console.error'd a refresh failure —
+      // calendarConnection kept showing connected:true with no error
+      // field, so a manager had no way to find out sync had silently
+      // died (e.g. the grant was revoked on Google's side). Surface it
+      // here, once, so every caller gets this for free.
+      const message = e instanceof Error ? e.message : "Failed to refresh Google access token.";
+      await db.doc(`bars/${barId}/calendarConnection/google`).set(
+        { connected: false, error: message }, { merge: true },
+      );
+      throw e;
+    }
   }
   return accessToken;
 }

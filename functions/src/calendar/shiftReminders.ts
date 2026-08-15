@@ -2,16 +2,18 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 
-const WINDOW_START_MIN = 14;
-const WINDOW_END_MIN = 16;
+const WINDOW_START_MIN = 10;
+const WINDOW_END_MIN = 15;
 
-// 15-minutes-before shift reminders via the existing FCM/ntfy
+// ~10-15-minutes-before shift reminders via the existing FCM/ntfy
 // plumbing (see the design doc's "Notifications" section under
-// Phase 4). Runs every 5 minutes and checks for shifts starting in a
-// 14-16 minute window from now, which — combined with the 5-minute
-// cadence — guarantees each shift is caught by exactly one run
-// without needing cross-run dedup beyond the reminderSentAt flag
-// (belt-and-suspenders against a retry double-sending).
+// Phase 4). Runs every 5 minutes; the window must be at least as wide
+// as that 5-minute cadence for every shift to be guaranteed a run
+// that catches it — a shift starting at minute M needs some run at
+// r where r+WINDOW_START <= M < r+WINDOW_END, and with runs 5 minutes
+// apart that's only guaranteed if (WINDOW_END - WINDOW_START) >= 5.
+// reminderSentAt is still what prevents a double-send on the rare
+// shift that two consecutive runs both catch.
 export const sendShiftReminders = onSchedule("every 5 minutes", async () => {
   const db = getFirestore();
   const now = Date.now();

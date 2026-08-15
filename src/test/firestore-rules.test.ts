@@ -14,6 +14,7 @@ import {
   deleteField,
   collection,
   addDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -159,42 +160,58 @@ describe('Firestore security rules', () => {
     it('rejects a create where authorId does not match auth.uid', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
       await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
-        text: 'spoof', authorId: BOB, authorName: 'Bob', authorRole: 'Staff', timestamp: new Date(), pinned: false,
+        text: 'spoof', authorId: BOB, authorName: 'Bob', authorRole: 'Staff', timestamp: serverTimestamp(), pinned: false,
       }));
     });
 
     it('rejects a create where authorName does not match the caller\'s own bar-user doc', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
       await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
-        text: 'spoof name', authorId: ALICE, authorName: 'Not Alice', authorRole: 'Staff', timestamp: new Date(), pinned: false,
+        text: 'spoof name', authorId: ALICE, authorName: 'Not Alice', authorRole: 'Staff', timestamp: serverTimestamp(), pinned: false,
       }));
     });
 
     it('rejects a create where authorRole does not match the caller\'s own bar-user doc', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
       await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
-        text: 'spoof role', authorId: ALICE, authorName: 'Alice', authorRole: 'Manager', timestamp: new Date(), pinned: false,
+        text: 'spoof role', authorId: ALICE, authorName: 'Alice', authorRole: 'Manager', timestamp: serverTimestamp(), pinned: false,
       }));
     });
 
     it('accepts an unpinned create where authorId/authorName/authorRole all match', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
       await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/chat`), {
-        text: 'hi', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff', timestamp: new Date(), pinned: false,
+        text: 'hi', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff', timestamp: serverTimestamp(), pinned: false,
       }));
     });
 
     it('rejects Staff creating a pre-pinned message', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
       await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
-        text: 'pin me', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff', timestamp: new Date(), pinned: true,
+        text: 'pin me', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff', timestamp: serverTimestamp(), pinned: true,
       }));
     });
 
     it('allows Manager+ to create a pre-pinned message', async () => {
       const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
       await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/chat`), {
-        text: 'announcement', authorId: MANAGER, authorName: 'M', authorRole: 'Manager', timestamp: new Date(), pinned: true,
+        text: 'announcement', authorId: MANAGER, authorName: 'M', authorRole: 'Manager', timestamp: serverTimestamp(), pinned: true,
+      }));
+    });
+
+    it('rejects a create with a client-supplied literal timestamp instead of serverTimestamp()', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
+        text: 'spoofed time', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff',
+        timestamp: new Date('2099-01-01'), pinned: false,
+      }));
+    });
+
+    it('rejects a create with an extra field outside the allowed set', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
+        text: 'sneaky', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff',
+        timestamp: serverTimestamp(), pinned: false, extra: 'field',
       }));
     });
 

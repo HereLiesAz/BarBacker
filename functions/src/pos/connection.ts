@@ -64,9 +64,15 @@ export async function getConnectedClient(barId: string, provider: POSProvider): 
   if (!secretDoc.exists) throw new HttpsError("failed-precondition", `${provider} is not connected for this bar.`);
   const secret = secretDoc.data()!;
 
-  const accessToken = await refreshIfNeeded(
-    secretRef, secret, provider, await decryptSecret(secret.accessToken), JUST_IN_TIME_MARGIN_MS,
-  );
+  let accessToken: string;
+  try {
+    accessToken = await refreshIfNeeded(
+      secretRef, secret, provider, await decryptSecret(secret.accessToken), JUST_IN_TIME_MARGIN_MS,
+    );
+  } catch (e) {
+    await markConnectionFailed(db, barId, provider, e);
+    throw e;
+  }
   return createPOSClient(provider, accessToken);
 }
 
@@ -82,5 +88,23 @@ export async function rotateIfNeeded(
   const secretDoc = await secretRef.get();
   if (!secretDoc.exists) return;
   const secret = secretDoc.data()!;
-  await refreshIfNeeded(secretRef, secret, provider, await decryptSecret(secret.accessToken), marginMs);
+  try {
+    await refreshIfNeeded(secretRef, secret, provider, await decryptSecret(secret.accessToken), marginMs);
+  } catch (e) {
+    await markConnectionFailed(db, barId, provider, e);
+    throw e;
+  }
+}
+
+// Previously every caller of refreshIfNeeded only console.error'd a
+// failure — posConnection kept showing connected:true with no error
+// field, so a manager had no way to discover sync had silently died
+// (e.g. a revoked grant). Surface it once, here, for every caller.
+async function markConnectionFailed(
+  db: FirebaseFirestore.Firestore, barId: string, provider: POSProvider, error: unknown,
+): Promise<void> {
+  const message = error instanceof Error ? error.message : "Failed to refresh access token.";
+  await db.doc(`bars/${barId}/posConnection/${provider}`).set(
+    { connected: false, error: message }, { merge: true },
+  );
 }

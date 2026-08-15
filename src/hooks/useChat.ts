@@ -67,7 +67,14 @@ export function useChat({ user, barId, displayName, userRole, panelOpen }: UseCh
 
   // Pinned messages — always live while in a bar, drives the marquee.
   useEffect(() => {
-    if (!user || !barId) { setPinnedMessages([]); return; }
+    // Cleared unconditionally (not just on the no-bar branch below) so
+    // switching bars can't leave the previous bar's pinned messages
+    // rendering under the new bar's header — including the case where
+    // the new bar's listener comes back permission-denied (e.g. the
+    // role claim hasn't been stamped onto the ID token yet) and never
+    // delivers a snapshot to overwrite them.
+    setPinnedMessages([]);
+    if (!user || !barId) return;
     const unsub = onSnapshot(
       query(
         collection(db, `bars/${barId}/chat`),
@@ -85,7 +92,8 @@ export function useChat({ user, barId, displayName, userRole, panelOpen }: UseCh
   // unread badge works even while the panel (and its full listener)
   // is closed.
   useEffect(() => {
-    if (!user || !barId) { setLatestMessageAt(0); return; }
+    setLatestMessageAt(0);
+    if (!user || !barId) return;
     const unsub = onSnapshot(
       query(collection(db, `bars/${barId}/chat`), orderBy('timestamp', 'desc'), limit(1)),
       (s) => {
@@ -112,9 +120,10 @@ export function useChat({ user, barId, displayName, userRole, panelOpen }: UseCh
 
   // Full scrollback — only while the panel is open.
   useEffect(() => {
-    if (!user || !barId || !panelOpen) return;
+    setMessages([]);
     setOlderMessages([]);
     setHasMore(true);
+    if (!user || !barId || !panelOpen) return;
     const unsub = onSnapshot(
       query(collection(db, `bars/${barId}/chat`), orderBy('timestamp', 'desc'), limit(PAGE_SIZE)),
       (s) => setMessages(s.docs.map((d) => ({ id: d.id, ...d.data() } as ChatMessage)).reverse()),

@@ -1,6 +1,16 @@
 import * as admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 
 admin.initializeApp();
+// Several write paths build payload objects with optional fields that
+// come back `undefined` from an external API (e.g. a Google Calendar
+// event with no description, an iCal VEVENT with no DESCRIPTION, a
+// Square/Toast catalog item with no category) — the Admin SDK rejects
+// `undefined` field values by default, which used to throw and abort
+// the whole sync mid-batch. Dropping undefined fields silently (Admin
+// SDK's documented behavior for this setting) is what every caller
+// here actually wants: an absent field, not a write failure.
+getFirestore().settings({ ignoreUndefinedProperties: true });
 
 export { onUserRoleChange } from "./onUserRoleChange";
 export { onRequestCreated } from "./onRequestCreated";

@@ -44,7 +44,7 @@ import { useUsageBatching } from './hooks/useUsageBatching';
 import { useInactivityAutoSubmit } from './hooks/useInactivityAutoSubmit';
 import { useAuth } from './hooks/useAuth';
 import { usePushNotifications } from './hooks/usePushNotifications';
-import { useBarNoticeBoard } from './hooks/useBarNoticeBoard';
+import { useChat } from './hooks/useChat';
 import { useDragAndDrop } from './hooks/useDragAndDrop';
 import { useRequestActions } from './hooks/useRequestActions';
 
@@ -69,7 +69,7 @@ import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
 
 // Import Types and Constants.
-import { Bar, BarTheme, ButtonConfig, Request, Notice, BarUser, EightySixEntry } from './types';
+import { Bar, BarTheme, ButtonConfig, Request, BarUser, EightySixEntry } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
@@ -83,6 +83,7 @@ import EightySixDialog from './components/EightySixDialog';
 import ThemeEditor from './components/ThemeEditor';
 import InputDialog from './components/InputDialog';
 import { WhoIsOnDialog } from './components/WhoIsOnDialog';
+import { ChatPanel } from './components/ChatPanel';
 import { SortableButton } from './components/SortableButton';
 import { MdDialog } from './components/MdDialog';
 // Import dnd-kit for drag-and-drop functionality.
@@ -222,8 +223,8 @@ function App() {
     localStorage.setItem('ignoredRequestIds', JSON.stringify(ignoredIds));
   }, [ignoredIds]);
 
-  // Notice Board State.
-  const [notices, setNotices] = useState<Notice[]>([]);
+  // Chat panel open/closed state. Data + actions come from useChat.
+  const [showChatPanel, setShowChatPanel] = useState(false);
 
   // Control the main menu dropdown. md-menu's `onClosed` JSX prop has
   // the same React-19-custom-element bug as md-dialog's `onClose` (see
@@ -473,26 +474,27 @@ function App() {
     }, (err) => console.error('Bar users listener failed', err));
 
     // Cleanup: Unsubscribe from non-time-windowed listeners. The
-    // requests/notices listeners are owned by a separate effect below
-    // so they can re-subscribe on the hourly windowEpoch without
-    // tearing these down.
+    // requests listener is owned by a separate effect below so it can
+    // re-subscribe on the hourly windowEpoch without tearing these down.
     return () => { unsubUser(); unsubBar(); unsubAllUsers(); };
   }, [user, barId, isDraggingRef]);
 
-  // Time-window epoch. Bumped every hour so the requests/notices
-  // listeners below re-subscribe with a fresh "now" lower bound. In a
-  // long-running PWA tab the 24h / 3-day windows would otherwise be
-  // pinned at the moment the listeners were first established.
+  // Time-window epoch. Bumped every hour so the requests listener
+  // below re-subscribes with a fresh "now" lower bound. In a
+  // long-running PWA tab the 24h window would otherwise be pinned at
+  // the moment the listener was first established.
   const [windowEpoch, setWindowEpoch] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setWindowEpoch(e => e + 1), 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Time-windowed listeners (requests + notices). Split off from the
-  // main listener block so they can re-subscribe on the hourly
-  // windowEpoch tick without disturbing the user/bar/allUsers
-  // subscriptions.
+  // Time-windowed requests listener. Split off from the main listener
+  // block so it can re-subscribe on the hourly windowEpoch tick
+  // without disturbing the user/bar/allUsers subscriptions. Chat
+  // (which replaced the old time-windowed notices listener) is
+  // persistent rather than time-windowed, so it's owned by useChat
+  // instead — see below.
   useEffect(() => {
     if (!user || !barId) return;
 
@@ -508,18 +510,7 @@ function App() {
       (err) => console.error('Requests listener failed', err),
     );
 
-    const unsubNotices = onSnapshot(
-      query(
-        collection(db, `bars/${barId}/notices`),
-        where('timestamp', '>=', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)),
-        orderBy('timestamp', 'desc'),
-        limit(100),
-      ),
-      (s) => setNotices(s.docs.map(d => ({ id: d.id, ...d.data() } as Notice))),
-      (err) => console.error('Notices listener failed', err),
-    );
-
-    return () => { unsubReq(); unsubNotices(); };
+    return unsubReq;
   }, [user, barId, windowEpoch]);
 
   // 86'd list listener. Public entries are visible to anyone with a
@@ -740,13 +731,19 @@ function App() {
     await updateDoc(doc(db, 'bars', barId), { theme });
   };
 
-  // Notice-board write actions + dialog form state.
+  // Chat data + actions. See docs/plans/2026-05-21-feature-set-purr-design.md
+  // Phase 2 — replaces the old notice board.
   const {
-    isAddingNotice, setIsAddingNotice,
-    noticeText, setNoticeText,
-    noticeError, setNoticeError,
-    saveNotice, deleteNotice,
-  } = useBarNoticeBoard({ user, barId, displayName });
+    pinnedMessages,
+    messages: chatMessages,
+    hasMore: chatHasMore,
+    loadingMore: chatLoadingMore,
+    loadMore: loadMoreChat,
+    hasUnread: chatHasUnread,
+    sendMessage: sendChatMessage,
+    togglePin: toggleChatPin,
+    deleteMessage: deleteChatMessage,
+  } = useChat({ user, barId, displayName, userRole, panelOpen: showChatPanel });
 
   // Determine children for dynamic buttons (ICE, BEER, etc.).
   const getDynamicChildren = (btn: ButtonConfig): ButtonConfig[] => {
@@ -912,8 +909,8 @@ function App() {
       // The 'bars' claim used by firestore.rules is stamped
       // asynchronously by the onUserRoleChange Cloud Function and only
       // reflected on this client's ID token after a refresh. Force one
-      // now so hasRole()-gated reads (requests, notices) don't spend
-      // up to an hour denied while the cached token is stale.
+      // now so hasRole()-gated reads (requests, chat) don't spend up
+      // to an hour denied while the cached token is stale.
       await user.getIdToken(true).catch((e) => console.error('Token refresh after join failed', e));
     } catch (e) {
       console.error('Failed to join bar', e);
@@ -1434,6 +1431,20 @@ function App() {
         allButtons={buttons}
       />
 
+      <ChatPanel
+        open={showChatPanel}
+        onClose={() => setShowChatPanel(false)}
+        messages={chatMessages}
+        hasMore={chatHasMore}
+        loadingMore={chatLoadingMore}
+        onLoadMore={loadMoreChat}
+        currentUserId={user?.uid ?? ''}
+        isManagerPlus={isManagerPlus}
+        onSend={sendChatMessage}
+        onTogglePin={toggleChatPin}
+        onDelete={deleteChatMessage}
+      />
+
       <InputDialog
         open={inputDialog.open}
         mode={inputDialog.type}
@@ -1490,24 +1501,6 @@ function App() {
         </div>
       </MdDialog>
 
-      <MdDialog open={isAddingNotice} onClose={() => setIsAddingNotice(false)}>
-        <div slot="headline">Add Notice</div>
-        <div slot="content" className="flex flex-col gap-4">
-            <md-filled-text-field
-                label="Notice Message"
-                value={noticeText}
-                onInput={(e: React.FormEvent<HTMLElement>) => setNoticeText((e.currentTarget as HTMLElement & { value: string }).value)}
-                required
-                type="text"
-            />
-            {noticeError && <div className="text-red-500 text-sm mt-2">{noticeError}</div>}
-        </div>
-        <div slot="actions">
-            <md-text-button onClick={() => setIsAddingNotice(false)}>Cancel</md-text-button>
-            <md-filled-button onClick={() => saveNotice(noticeText)}>Post</md-filled-button>
-        </div>
-      </MdDialog>
-
       <MdDialog open={showOffClockDialog} onClose={() => setShowOffClockDialog(false)}>
         <div slot="headline">Abandon Ship?</div>
         <div slot="content">
@@ -1561,6 +1554,19 @@ function App() {
                   </md-icon-button>
                 )}
 
+                {/* Chat */}
+                <span style={{ position: 'relative' }}>
+                  <md-icon-button onClick={() => setShowChatPanel(true)} className="navbar-icon-button" aria-label="Chat">
+                    <md-icon className="text-white" style={{ fontSize: '36px' }}>forum</md-icon>
+                  </md-icon-button>
+                  {chatHasUnread && (
+                    <span
+                      className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500 border border-black"
+                      aria-label="Unread messages"
+                    />
+                  )}
+                </span>
+
                 {/* Main Menu */}
                 <span style={{ position: 'relative' }}>
                     <md-icon-button
@@ -1609,10 +1615,6 @@ function App() {
                             <md-icon slot="start">block</md-icon>
                             <div slot="headline">86'd List</div>
                         </md-menu-item>
-                        <md-menu-item onClick={() => { setIsAddingNotice(true); setNoticeError(null); }}>
-                            <md-icon slot="start">campaign</md-icon>
-                            <div slot="headline">Post Notice</div>
-                        </md-menu-item>
                         <md-menu-item onClick={() => setShowNotificationSettings(true)}>
                             <md-icon slot="start">settings</md-icon>
                             <div slot="headline">Pagers</div>
@@ -1627,20 +1629,22 @@ function App() {
         </div>
       </div>
 
-      {/* --- Bulletin Board (Marquee) --- */}
-      {notices.length > 0 && (
-          <div className="bg-yellow-900/20 border-b border-yellow-900/50 overflow-hidden relative h-8 flex items-center">
+      {/* --- Pinned Chat Marquee --- */}
+      {pinnedMessages.length > 0 && (
+          <div
+            className="bg-yellow-900/20 border-b border-yellow-900/50 overflow-hidden relative h-8 flex items-center cursor-pointer"
+            onClick={() => setShowChatPanel(true)}
+          >
               <div className="animate-marquee whitespace-nowrap flex gap-12 text-yellow-500 text-sm font-medium items-center">
-                  {notices.map(notice => (
-                      <span key={notice.id} className="inline-flex items-center gap-2 cursor-pointer" onClick={() => deleteNotice(notice.id)}>
-                         <span>📢 {notice.text} <span className="text-yellow-700 text-xs">({notice.authorName})</span></span>
-                         <md-icon style={{ fontSize: 14 }} className="text-yellow-700 hover:text-red-500">close</md-icon>
+                  {pinnedMessages.map(msg => (
+                      <span key={msg.id} className="inline-flex items-center gap-2">
+                         <span>📌 {msg.text} <span className="text-yellow-700 text-xs">({msg.authorName})</span></span>
                       </span>
                   ))}
                   {/* Duplicate for infinite loop effect if few items */}
-                   {notices.map(notice => (
-                      <span key={`dup-${notice.id}`} className="inline-flex items-center gap-2">
-                         <span>📢 {notice.text} <span className="text-yellow-700 text-xs">({notice.authorName})</span></span>
+                   {pinnedMessages.map(msg => (
+                      <span key={`dup-${msg.id}`} className="inline-flex items-center gap-2">
+                         <span>📌 {msg.text} <span className="text-yellow-700 text-xs">({msg.authorName})</span></span>
                       </span>
                   ))}
               </div>

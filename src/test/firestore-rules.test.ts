@@ -50,8 +50,8 @@ async function seed() {
       { displayName: 'Bob', role: 'Staff', status: 'active' });
     await setDoc(doc(db, 'users', ALICE), { joinedBars: [BAR_A] });
     await setDoc(doc(db, 'users', BOB), { joinedBars: [BAR_B] });
-    await setDoc(doc(db, `bars/${BAR_A}/notices`, 'n1'),
-      { text: 'hello', authorId: ALICE, authorName: 'Alice', timestamp: new Date() });
+    await setDoc(doc(db, `bars/${BAR_A}/chat`, 'm1'),
+      { text: 'hello', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff', timestamp: new Date(), pinned: false });
     await setDoc(doc(db, `bars/${BAR_A}/tokens`, ALICE), { token: 'alice-token' });
   });
 }
@@ -145,57 +145,99 @@ describe('Firestore security rules', () => {
     });
   });
 
-  describe('bars/{barId}/notices', () => {
-    it('denies a user with no role from reading notices', async () => {
+  describe('bars/{barId}/chat', () => {
+    it('denies a user with no role from reading chat', async () => {
       const db = env.authenticatedContext(BOB).firestore();
-      await assertFails(getDoc(doc(db, `bars/${BAR_A}/notices`, 'n1')));
+      await assertFails(getDoc(doc(db, `bars/${BAR_A}/chat`, 'm1')));
     });
 
-    it('allows a user with a role to read notices', async () => {
+    it('allows a user with a role to read chat', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
-      await assertSucceeds(getDoc(doc(db, `bars/${BAR_A}/notices`, 'n1')));
+      await assertSucceeds(getDoc(doc(db, `bars/${BAR_A}/chat`, 'm1')));
     });
 
-    it('rejects a notice create where authorId does not match auth.uid', async () => {
+    it('rejects a create where authorId does not match auth.uid', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
-      await assertFails(addDoc(collection(db, `bars/${BAR_A}/notices`), {
-        text: 'spoof', authorId: BOB, authorName: 'Bob', timestamp: new Date(),
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
+        text: 'spoof', authorId: BOB, authorName: 'Bob', authorRole: 'Staff', timestamp: new Date(), pinned: false,
       }));
     });
 
-    it('accepts a notice create where authorId matches', async () => {
+    it('rejects a create where authorName does not match the caller\'s own bar-user doc', async () => {
       const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
-      await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/notices`), {
-        text: 'hi', authorId: ALICE, authorName: 'Alice', timestamp: new Date(),
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
+        text: 'spoof name', authorId: ALICE, authorName: 'Not Alice', authorRole: 'Staff', timestamp: new Date(), pinned: false,
       }));
     });
 
-    it('rejects a notice create within 5s of the previous lastNoticeAt', async () => {
+    it('rejects a create where authorRole does not match the caller\'s own bar-user doc', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
+        text: 'spoof role', authorId: ALICE, authorName: 'Alice', authorRole: 'Manager', timestamp: new Date(), pinned: false,
+      }));
+    });
+
+    it('accepts an unpinned create where authorId/authorName/authorRole all match', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/chat`), {
+        text: 'hi', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff', timestamp: new Date(), pinned: false,
+      }));
+    });
+
+    it('rejects Staff creating a pre-pinned message', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(addDoc(collection(db, `bars/${BAR_A}/chat`), {
+        text: 'pin me', authorId: ALICE, authorName: 'Alice', authorRole: 'Staff', timestamp: new Date(), pinned: true,
+      }));
+    });
+
+    it('allows Manager+ to create a pre-pinned message', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/chat`), {
+        text: 'announcement', authorId: MANAGER, authorName: 'M', authorRole: 'Manager', timestamp: new Date(), pinned: true,
+      }));
+    });
+
+    it('allows Manager+ to pin an existing message (update scoped to pin fields)', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(updateDoc(doc(db, `bars/${BAR_A}/chat`, 'm1'), {
+        pinned: true, pinnedBy: MANAGER, pinnedAt: new Date(),
+      }));
+    });
+
+    it('denies Staff from pinning a message', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertFails(updateDoc(doc(db, `bars/${BAR_A}/chat`, 'm1'), {
+        pinned: true, pinnedBy: ALICE, pinnedAt: new Date(),
+      }));
+    });
+
+    it('denies a pin update that also changes the message text', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertFails(updateDoc(doc(db, `bars/${BAR_A}/chat`, 'm1'), {
+        pinned: true, pinnedBy: MANAGER, pinnedAt: new Date(), text: 'edited',
+      }));
+    });
+
+    it('allows the author to delete their own message', async () => {
+      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
+      await assertSucceeds(deleteDoc(doc(db, `bars/${BAR_A}/chat`, 'm1')));
+    });
+
+    it('allows Manager+ to delete any message', async () => {
+      const db = env.authenticatedContext(MANAGER, managerOf(BAR_A)).firestore();
+      await assertSucceeds(deleteDoc(doc(db, `bars/${BAR_A}/chat`, 'm1')));
+    });
+
+    it('denies a non-author, non-Manager+ user from deleting a message', async () => {
       await env.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(
-          doc(ctx.firestore(), `bars/${BAR_A}/users`, ALICE),
-          { lastNoticeAt: new Date() },
-          { merge: true },
-        );
+        await setDoc(doc(ctx.firestore(), `bars/${BAR_A}/users`, BOB),
+          { displayName: 'Bob', role: 'Staff', status: 'active' });
       });
-      const db = env.authenticatedContext(ALICE, staffOf(BAR_A)).firestore();
-      await assertFails(addDoc(collection(db, `bars/${BAR_A}/notices`), {
-        text: 'spam', authorId: ALICE, authorName: 'Alice', timestamp: new Date(),
-      }));
-    });
-
-    it('admins bypass the notice rate limit', async () => {
-      await env.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(
-          doc(ctx.firestore(), `bars/${BAR_A}/users`, ADMIN),
-          { displayName: 'Admin', role: 'Manager', status: 'active', lastNoticeAt: new Date() },
-          { merge: true },
-        );
-      });
-      const db = env.authenticatedContext(ADMIN, { admin: true }).firestore();
-      await assertSucceeds(addDoc(collection(db, `bars/${BAR_A}/notices`), {
-        text: 'urgent', authorId: ADMIN, authorName: 'Admin', timestamp: new Date(),
-      }));
+      // Bob has a role at bar A (seeded above) but didn't author m1.
+      const barAClaims = { bars: { [BAR_A]: 'Staff' } };
+      const db = env.authenticatedContext(BOB, barAClaims).firestore();
+      await assertFails(deleteDoc(doc(db, `bars/${BAR_A}/chat`, 'm1')));
     });
   });
 

@@ -43,16 +43,16 @@
       ]
     },
     {
-      "collectionGroup": "notices",
+      "collectionGroup": "chat",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "authorId",
+          "fieldPath": "pinned",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "timestamp",
-          "order": "ASCENDING"
+          "fieldPath": "pinnedAt",
+          "order": "DESCENDING"
         }
       ]
     },

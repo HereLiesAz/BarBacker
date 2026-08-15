@@ -35,6 +35,9 @@ function renderSettings(overrides: Partial<React.ComponentProps<typeof CalendarS
 describe('CalendarSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The feed URL is only ever shown once the deployment declares
+    // where /ical/** is actually reachable — see CalendarSettings.tsx.
+    vi.stubEnv('VITE_ICAL_FEED_BASE_URL', 'https://example.com');
   });
 
   it('shows a Connect button when Google is not connected', () => {
@@ -74,6 +77,13 @@ describe('CalendarSettings', () => {
     expect(screen.getByText(/\/ical\/bar-1\/abc123\.ics/)).toBeInTheDocument();
     expect(screen.getByText('Rotate')).toBeInTheDocument();
     expect(screen.getByText('Revoke')).toBeInTheDocument();
+  });
+
+  it('shows a not-configured message instead of a broken link when VITE_ICAL_FEED_BASE_URL is unset', () => {
+    vi.stubEnv('VITE_ICAL_FEED_BASE_URL', '');
+    renderSettings({ feedToken: 'abc123' });
+    expect(screen.getByText(/hasn't configured where the feed is actually served from/)).toBeInTheDocument();
+    expect(screen.queryByText('Rotate')).not.toBeInTheDocument();
   });
 
   it('calls onRotateFeedToken(true) for revoke and (false) for rotate', async () => {

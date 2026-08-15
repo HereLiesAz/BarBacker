@@ -60,10 +60,20 @@ export async function syncFromGoogle(barId: string): Promise<void> {
     const lastSyncedAt = (existingDoc.data().lastSyncedAt as Timestamp | undefined)?.toMillis() ?? 0;
     if (googleUpdated <= lastSyncedAt) continue; // echo of our own write.
 
+    // Deliberately NOT setting externalProvider here. This branch also
+    // matches locally-created events that have been mirrored out to
+    // Google (externalId set, no externalProvider — see
+    // outboundSync.ts) — those stay locally owned and editable even
+    // after Google reports a newer change on them; only a brand-new
+    // doc (the empty-snapshot branch above) is genuinely Google-
+    // native and gets marked externally-owned. Setting it
+    // unconditionally here used to permanently flip a locally-owned
+    // event to read-only the moment anyone touched it in Google,
+    // locking its own author out of ever editing or deleting it again.
     await existingDoc.ref.set({
       ...googleEventToPatch(gEvent),
-      externalProvider: "google",
       lastSyncedAt: FieldValue.serverTimestamp(),
+      deletedAt: FieldValue.delete(), // clears a stale soft-delete if this event had vanished and come back.
     }, { merge: true });
   }
 

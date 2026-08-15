@@ -4,12 +4,18 @@ import { randomBytes } from "node:crypto";
 import { getGoogleAccessToken } from "./connection";
 import { watchGoogleCalendar } from "./google";
 
-const RESUBSCRIBE_MARGIN_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
+const RESUBSCRIBE_MARGIN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
-// Google Calendar watch channels expire (max ~30 days, often less) —
-// this weekly sweep re-subscribes anything within 2 days of expiry,
-// per the design doc's "refresh weekly" note.
-export const resubscribeCalendarWatches = onSchedule("every 168 hours", async () => {
+// Google Calendar watch channels expire — Google doesn't guarantee a
+// fixed TTL for events.watch channels (watchGoogleCalendar doesn't
+// request a specific `expiration`, so Google applies its own default,
+// which in practice can be considerably shorter than the ~30-day
+// documented maximum). A weekly sweep with a margin narrower than its
+// own interval can miss a channel's entire renewal window — this runs
+// daily with a 3-day margin instead, so every channel gets multiple
+// chances to be caught before it actually expires regardless of which
+// default Google applied.
+export const resubscribeCalendarWatches = onSchedule("every 24 hours", async () => {
   const db = getFirestore();
   const connectionsSnap = await db.collectionGroup("calendarConnection")
     .where("connected", "==", true).get();

@@ -18,7 +18,7 @@ interface ChatPanelProps {
   onLoadMore: () => void;
   currentUserId: string;
   isManagerPlus: boolean;
-  onSend: (text: string, pin: boolean) => void;
+  onSend: (text: string, pin: boolean) => Promise<void>;
   onTogglePin: (messageId: string, pin: boolean) => void;
   onDelete: (messageId: string) => void;
 }
@@ -34,6 +34,8 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [text, setText] = useState('');
   const [pinNext, setPinNext] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
 
@@ -51,12 +53,23 @@ export function ChatPanel({
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
-  const handleSend = () => {
-    if (!text.trim()) return;
-    onSend(text, pinNext);
-    setText('');
-    setPinNext(false);
-    stickToBottomRef.current = true;
+  const handleSend = async () => {
+    if (!text.trim() || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      await onSend(text, pinNext);
+      // Only clear the composer once the write actually lands — on
+      // failure (most commonly a rules rejection) the typed text
+      // stays put instead of silently vanishing as if it had sent.
+      setText('');
+      setPinNext(false);
+      stickToBottomRef.current = true;
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : 'Failed to send. Please try again.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -110,6 +123,7 @@ export function ChatPanel({
             );
           })}
         </div>
+        {sendError && <div className="text-xs text-red-400 pt-1">{sendError}</div>}
         <div className="flex items-end gap-2 pt-3 border-t border-gray-800">
           <md-filled-text-field
             label="Message"
@@ -130,7 +144,9 @@ export function ChatPanel({
               <md-icon>push_pin</md-icon>
             </md-icon-button>
           )}
-          <md-filled-button onClick={handleSend}>Send</md-filled-button>
+          <md-filled-button disabled={sending || undefined} onClick={handleSend}>
+            {sending ? 'Sending…' : 'Send'}
+          </md-filled-button>
         </div>
       </div>
       <div slot="actions">

@@ -3,6 +3,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createHash } from "node:crypto";
 import * as ical from "node-ical";
 
+const FETCH_TIMEOUT_MS = 15 * 1000;
+
 // Polls every Manager-added external .ics URL every 15 minutes and
 // upserts its events as read-only, externally-owned local events —
 // see the "Inbound iCal subscription" section of the design doc.
@@ -17,11 +19,44 @@ export const pollICalSubscriptions = onSchedule("every 15 minutes", async () => 
     const sub = subDoc.data() as { url?: string };
     if (!barId || !sub.url) continue;
 
+    // hasOnly() in firestore.rules validates the field set on create,
+    // not the URL's shape — a Manager could paste anything. Reject
+    // non-http(s) schemes before ever handing it to node-ical.
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(sub.url);
+    } catch {
+      await subDoc.ref.set({ lastPolledAt: FieldValue.serverTimestamp(), lastError: "Invalid URL." }, { merge: true });
+      continue;
+    }
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      await subDoc.ref.set(
+        { lastPolledAt: FieldValue.serverTimestamp(), lastError: "Only http(s) URLs are supported." }, { merge: true },
+      );
+      continue;
+    }
+
     const provider = `ical:${createHash("sha256").update(sub.url).digest("hex").slice(0, 16)}`;
     const eventsRef = db.collection(`bars/${barId}/events`);
 
     try {
-      const parsed = await ical.async.fromURL(sub.url);
+      // A slow or hung feed shouldn't be able to burn the whole
+      // invocation's time budget and starve every subscription queued
+      // after it — every poll here runs sequentially in one function
+      // call, so each fetch gets its own bounded timeout.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      let parsed: ical.CalendarResponse;
+      try {
+        // node-ical's .d.ts types the (url, options) overload as
+        // returning void (it's shared with the callback-based form),
+        // but the implementation (lib/core-api.js) always returns a
+        // Promise when no callback is passed — the cast reflects the
+        // real runtime contract, not the imprecise declared one.
+        parsed = await (ical.async.fromURL(sub.url, { signal: controller.signal }) as unknown as Promise<ical.CalendarResponse>);
+      } finally {
+        clearTimeout(timeout);
+      }
       const seenIds = new Set<string>();
 
       for (const key of Object.keys(parsed)) {
@@ -44,8 +79,14 @@ export const pollICalSubscriptions = onSchedule("every 15 minutes", async () => 
           externalProvider: provider,
           lastSyncedAt: FieldValue.serverTimestamp(),
         };
-        if (existing.empty) await eventsRef.add(payload);
-        else await existing.docs[0].ref.set(payload, { merge: true });
+        if (existing.empty) {
+          await eventsRef.add(payload);
+        } else {
+          // FieldValue.delete() is only valid on a merge/update write,
+          // not the create() above — clears a stale soft-delete if
+          // this event had vanished from the feed and come back.
+          await existing.docs[0].ref.set({ ...payload, deletedAt: FieldValue.delete() }, { merge: true });
+        }
       }
 
       // Anything previously synced from this subscription but no

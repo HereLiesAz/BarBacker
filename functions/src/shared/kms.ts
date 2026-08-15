@@ -1,14 +1,19 @@
 import { KeyManagementServiceClient } from "@google-cloud/kms";
 
-// KMS-backed encryption for POS OAuth tokens at rest — see the "OAuth
-// flow" section of docs/plans/2026-05-21-feature-set-purr-design.md.
-// Requires a real KMS key ring/key provisioned in the deploying GCP
-// project, with the Cloud Functions service account granted
+// KMS-backed encryption for OAuth tokens at rest, shared by both POS
+// (functions/src/pos/) and Calendar (functions/src/calendar/) — see
+// the "OAuth flow" sections of
+// docs/plans/2026-05-21-feature-set-purr-design.md. Requires a real
+// KMS key ring/key provisioned in the deploying GCP project, with the
+// Cloud Functions service account granted
 // roles/cloudkms.cryptoKeyEncrypterDecrypter on it, and
-// POS_KMS_KEY_NAME set to that key's full resource name
-// (projects/*/locations/*/keyRings/*/cryptoKeys/*). None of that
-// exists in this sandbox — encrypt/decrypt can't be exercised until
-// the user provisions the key post-merge.
+// POS_KMS_KEY_NAME (the one name, despite also covering Calendar —
+// renaming it is a bigger migration than it's worth) set to that
+// key's full resource name (projects/*/locations/*/keyRings/*/cryptoKeys/*).
+// See docs/deployment-env-vars.md for the full list this and every
+// other OAuth flow needs. None of it exists in this sandbox —
+// encrypt/decrypt can't be exercised until the user provisions the
+// key post-merge.
 const kmsClient = new KeyManagementServiceClient();
 
 function keyName(): string {

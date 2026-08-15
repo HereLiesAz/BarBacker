@@ -172,11 +172,18 @@ service cloud.firestore {
         // per-bar user doc at write time (not client-asserted) so a
         // message can't be posted under a spoofed name or role badge.
         allow create: if hasRole(barId)
+          && request.resource.data.keys().hasOnly(['text', 'authorId', 'authorName', 'authorRole', 'timestamp', 'pinned', 'pinnedBy', 'pinnedAt'])
           && request.resource.data.authorId == request.auth.uid
           && request.resource.data.authorName ==
                get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)).data.get('displayName', '')
           && request.resource.data.authorRole ==
                get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)).data.get('role', '')
+          // Must be the serverTimestamp() sentinel, not a client-chosen
+          // literal — otherwise a spoofed far-future timestamp sorts
+          // itself to the top of the scrollback forever and permanently
+          // pins itself at the head of useChat's "latest message"
+          // listener, which nothing in the app can ever correct.
+          && request.resource.data.timestamp == request.time
           && (request.resource.data.pinned == false || isManagerPlus(barId));
         allow update: if isManagerPlus(barId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinned', 'pinnedBy', 'pinnedAt']);
@@ -248,8 +255,12 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
-      // Menu synced from a connected POS (posSyncMenu). Any bar
-      // member can see the current menu; writes are Cloud-Function-only.
+      // Menu synced from a connected POS (posSyncMenu). Readable by
+      // any bar member by design, though nothing in the client
+      // currently reads it outside the Manager+-gated POS Settings
+      // dialog (usePOS.ts) — the broader read here is for a future
+      // staff-facing menu view, not a current one. Writes are
+      // Cloud-Function-only.
       match /menu/{itemId} {
         allow read: if hasRole(barId);
         allow write: if false;

@@ -55,8 +55,16 @@ export function CalendarSettings({
     setCalendars(await onListGoogleCalendars());
   });
 
-  const feedUrl = feedToken
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/ical/${barId}/${feedToken}.ics`
+  // window.location.origin is NOT a safe base here — the web client
+  // (GitHub Pages) and the icalFeed Cloud Function are two separate
+  // hosts unless VITE_ICAL_FEED_BASE_URL is explicitly configured to
+  // point at wherever /ical/** is actually reachable (a Firebase
+  // Hosting site with the rewrite in firebase.json, or the function's
+  // own Cloud Run URL). Without it, show that plainly instead of
+  // handing out a URL that looks valid but 404s.
+  const feedBaseUrl = import.meta.env.VITE_ICAL_FEED_BASE_URL;
+  const feedUrl = feedToken && feedBaseUrl
+    ? `${feedBaseUrl.replace(/\/$/, '')}/ical/${barId}/${feedToken}.ics`
     : null;
 
   const copyFeedUrl = () => {
@@ -102,6 +110,12 @@ export function CalendarSettings({
 
         <div className="border border-gray-800 rounded p-3 flex flex-col gap-2">
           <div className="text-xs font-bold text-gray-400 uppercase">Outbound iCal Feed</div>
+          {feedToken && !feedBaseUrl && (
+            <div className="text-xs text-yellow-500">
+              A feed token exists, but this deployment hasn't configured where the feed is actually
+              served from (VITE_ICAL_FEED_BASE_URL) — the link can't be shown until that's set.
+            </div>
+          )}
           {feedUrl ? (
             <>
               <div className="text-xs text-gray-400 break-all">{feedUrl}</div>
@@ -116,9 +130,11 @@ export function CalendarSettings({
               </div>
             </>
           ) : (
-            <md-filled-button disabled={busy || undefined} onClick={() => withBusy(() => onRotateFeedToken(false))}>
-              Generate Feed URL
-            </md-filled-button>
+            !feedToken && (
+              <md-filled-button disabled={busy || undefined} onClick={() => withBusy(() => onRotateFeedToken(false))}>
+                Generate Feed URL
+              </md-filled-button>
+            )
           )}
         </div>
 

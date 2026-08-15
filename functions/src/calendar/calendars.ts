@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { requireManagerPlus } from "../shared/authz";
 import { getGoogleAccessToken } from "./connection";
 import { watchGoogleCalendar } from "./google";
+import { syncFromGoogle } from "./inboundSync";
 
 export const calendarListCalendars = onCall(async (request) => {
   const { barId } = (request.data ?? {}) as { barId?: string };
@@ -45,6 +46,21 @@ export const calendarSelectCalendar = onCall(async (request) => {
     watchChannelId: channelId, watchResourceId: watch.resourceId, watchExpiresAt: watch.expiration,
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
+
+  // Google only pushes on future *changes* — without an initial pull,
+  // a calendar full of pre-existing events would show nothing in the
+  // app until someone happened to edit one of them in Google. This
+  // does the same sync a webhook ping would trigger, just eagerly.
+  try {
+    await syncFromGoogle(barId);
+  } catch (e) {
+    // The calendar is connected and watching either way; a failed
+    // initial pull just means the next real change (or the daily
+    // resubscribe sweep, which doesn't re-pull) won't backfill
+    // history either — log it, but don't fail calendar selection
+    // over a sync hiccup the user can't do anything about mid-request.
+    console.error(`Initial Google sync failed for bar ${barId}`, e);
+  }
 
   return { calendarId };
 });

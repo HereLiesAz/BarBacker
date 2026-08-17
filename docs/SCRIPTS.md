@@ -25,3 +25,13 @@ The `scripts/` directory contains Node.js scripts used for build automation and 
 
 ## `debug-test.cjs`
 *   **Purpose**: A CommonJS script for testing the debugging utilities in a standalone node environment.
+
+## `set-admin-claim.js`
+*   **Purpose**: Grants or revokes the `admin: true` Firebase custom claim on a user — this is the ONLY way to create an admin. `firestore.rules` and `storage.rules` both gate moderation/bypass behavior on this claim (`isAdmin()`); a fresh Firebase project has zero admins until this script is run once against it.
+*   **Requires**: `GOOGLE_APPLICATION_CREDENTIALS` pointing at a service-account JSON key with the Firebase Admin role — a different credential mechanism than the `FIREBASE_SERVICE_ACCOUNT` JSON-in-a-secret used by the scheduled workflows (nag/deduplicate/enrich-bars) below. Run this locally, not in CI.
+*   **Usage**:
+    ```bash
+    node scripts/set-admin-claim.js --email owner@example.com
+    node scripts/set-admin-claim.js --uid abc123 --revoke
+    ```
+    The target user must sign out and back in (or wait up to an hour) for the claim to appear in their ID token.

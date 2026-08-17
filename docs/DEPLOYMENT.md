@@ -93,6 +93,25 @@ them in the browser. That first fetch needs outbound network access;
 everything after is served from cache. No env vars or server
 provisioning are required for this feature.
 
+## GitHub Actions CI secrets
+
+Every one of these is a repo secret (Settings → Secrets and variables
+→ Actions), consumed by the workflows in `.github/workflows/`. None
+of this was documented anywhere before — the table below is the full
+set as of this writing; re-grep `secrets\.[A-Z_0-9]*` across
+`.github/workflows/` if it's been a while, since nothing enforces this
+staying in sync.
+
+| Secret | Used by | Purpose |
+|---|---|---|
+| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_VAPID_KEY` | `deploy.yml`, `build-mobile.yml` | Same Firebase Web SDK config used client-side (see `src/firebase.ts`) — injected as build-time env vars for both the web deploy and the Android web-asset build. |
+| `VITE_ICAL_FEED_BASE_URL` | `deploy.yml`, `build-mobile.yml` | See "Client-side env vars for the calendar feed" above. Not actually sensitive; kept as a secret only for consistency with the `VITE_FIREBASE_*` vars next to it. |
+| `KEYSTORE_PRIVATE`, `KEYSTORE_CHAIN`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` | `build-mobile.yml` | Android app-signing identity — a private key + certificate chain (PEM), reassembled into a JKS keystore at build time, plus the store/key passwords and alias. `KEY_PASSWORD` must equal `KEYSTORE_PASSWORD` — the keystore-generation step never sets a distinct key password, so the two secrets have to hold the same value despite being named separately. |
+| `FIREBASE_SERVICE_ACCOUNT` | `nag.yml`, `deduplicate.yml`, `enrich-bars.yml` | A full service-account JSON key (Admin SDK credential) for the scheduled maintenance scripts (`scripts/nag-bot.js`, `scripts/deduplicate.js`, `scripts/enrich-bars.js`) — a different credential mechanism than `set-admin-claim.js`'s `GOOGLE_APPLICATION_CREDENTIALS` (see docs/SCRIPTS.md). |
+| `JULES_API_KEY` | `jules-branch-handler.yml`, `jules-issue-handler.yml` | API key for the Jules autonomous coding agent (`google-labs-code/jules-action`). Both workflows are gated to repo owner/member/collaborator-authored comments and issues — see the SECURITY comments in those files. |
+| `GH_TOKEN` | `jules-branch-handler.yml` | A personal-access-token-scoped token distinct from the auto-provided `GITHUB_TOKEN`, used because Jules needs to merge PRs — `GITHUB_TOKEN` alone can be insufficient for that depending on branch protection settings. Broader-scoped than `GITHUB_TOKEN`; treat as sensitive as any other repo-write credential. |
+| `GITHUB_TOKEN` | `deploy.yml`, `build-mobile.yml`, `jules-issue-handler.yml` (via `secrets.GITHUB_TOKEN`, not listed above where it's `github-token:`) | Auto-provided by GitHub Actions per run — not something to set manually. |
+
 ## Android Deployment
 
 The Android application is a Capacitor wrapper around the web app.
@@ -103,7 +122,15 @@ The Android application is a Capacitor wrapper around the web app.
 *   Keystore file (for signing)
 
 ### Build Process (CI/CD)
-The `.github/workflows/build-mobile.yml` workflow handles this automatically on tag push or manual trigger.
+The `.github/workflows/build-mobile.yml` workflow runs on every push
+to any branch (for build/test signal on every commit) and on
+`workflow_dispatch` — there is no tag-based trigger at all. It
+computes its own version (`major.minor.patch.build`, from
+`version.properties` + commit count) and publishes that as a
+prerelease under a floating `latest-debug-v<major>.<minor>` tag it
+creates/force-moves itself, but ONLY when the push is to `main` and
+the build succeeded — every other branch just builds and tests
+without touching the public release.
 
 1.  **Environment Setup**: Installs Node, Java 21.
 2.  **Web Build**: Runs `npm run build`.
@@ -118,8 +145,10 @@ The `.github/workflows/build-mobile.yml` workflow handles this automatically on 
     ```bash
     cd android && ./gradlew assembleDebug
     ```
-6.  **Signing**: Signs the APK if a keystore is provided.
-7.  **Release**: Uploads the APK to GitHub Releases.
+6.  **Signing**: Signs the APK if `KEYSTORE_PRIVATE` is set — required
+    (the build fails otherwise) on a push to `main`, since that's the
+    build that gets published; optional elsewhere.
+7.  **Release**: On a successful push-to-`main` build only, uploads the APK to GitHub Releases.
 
 ### Manual Local Build
 1.  Ensure `dist/` is up to date: `npm run build`.

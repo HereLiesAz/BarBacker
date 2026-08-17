@@ -409,8 +409,33 @@ function App() {
 
   // --- 2. Bar Logic (Listeners) ---
   useEffect(() => {
-    // If no user or bar selected, do nothing.
-    if (!user || !barId) return;
+    // If no user or bar selected, clear everything the listeners
+    // below would otherwise leave stale — most critically on sign-out
+    // (see handleLogout) or a bar switch: without this, a second
+    // person signing into the same browser session (a shared device
+    // at the bar) would see the PREVIOUS user's bar name, roster,
+    // beer inventory, and role/permissions still rendered until a
+    // full page reload, since React state isn't reset just because
+    // an effect's guard condition starts failing.
+    if (!user || !barId) {
+      setUserRole(null);
+      setJobTitle('');
+      setUserStatus('active');
+      setDisplayName('');
+      setNotificationPreferences([]);
+      setBarName('');
+      setBarJoinPolicy('open');
+      setButtons(DEFAULT_BUTTONS);
+      setBeerInventory({});
+      setWells([]);
+      setHiddenButtonIds([]);
+      setButtonUsage({});
+      setCustomOrders({});
+      setBarSubscription('free');
+      setBarTheme(undefined);
+      setAllUsers([]);
+      return;
+    }
 
     // Persist Bar ID to URL and LocalStorage.
     setSearchParamsRef.current({ bar: barId });
@@ -508,7 +533,7 @@ function App() {
   // persistent rather than time-windowed, so it's owned by useChat
   // instead — see below.
   useEffect(() => {
-    if (!user || !barId) return;
+    if (!user || !barId) { setRequests([]); return; }
 
     const unsubReq = onSnapshot(
       query(
@@ -532,7 +557,7 @@ function App() {
   // side and avoids the client even attempting a private read it
   // can't decode.
   useEffect(() => {
-    if (!barId) return;
+    if (!barId) { setEightySixEntries([]); return; }
     const canSeePrivate = isPremium && isManagerPlus;
     const q = canSeePrivate
       ? query(collection(db, `bars/${barId}/eightySixed`), orderBy('timestamp', 'desc'), limit(200))
@@ -1164,8 +1189,25 @@ function App() {
   };
 
   // Sign out — also closes the account dialog that triggered it.
+  //
+  // Clearing barId (and its localStorage mirror) is what actually
+  // matters here, not just calling signOut(): every bar-scoped
+  // listener effect above is gated on `if (!user || !barId)`, and
+  // now clears its own state when that guard fails (see those
+  // effects' comments) — but only `user` was ever going to become
+  // falsy on sign-out, since nothing here ever reset `barId`. On a
+  // shared device, a second person signing in right after would have
+  // had the FIRST person's bar name, roster, requests, and role still
+  // rendered (barId was still set, so every listener just
+  // re-subscribed under the new uid) until a full page reload. Also
+  // matches the reset every other "leave this bar" path already does
+  // (handleLeaveBar, handleSwitchBar, the Cancel button on Approval
+  // Pending) — sign-out was the one path that never did it.
   const handleLogout = async () => {
     await signOut();
+    setBarId(null);
+    setJustCreatedBar(false);
+    localStorage.removeItem('barId');
     setShowAccountDialog(false);
   };
 

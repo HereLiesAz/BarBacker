@@ -7,6 +7,7 @@ import {
   useSensors,
   DragEndEvent,
   DragStartEvent,
+  DragCancelEvent,
 } from '@dnd-kit/core';
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -72,6 +73,22 @@ export function useDragAndDrop({ barId, customOrders, setCustomOrders }: UseDrag
     }
   };
 
+  // dnd-kit fires onDragCancel (Escape key, the draggable unmounting
+  // mid-drag, etc.) INSTEAD OF onDragEnd — without a handler wired to
+  // it, isDraggingRef stayed stuck at `true` forever after any
+  // cancelled drag, since only handleDragEnd ever reset it. The bar
+  // listener effect in App.tsx skips applying a remote customOrders
+  // update while `isDraggingRef.current` is true (so it doesn't
+  // clobber an in-progress local reorder) — once stuck, that made
+  // this client permanently stop picking up anyone else's button
+  // reordering for the rest of the session. No Firestore write here:
+  // a cancelled drag shouldn't persist whatever order handleDragOver
+  // had optimistically applied.
+  const handleDragCancel = (_event: DragCancelEvent) => {
+    setActiveId(null);
+    isDraggingRef.current = false;
+  };
+
   return {
     sensors,
     activeId,
@@ -79,5 +96,6 @@ export function useDragAndDrop({ barId, customOrders, setCustomOrders }: UseDrag
     handleDragStart,
     handleDragOver,
     handleDragEnd,
+    handleDragCancel,
   };
 }

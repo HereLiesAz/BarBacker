@@ -37,11 +37,34 @@ export function useMyBars(user: User | null) {
   const [globalNtfyTopic, setGlobalNtfyTopic] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    // Clearing on sign-out matters on a shared device: without it, a
+    // second person signing in right after someone else signs out
+    // would briefly (until their own listener resolves) see the
+    // FIRST person's joined-bars list and ntfy topic still rendered —
+    // the same class of stale-state leak fixed for App.tsx's own
+    // listeners (see handleLogout's comment there).
+    if (!user) {
+      setMyBars([]);
+      setBarDetails({});
+      setGlobalNtfyTopic(null);
+      return;
+    }
     const userRef = doc(db, 'users', user.uid);
     const unsub = onSnapshot(userRef, (d) => {
       const data = d.exists() ? d.data() : {};
-      setMyBars(data.joinedBars || []);
+      const joinedBars: string[] = data.joinedBars || [];
+      // Only update if the actual bar list changed — Firestore
+      // delivers a new snapshot (and thus a new `data.joinedBars`
+      // array reference) for ANY change to this doc, including one
+      // that only touched ntfyTopic. Setting state with a new-but-
+      // content-identical array triggers the barDetails effect below
+      // (keyed on [myBars]) to redundantly re-fetch every bar's name
+      // from Firestore for no reason.
+      setMyBars(prev =>
+        prev.length === joinedBars.length && prev.every((id, i) => id === joinedBars[i])
+          ? prev
+          : joinedBars
+      );
 
       if (data.ntfyTopic) {
         setGlobalNtfyTopic(data.ntfyTopic);

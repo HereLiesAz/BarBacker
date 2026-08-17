@@ -32,7 +32,11 @@ async function fetchLatestRelease(): Promise<GitHubRelease> {
     }
     if (response.status === 429 && attempt < MAX_ATTEMPTS - 1) {
       // Secondary/abuse limit. Honor Retry-After if present; otherwise
-      // exponential backoff (1s, 2s, 4s).
+      // exponential backoff. With MAX_ATTEMPTS=3 the retry condition
+      // (attempt < MAX_ATTEMPTS - 1) only holds for attempt 0 and 1,
+      // so this actually waits 1s then 2s — attempt 2 is the final
+      // try and falls through to the generic throw below instead of
+      // backing off a third time.
       const retryAfter = Number(response.headers.get('Retry-After')) || 2 ** attempt;
       await new Promise(r => setTimeout(r, retryAfter * 1000));
       continue;

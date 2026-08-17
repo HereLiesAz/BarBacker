@@ -143,8 +143,19 @@ function App() {
   // depends on values that should actually trigger it.
   const setSearchParamsRef = useRef(setSearchParams);
   useEffect(() => { setSearchParamsRef.current = setSearchParams; }, [setSearchParams]);
-  // Get the 'bar' param from URL or fallback to localStorage.
-  const initialBarId = searchParams.get('bar') || localStorage.getItem('barId');
+  // Get the 'bar' param from URL or fallback to localStorage. Guarded
+  // — localStorage.getItem can throw (Safari private browsing
+  // historically, a storage-access-restricted iframe context) and
+  // this runs unconditionally on every render of the whole app, so an
+  // unguarded throw here would crash the entire component tree with
+  // no error boundary above it to catch it.
+  const initialBarId = searchParams.get('bar') || (() => {
+    try {
+      return localStorage.getItem('barId');
+    } catch {
+      return null;
+    }
+  })();
   // Store the current Bar ID.
   const [barId, setBarId] = useState<string | null>(initialBarId);
   
@@ -215,6 +226,12 @@ function App() {
   const [editNameValue, setEditNameValue] = useState('');
   const [editNameError, setEditNameError] = useState<string | null>(null);
 
+  // Cap on the persisted ignoredIds list (see below) — nothing ever
+  // pruned old entries as requests they referred to got resolved and
+  // deleted, so this grew by one entry every time anyone tapped
+  // "Ignore," unboundedly, for the lifetime of the browser profile.
+  const MAX_IGNORED_IDS = 200;
+
   // List of request IDs the user has locally ignored/muted. Persisted
   // to localStorage — previously plain useState, so a reload (or the
   // app being killed and reopened, routine on mobile) brought back
@@ -255,7 +272,7 @@ function App() {
 
   // Drag-and-drop sensors + handlers (dnd-kit). Persistence of
   // customOrders happens inside the hook on drag end.
-  const { sensors, activeId, isDraggingRef, handleDragStart, handleDragOver, handleDragEnd } =
+  const { sensors, activeId, isDraggingRef, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } =
     useDragAndDrop({ barId, customOrders, setCustomOrders });
 
   // Memoized lookup map for button IDs. Maps both top-level and child labels to top-level button ID.
@@ -619,26 +636,41 @@ function App() {
     const tokenRef = doc(db, `bars/${barId}/tokens`, user.uid);
 
     const autoClockIn = async () => {
-      // Store FCM token.
-      await setDoc(tokenRef, {
-        token: fcmToken,
-        updated: serverTimestamp()
-      });
-      // Set status to active and update heartbeat. Rules only permit
-      // this self-write when transitioning from 'off_clock' (or when
-      // status isn't changing at all) — a user still 'pending'
-      // manager approval correctly stays pending here.
-      await updateDoc(userRef, {
-        status: 'active',
-        lastSeen: serverTimestamp()
-      }).catch((e) => console.error('Auto clock-in failed', e));
+      try {
+        // Store FCM token. Previously unguarded — a rejection here
+        // (e.g. a transient offline write) threw out of autoClockIn()
+        // as an unhandled promise rejection (autoClockIn() is called
+        // below with no .then/.catch) AND skipped the updateDoc below
+        // entirely, silently leaving the user un-clocked-in with no
+        // error surfaced anywhere.
+        await setDoc(tokenRef, {
+          token: fcmToken,
+          updated: serverTimestamp()
+        });
+        // Set status to active and update heartbeat. Rules only permit
+        // this self-write when transitioning from 'off_clock' (or when
+        // status isn't changing at all) — a user still 'pending'
+        // manager approval correctly stays pending here.
+        await updateDoc(userRef, {
+          status: 'active',
+          lastSeen: serverTimestamp()
+        });
+      } catch (e) {
+        console.error('Auto clock-in failed', e);
+      }
     };
     autoClockIn();
   }, [user, barId, fcmToken]);
 
 
   // Auto-submit an "(Ask Me)" request if a sub-menu sits open for 60s.
-  useInactivityAutoSubmit(navStack, (label) => submitRequestSafe(label), () => setNavStack([]));
+  useInactivityAutoSubmit(
+    navStack,
+    (label) => submitRequestSafe(label),
+    () => setNavStack([]),
+    undefined,
+    inputDialog.open || quantityPicker.open,
+  );
 
   // --- Actions ---
 
@@ -1946,6 +1978,7 @@ function App() {
               onDragStart={handleDragStart}
               onDragOver={(e) => handleDragOver(e, currentContextId, currentButtons)}
               onDragEnd={(e) => handleDragEnd(e, currentContextId)}
+              onDragCancel={handleDragCancel}
             >
               <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
                 <div className="grid grid-cols-2 gap-4 mb-auto">
@@ -1983,6 +2016,7 @@ function App() {
         onDragStart={handleDragStart}
         onDragOver={(e) => handleDragOver(e, 'main', mainScreenButtonsWithCustom)}
         onDragEnd={(e) => handleDragEnd(e, 'main')}
+        onDragCancel={handleDragCancel}
       >
         <SortableContext items={mainScreenButtonsWithCustom} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-2 gap-8 p-6">
@@ -2094,7 +2128,10 @@ function App() {
                         ) : (
                             !isIgnored && (
                                 <md-outlined-button
-                                    onClick={(e: React.MouseEvent<HTMLElement>) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
+                                    onClick={(e: React.MouseEvent<HTMLElement>) => {
+                                        e.stopPropagation();
+                                        setIgnoredIds(prev => [...prev, req.id].slice(-MAX_IGNORED_IDS));
+                                    }}
                                     style={{ height: '48px', minWidth: '100px' }}
                                 >
                                     Ignore

@@ -48,6 +48,11 @@ export function useChat({ user, barId, displayName, userRole, panelOpen }: UseCh
   const [latestMessageAt, setLatestMessageAt] = useState<number>(0);
   const [lastReadAt, setLastReadAt] = useState<number>(0);
   const migratedRef = useRef<string | null>(null);
+  // Tracks the latest barId synchronously (a ref, not state) so
+  // loadMore's async cancellation guard can tell, after an await,
+  // whether the bar changed out from under it — see loadMore below.
+  const barIdRef = useRef(barId);
+  barIdRef.current = barId;
 
   // One-time-per-bar migration of any leftover notices into chat.
   // Fire-and-forget: the server-side function is idempotent (guarded
@@ -107,14 +112,33 @@ export function useChat({ user, barId, displayName, userRole, panelOpen }: UseCh
 
   useEffect(() => {
     if (!barId) { setLastReadAt(0); return; }
-    const stored = Number(localStorage.getItem(lastReadKey(barId)) || 0);
+    // Guards two independent failure modes: localStorage.getItem
+    // itself can throw (Safari private browsing historically, or a
+    // storage-access-restricted iframe context), and even a
+    // successful read can hold a non-numeric value (corrupted
+    // storage, a value written by a since-changed format) — Number()
+    // on that returns NaN, which compares false against every message
+    // timestamp in both directions, permanently stuck showing either
+    // "everything unread" or "everything read" depending on which way
+    // the comparison runs, with no way for the user to clear it.
+    let stored = 0;
+    try {
+      const raw = Number(localStorage.getItem(lastReadKey(barId)) || 0);
+      if (!Number.isNaN(raw)) stored = raw;
+    } catch (e) {
+      console.warn('Failed to read lastReadAt from localStorage', e);
+    }
     setLastReadAt(stored);
   }, [barId]);
 
   const markRead = useCallback(() => {
     if (!barId) return;
     const now = Date.now();
-    localStorage.setItem(lastReadKey(barId), String(now));
+    try {
+      localStorage.setItem(lastReadKey(barId), String(now));
+    } catch (e) {
+      console.warn('Failed to persist lastReadAt to localStorage', e);
+    }
     setLastReadAt(now);
   }, [barId]);
 
@@ -138,6 +162,7 @@ export function useChat({ user, barId, displayName, userRole, panelOpen }: UseCh
 
   const loadMore = useCallback(async () => {
     if (!barId || loadingMore || !hasMore) return;
+    const requestedBarId = barId;
     const oldest = olderMessages[0] ?? messages[0];
     if (!oldest) return;
     setLoadingMore(true);
@@ -146,6 +171,14 @@ export function useChat({ user, barId, displayName, userRole, panelOpen }: UseCh
         query(collection(db, `bars/${barId}/chat`), orderBy('timestamp', 'desc'),
           where('timestamp', '<', oldest.timestamp as any), limit(PAGE_SIZE)),
       );
+      // Cancellation guard: if the user switched bars while this
+      // getDocs() was in flight, applying its result now would
+      // prepend the PREVIOUS bar's older messages onto the new bar's
+      // (already-reset-to-empty) scrollback — cross-bar contamination
+      // that a plain `if (!barId) return` at the top can't catch,
+      // since it only checks the guard's value at call time, not
+      // after the await.
+      if (barIdRef.current !== requestedBarId) return;
       if (cursorSnap.empty) { setHasMore(false); return; }
       const older = cursorSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ChatMessage)).reverse();
       setOlderMessages((prev) => [...older, ...prev]);

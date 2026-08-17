@@ -43,6 +43,7 @@ export const WhoIsOnDialog = ({
   // Filter for active users (clocked in).
   // Note: users with undefined status are treated as active for backward compatibility.
   const clockedInUsers = users.filter(u => u.status === 'active' || u.status === undefined);
+  const offClockUsers = users.filter(u => u.status === 'off_clock');
   const pendingUsers = users.filter(u => u.status === 'pending');
 
   return (
@@ -114,6 +115,24 @@ export const WhoIsOnDialog = ({
                </md-list>
            </div>
         </div>
+
+        {/* Section: Off Clock */}
+        {offClockUsers.length > 0 && (
+          <div>
+             <h3 className="text-gray-400 font-bold text-sm uppercase tracking-wide mb-2">Off Clock ({offClockUsers.length})</h3>
+             <div className="border border-gray-800 rounded overflow-hidden">
+                 <md-list>
+                     {offClockUsers.map(u => (
+                         <md-list-item key={u.id}>
+                             <div slot="headline" className="text-gray-300">{u.displayName || 'Unknown'}</div>
+                             <div slot="supporting-text" className="text-gray-500">{u.jobTitle || u.role}</div>
+                             <md-icon slot="start" className="text-gray-600">radio_button_unchecked</md-icon>
+                         </md-list-item>
+                     ))}
+                 </md-list>
+             </div>
+          </div>
+        )}
       </div>
       <div slot="actions">
         <md-text-button onClick={onClose}>Close</md-text-button>

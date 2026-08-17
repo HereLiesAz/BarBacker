@@ -32,7 +32,6 @@ describe('EightySixDialog', () => {
     onDelete: vi.fn().mockResolvedValue(undefined),
     isPremium: false,
     userRole: 'Bartender' as string | null,
-    currentUserId: 'user3',
   };
 
   it('renders public entries for all users', () => {

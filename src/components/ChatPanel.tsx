@@ -20,7 +20,7 @@ interface ChatPanelProps {
   isManagerPlus: boolean;
   onSend: (text: string, pin: boolean) => Promise<void>;
   onTogglePin: (messageId: string, pin: boolean) => void;
-  onDelete: (messageId: string) => void;
+  onDelete: (messageId: string) => Promise<void>;
 }
 
 // Full-screen chat sheet — Phase 2 of
@@ -36,6 +36,7 @@ export function ChatPanel({
   const [pinNext, setPinNext] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
 
@@ -72,7 +73,20 @@ export function ChatPanel({
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!confirmDeleteId) return;
+    try {
+      await onDelete(confirmDeleteId);
+    } catch (e) {
+      console.error('Failed to delete chat message', e);
+      alert('Failed to delete. Please try again.');
+    } finally {
+      setConfirmDeleteId(null);
+    }
+  };
+
   return (
+    <>
     <MdDialog
       open={open}
       onClose={onClose}
@@ -116,7 +130,7 @@ export function ChatPanel({
                     </md-text-button>
                   )}
                   {canDelete && (
-                    <md-text-button onClick={() => onDelete(m.id)}>Delete</md-text-button>
+                    <md-text-button onClick={() => setConfirmDeleteId(m.id)}>Delete</md-text-button>
                   )}
                 </div>
               </div>
@@ -153,6 +167,16 @@ export function ChatPanel({
         <md-text-button onClick={onClose}>Close</md-text-button>
       </div>
     </MdDialog>
+
+    <MdDialog open={confirmDeleteId !== null} onClose={() => setConfirmDeleteId(null)}>
+      <div slot="headline">Delete Message?</div>
+      <div slot="content">This can't be undone.</div>
+      <div slot="actions">
+        <md-text-button onClick={() => setConfirmDeleteId(null)}>Cancel</md-text-button>
+        <md-filled-button className="btn-alert" onClick={handleConfirmDelete}>Delete</md-filled-button>
+      </div>
+    </MdDialog>
+    </>
   );
 }
 

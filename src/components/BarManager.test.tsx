@@ -85,11 +85,36 @@ describe('BarManager', () => {
         onHideButton={onHide}
         isPremium={true}
         onUnhideButton={onUnhide}
+        isManagerPlus={true}
       />
     );
 
     // Should show the hidden button in the "Restorable" section
     expect(screen.getByText('Restorable Buttons (Premium)')).toBeDefined();
     expect(screen.getByText('Hidden Button B')).toBeDefined();
+  });
+
+  it('hides remove/restore controls for non-Manager+ viewers', () => {
+    const onHide = vi.fn();
+    const onClose = vi.fn();
+    const onUnhide = vi.fn();
+
+    render(
+      <BarManager
+        open={true}
+        onClose={onClose}
+        barName="Test Bar"
+        allButtons={buttons}
+        hiddenButtonIds={['2']}
+        onHideButton={onHide}
+        isPremium={true}
+        onUnhideButton={onUnhide}
+        isManagerPlus={false}
+      />
+    );
+
+    expect(screen.queryByLabelText(/Remove Visible Button A/)).toBeNull();
+    // Restorable section itself is Manager+-gated, so it shouldn't render at all.
+    expect(screen.queryByText('Restorable Buttons (Premium)')).toBeNull();
   });
 });

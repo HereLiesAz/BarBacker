@@ -1571,7 +1571,11 @@ function App() {
 
   // Check for pending users (for Managers).
   const pendingUsers = allUsers.filter(u => u.status === 'pending');
-  const showApprovals = pendingUsers.length > 0;
+  // Gated by isManagerPlus: the badge previously showed to every role,
+  // but WhoIsOnDialog only renders the approvals section for
+  // Manager+, so Staff clicking it landed on a dialog with nothing
+  // relevant to approve — a confusing dead end.
+  const showApprovals = isManagerPlus && pendingUsers.length > 0;
 
   // 4. Pending Approval Screen
   if (userStatus === 'pending') {
@@ -1611,7 +1615,6 @@ function App() {
         onDelete={deleteEightySixEntry}
         isPremium={isPremium}
         userRole={userRole}
-        currentUserId={user?.uid}
       />
 
       {isPremium && (

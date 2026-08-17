@@ -7,7 +7,7 @@ const mockOnClose = vi.fn();
 const mockOnLoadMore = vi.fn();
 const mockOnSend = vi.fn();
 const mockOnTogglePin = vi.fn();
-const mockOnDelete = vi.fn();
+const mockOnDelete = vi.fn().mockResolvedValue(undefined);
 
 const baseMessage: ChatMessage = {
   id: 'm1',
@@ -54,15 +54,28 @@ describe('ChatPanel', () => {
     expect(screen.getByText(/no messages yet/i)).toBeInTheDocument();
   });
 
-  it('lets the author delete their own message even when not Manager+', () => {
+  it('lets the author delete their own message after confirming, even when not Manager+', async () => {
     renderPanel({ isManagerPlus: false, currentUserId: 'alice' });
-    fireEvent.click(screen.getByText('Delete'));
-    expect(mockOnDelete).toHaveBeenCalledWith('m1');
+    // Two 'Delete' texts exist: the message's own, and the (unopened)
+    // confirm dialog's own button, in that DOM order.
+    fireEvent.click(screen.getAllByText('Delete')[0]);
+    expect(mockOnDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByText('Delete')[1]);
+    await waitFor(() => expect(mockOnDelete).toHaveBeenCalledWith('m1'));
+  });
+
+  it('does not delete when the confirmation is cancelled', () => {
+    renderPanel({ isManagerPlus: false, currentUserId: 'alice' });
+    fireEvent.click(screen.getAllByText('Delete')[0]);
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(mockOnDelete).not.toHaveBeenCalled();
   });
 
   it('hides delete for a non-author, non-Manager+ viewer', () => {
     renderPanel({ isManagerPlus: false, currentUserId: 'bob' });
-    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+    // Only the (unopened) confirm dialog's own Delete button remains;
+    // the message itself doesn't render one for this viewer.
+    expect(screen.getAllByText('Delete').length).toBe(1);
   });
 
   it('hides pin/unpin controls for non-Manager+ viewers', () => {

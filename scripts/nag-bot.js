@@ -45,6 +45,11 @@ const ROLE_NOTIFICATION_DEFAULTS = {
   'Server': [],
   'Runner': ['ice', 'glass', 'restock', 'mixers', 'restock_beer'],
   'Security': ['security', 'manager', 'break'],
+  // See src/constants.ts's copy for why this exists — onInviteConsumed.ts
+  // (Cloud Function) sets jobTitle to literally 'Staff' for an invited
+  // member with no title picked yet, and without an entry here that
+  // member matched nothing and got zero notifications/nags.
+  'Staff': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer', 'break'],
 };
 
 // Given a pending request and a bar member, decide whether this nag
@@ -64,6 +69,15 @@ function shouldNagUserAbout(req, member) {
     || ROLE_NOTIFICATION_DEFAULTS[member.jobTitle] || ROLE_NOTIFICATION_DEFAULTS[member.role] || [];
   return prefs.includes(req.buttonId);
 }
+
+// Firestore caps a single batch at 500 writes. Bar-scoped chunks
+// below are already far under that in the common case, but nothing
+// stops a single bar from accumulating hundreds of stale pending
+// requests (nothing rate-limits creation), so this is enforced rather
+// than assumed. Matches the BATCH_SIZE convention used elsewhere in
+// this repo (functions/src/cleanupStaleRequests.ts,
+// functions/src/migrateNoticesToChat.ts).
+const BATCH_SIZE = 400;
 
 // Main function to check for ignored requests and send reminders ("Nags").
 async function nag() {
@@ -87,98 +101,127 @@ async function nag() {
   // --- Step 2: Group by Bar ---
   // We group requests by Bar ID to send a single consolidated notification per bar,
   // preventing notification spam if there are multiple pending items (e.g., 10 "Ice" requests).
-  const barUpdates = {}; // Map of barId -> [{ label, buttonId }]
+  // Keeps each doc (not just label/buttonId) so lastNotification can
+  // be bumped per-bar right after that bar's send attempt, below.
+  const barUpdates = {}; // Map of barId -> [{ label, buttonId, ref }]
 
   snapshot.docs.forEach(doc => {
     const data = doc.data();
     if (!barUpdates[data.barId]) barUpdates[data.barId] = [];
-    barUpdates[data.barId].push({ label: data.label, buttonId: data.buttonId });
+    barUpdates[data.barId].push({ label: data.label, buttonId: data.buttonId, ref: doc.ref });
   });
 
-  // --- Step 3: Send Notifications per Bar ---
+  // --- Step 3: Send Notifications per Bar, bumping lastNotification
+  // immediately after each bar's attempt (not once at the very end
+  // for every request in the whole run). Previously a failure sending
+  // to ANY bar (FCM quota/auth error, sendEachForMulticast throwing
+  // above its 500-token limit, etc.) threw out of this loop entirely
+  // — since the very last step updated every request's
+  // lastNotification in one shot, that meant bars already nagged
+  // successfully earlier in the same loop never got their timestamp
+  // bumped either, so the next run (5 minutes later) renagged them
+  // again — a permanent duplicate-nag loop for every bar that
+  // happened to be processed before whichever one failed. Wrapping
+  // each bar's send in its own try/catch, and bumping that bar's
+  // requests right after, means one bar's failure no longer poisons
+  // every other bar in the same run.
   for (const [barId, requests] of Object.entries(barUpdates)) {
-    // Fetch bar members (for status/prefs filtering) and tokens
-    // together — `bars/{barId}/tokens` has one doc per uid holding
-    // the FCM token; `bars/{barId}/users` has the same uid holding
-    // status/notificationPreferences/jobTitle.
-    const [tokensSnap, usersSnap] = await Promise.all([
-      db.collection(`bars/${barId}/tokens`).get(),
-      db.collection(`bars/${barId}/users`).get(),
-    ]);
-    const membersById = new Map(usersSnap.docs.map(d => [d.id, d.data()]));
+    try {
+      // Fetch bar members (for status/prefs filtering) and tokens
+      // together — `bars/{barId}/tokens` has one doc per uid holding
+      // the FCM token; `bars/{barId}/users` has the same uid holding
+      // status/notificationPreferences/jobTitle.
+      const [tokensSnap, usersSnap] = await Promise.all([
+        db.collection(`bars/${barId}/tokens`).get(),
+        db.collection(`bars/${barId}/users`).get(),
+      ]);
+      const membersById = new Map(usersSnap.docs.map(d => [d.id, d.data()]));
 
-    // Group recipients by the exact subset of requests they should be
-    // nagged about, so someone who only cares about ICE doesn't get
-    // paged about a KEG request too, and so we send the minimum
-    // number of distinct multicast calls.
-    const groups = new Map(); // key (sorted buttonId/label list) -> { labels, tokens }
-    for (const tokenDoc of tokensSnap.docs) {
-      const token = tokenDoc.data().token;
-      if (!token) continue;
-      const member = membersById.get(tokenDoc.id);
-      if (!member) continue; // Token orphaned from a removed member.
+      // Group recipients by the exact subset of requests they should be
+      // nagged about, so someone who only cares about ICE doesn't get
+      // paged about a KEG request too, and so we send the minimum
+      // number of distinct multicast calls.
+      const groups = new Map(); // key (sorted buttonId/label list) -> { labels, tokens }
+      for (const tokenDoc of tokensSnap.docs) {
+        const token = tokenDoc.data().token;
+        if (!token) continue;
+        const member = membersById.get(tokenDoc.id);
+        if (!member) continue; // Token orphaned from a removed member.
 
-      const relevant = requests.filter(r => shouldNagUserAbout(r, member));
-      if (relevant.length === 0) continue;
+        const relevant = requests.filter(r => shouldNagUserAbout(r, member));
+        if (relevant.length === 0) continue;
 
-      const key = relevant.map(r => r.buttonId || r.label).sort().join('|');
-      if (!groups.has(key)) groups.set(key, { labels: relevant.map(r => r.label), tokens: [] });
-      groups.get(key).tokens.push(token);
-    }
+        const key = relevant.map(r => r.buttonId || r.label).sort().join('|');
+        if (!groups.has(key)) groups.set(key, { labels: relevant.map(r => r.label), tokens: [] });
+        groups.get(key).tokens.push(token);
+      }
 
-    if (groups.size === 0) {
-      console.log(`No subscribed/active recipients for bar ${barId}; skipping.`);
+      if (groups.size === 0) {
+        console.log(`No subscribed/active recipients for bar ${barId}; skipping.`);
+      }
+
+      // sendEachForMulticast throws synchronously above 500 tokens —
+      // chunk defensively even though a single bar having that many
+      // subscribed devices is unlikely.
+      for (const { labels, tokens } of groups.values()) {
+        const summary = labels.join(', ');
+        const title = `IGNORED: ${labels.length} TASK${labels.length === 1 ? '' : 'S'}`;
+        const body = `${summary} still waiting. DO YOUR JOB.`;
+
+        for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+          const tokenChunk = tokens.slice(i, i + BATCH_SIZE);
+          // Send the Multicast Push Notification to this recipient group.
+          // This uses FCM to reach Android and iOS devices.
+          await messaging.sendEachForMulticast({
+            tokens: tokenChunk,
+            notification: {
+              title: title,
+              body: body,
+            },
+            data: {
+              type: 'nag_alert',
+              barId: barId
+            },
+            // Android specific config for high priority.
+            android: {
+              priority: 'high',
+              notification: {
+                sound: 'default',
+                channelId: 'urgent_alerts'
+              }
+            },
+            // APNs (iOS) specific config.
+            apns: {
+              payload: {
+                aps: {
+                  sound: 'default',
+                  'content-available': 1
+                }
+              }
+            }
+          });
+
+          console.log(`Nagged ${tokenChunk.length} recipient(s) at bar ${barId} regarding: ${summary}`);
+        }
+      }
+    } catch (e) {
+      console.error(`Failed to nag bar ${barId}; leaving its requests' lastNotification untouched so they're retried next run`, e);
       continue;
     }
 
-    for (const { labels, tokens } of groups.values()) {
-      const summary = labels.join(', ');
-      const title = `IGNORED: ${labels.length} TASK${labels.length === 1 ? '' : 'S'}`;
-      const body = `${summary} still waiting. DO YOUR JOB.`;
-
-      // Send the Multicast Push Notification to this recipient group.
-      // This uses FCM to reach Android and iOS devices.
-      await messaging.sendEachForMulticast({
-        tokens,
-        notification: {
-          title: title,
-          body: body,
-        },
-        data: {
-          type: 'nag_alert',
-          barId: barId
-        },
-        // Android specific config for high priority.
-        android: {
-          priority: 'high',
-          notification: {
-            sound: 'default',
-            channelId: 'urgent_alerts'
-          }
-        },
-        // APNs (iOS) specific config.
-        apns: {
-          payload: {
-            aps: {
-              sound: 'default',
-              'content-available': 1
-            }
-          }
-        }
-      });
-
-      console.log(`Nagged ${tokens.length} recipient(s) at bar ${barId} regarding: ${summary}`);
+    // --- Step 4: Update Last Notification Timestamp for this bar ---
+    // Chunked at BATCH_SIZE — Firestore caps a single batch at 500
+    // writes, and nothing limits how many stale requests one bar can
+    // accumulate (no rate limiting exists anywhere in this app).
+    const barRequests = requests;
+    for (let i = 0; i < barRequests.length; i += BATCH_SIZE) {
+      const batch = db.batch();
+      for (const { ref } of barRequests.slice(i, i + BATCH_SIZE)) {
+        batch.update(ref, { lastNotification: new Date() });
+      }
+      await batch.commit();
     }
   }
-
-  // --- Step 4: Update Last Notification Timestamp ---
-  // Update the 'lastNotification' field on the request documents so we don't nag them again immediately.
-  // We use a batch write for efficiency and atomicity.
-  const batch = db.batch();
-  snapshot.docs.forEach(doc => {
-    batch.update(doc.ref, { lastNotification: new Date() });
-  });
-  await batch.commit();
 }
 
 // Execute the function.

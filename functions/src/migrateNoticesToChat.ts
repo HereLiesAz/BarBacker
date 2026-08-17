@@ -6,11 +6,24 @@ const BATCH_SIZE = 400;
 // One-shot migration of a bar's old notices (bulletin board) into the
 // new chat collection, as pinned messages — see the "Migration"
 // section of docs/plans/2026-05-21-feature-set-purr-design.md. The
-// client calls this once, lazily, the first time any member of a bar
-// opens the chat panel (see useChat.ts); idempotency is enforced here
-// via a transaction that claims bars/{barId}.chatMigratedAt, so a
-// second call (e.g. two staff opening chat around the same moment)
-// is a cheap no-op rather than a duplicate copy.
+// client calls this on bar entry (see useChat.ts).
+//
+// chatMigratedAt is set ONLY after every batch has committed
+// successfully — not claimed up front. Claiming it first (the
+// previous approach) meant a mid-migration failure on a large bar
+// (deadline exceeded, transient UNAVAILABLE) left the flag set with
+// only some notices copied: every retry would then see the flag,
+// return early, and the remaining notices would be permanently
+// unreachable — firestore.rules has no match block for `notices` at
+// all (default deny) and the client's notice reader was removed when
+// chat replaced it, so there was no path back to them. This ordering
+// trades that unrecoverable data loss for a much milder race: two
+// staff opening chat in the same instant could both pass the
+// up-front check and copy the same notices twice, producing duplicate
+// (but still visible and manually deletable) pinned messages — a
+// realistic-enough scenario to accept given how rarely two people
+// open a bar's chat for the very first time in the same millisecond,
+// against a failure mode that is silent and permanent.
 //
 // The old notices schema never captured a role snapshot, so migrated
 // messages get authorRole: '' — they just render without a role badge
@@ -33,14 +46,9 @@ export const migrateNoticesToChat = onCall(async (request) => {
   const db = getFirestore();
   const barRef = db.doc(`bars/${barId}`);
 
-  const claimed = await db.runTransaction(async (tx) => {
-    const barDoc = await tx.get(barRef);
-    if (!barDoc.exists) throw new HttpsError("not-found", "Bar not found.");
-    if (barDoc.data()?.chatMigratedAt) return false;
-    tx.set(barRef, { chatMigratedAt: FieldValue.serverTimestamp() }, { merge: true });
-    return true;
-  });
-  if (!claimed) return { migrated: false, count: 0 };
+  const barDoc = await barRef.get();
+  if (!barDoc.exists) throw new HttpsError("not-found", "Bar not found.");
+  if (barDoc.data()?.chatMigratedAt) return { migrated: false, count: 0 };
 
   const noticesSnap = await db.collection(`bars/${barId}/notices`).get();
   let count = 0;
@@ -65,5 +73,6 @@ export const migrateNoticesToChat = onCall(async (request) => {
     await batch.commit();
   }
 
+  await barRef.set({ chatMigratedAt: FieldValue.serverTimestamp() }, { merge: true });
   return { migrated: true, count };
 });

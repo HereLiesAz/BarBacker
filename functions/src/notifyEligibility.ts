@@ -10,6 +10,11 @@ export const ROLE_NOTIFICATION_DEFAULTS: Record<string, string[]> = {
   Server: [],
   Runner: ['ice', 'glass', 'restock', 'mixers', 'restock_beer'],
   Security: ['security', 'manager', 'break'],
+  // See src/constants.ts's copy for why this exists — onInviteConsumed.ts
+  // sets jobTitle to literally 'Staff' for an invited member with no
+  // title picked yet, and without an entry here that member matched
+  // nothing and got zero notifications.
+  Staff: ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer', 'break'],
 };
 
 export interface NotifiableRequest {

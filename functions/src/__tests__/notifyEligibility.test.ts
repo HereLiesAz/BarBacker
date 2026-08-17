@@ -36,4 +36,14 @@ describe("shouldNotifyMember", () => {
     expect(shouldNotifyMember({ buttonId: "ice", label: "ICE" }, { id: "them", status: "active", jobTitle: "Server" }, "me")).toBe(false);
     expect(shouldNotifyMember({ buttonId: "ice", label: "ICE" }, { id: "them", status: "active", jobTitle: "Bartender" }, "me")).toBe(true);
   });
+
+  // Regression: onInviteConsumed.ts sets jobTitle:'Staff' for an
+  // invited member who hasn't picked a title yet. 'Staff' used to be
+  // absent from ROLE_NOTIFICATION_DEFAULTS, so the fallback chain
+  // landed on [] and every invited member was notified about nothing,
+  // ever, until they manually visited Notification Settings.
+  it("falls back to a real default set (not []) for jobTitle 'Staff'", () => {
+    expect(shouldNotifyMember({ buttonId: "ice", label: "ICE" }, { id: "them", status: "active", jobTitle: "Staff" }, "me")).toBe(true);
+    expect(shouldNotifyMember({ buttonId: "break", label: "BREAK" }, { id: "them", status: "active", jobTitle: "Staff" }, "me")).toBe(true);
+  });
 });

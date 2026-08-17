@@ -15,6 +15,7 @@ concurrency:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       issues: write
@@ -26,13 +27,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Inject ARCore API Key
-        env:
-          ARCORE_API_KEY: ${{ secrets.ARCORE_API_KEY }}
-        run: |
-          # Inject ARCore API Key into local.properties for build.gradle.kts to pick up
-          echo "ARCORE_API_KEY=$ARCORE_API_KEY" >> local.properties
 
       - name: Generate Keystore from Secrets
         env:
@@ -69,8 +63,21 @@ jobs:
 
             # Clean up temporary files
             rm private_key.pem certificate_chain.crt keystore.p12
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # A push-to-main build is the one that gets published (see
+            # the RELEASE STEPS below) — silently falling back to a
+            # fresh debug keystore here means the APK is signed with a
+            # DIFFERENT key than whatever the previous release used
+            # (each CI run's default debug keystore is regenerated,
+            # not reused), which makes every existing installed copy
+            # fail INSTALL_FAILED_UPDATE_INCOMPATIBLE on the next
+            # update with no warning to anyone. A missing keystore
+            # secret on a release build must fail the build, not
+            # silently ship an unusable release.
+            echo "::error::KEYSTORE_PRIVATE is not set. Refusing to publish a release build signed with an ephemeral debug keystore — every existing install would fail to update. Set the KEYSTORE_* secrets, or don't push to main."
+            exit 1
           else
-            echo "Warning: KEYSTORE_PRIVATE secret is missing. Skipping custom keystore generation."
+            echo "Warning: KEYSTORE_PRIVATE secret is missing. Skipping custom keystore generation (fine for a non-release PR/branch build)."
           fi
 
       - name: Setup Node.js
@@ -130,6 +137,37 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
+      - name: Compute Version
+        # Run BEFORE the Gradle build (not just before the release
+        # step, as this used to be computed) so the version actually
+        # baked into versionCode/versionName by android/app/build.gradle
+        # (see its defaultConfig block) is the same one used for the
+        # release artifact's filename/tag below — previously
+        # versionBuild was passed as a Gradle property but nothing in
+        # build.gradle ever read it, so every APK ever built reported
+        # versionCode 1 / versionName "1.0" regardless of which commit
+        # built it.
+        id: version
+        run: |
+          export BUILD_NUMBER=$(git rev-list --count HEAD)
+          MAJOR=$(grep 'versionMajor=' version.properties | cut -d'=' -f2)
+          MINOR=$(grep 'versionMinor=' version.properties | cut -d'=' -f2)
+
+          # Calculate Patch version programmatically based on commits since Minor update
+          MINOR_COMMIT=$(git blame -L '/versionMinor=/',+1 version.properties | awk '{print $1}' | tr -d '^')
+          if [ -n "$MINOR_COMMIT" ]; then
+            PATCH=$(git rev-list --count $MINOR_COMMIT..HEAD)
+          else
+            PATCH=$(grep 'versionPatch=' version.properties | cut -d'=' -f2)
+          fi
+
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "VERSION_MAJOR=$MAJOR" >> $GITHUB_ENV
+          echo "VERSION_MINOR=$MINOR" >> $GITHUB_ENV
+          echo "VERSION_PATCH=$PATCH" >> $GITHUB_ENV
+          echo "VERSION_NAME=$MAJOR.$MINOR.$PATCH.$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "TAG_NAME=latest-debug-v${MAJOR}.${MINOR}" >> $GITHUB_ENV
+
       - name: Build with Gradle
         id: gradle-build
         env:
@@ -138,12 +176,12 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set +e
-          export BUILD_NUMBER=$(git rev-list --count HEAD)
-          
+          VERSION_PROPS="-PversionMajor=$VERSION_MAJOR -PversionMinor=$VERSION_MINOR -PversionPatch=$VERSION_PATCH -PversionBuild=$BUILD_NUMBER"
+
           # Build the APK
           if [ -f "android/app/keystore.jks" ]; then
             echo "Building with custom keystore..."
-            ./android/gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache \
+            ./android/gradlew assembleDebug $VERSION_PROPS --build-cache \
               -Pandroid.injected.signing.store.file=$(pwd)/android/app/keystore.jks \
               -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
               -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
@@ -151,7 +189,7 @@ jobs:
               -p android > build.log 2>&1
           else
             echo "Building with default debug keystore..."
-            ./android/gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache -p android > build.log 2>&1
+            ./android/gradlew assembleDebug $VERSION_PROPS --build-cache -p android > build.log 2>&1
           fi
           
           EXIT_CODE=$?
@@ -199,30 +237,24 @@ jobs:
             }
 
       # ------------------------------------------------------------------
-      # RELEASE STEPS (Only run on PUSH, not Pull Requests)
+      # RELEASE STEPS — only for a push to main. Previously this was
+      # gated on `github.event_name == 'push'` alone, with no ref
+      # check — since the top-level trigger is `push: branches: ["**"]`
+      # (every branch, for the build+test signal), that meant pushing
+      # ANY branch — including an in-progress feature branch — force-
+      # moved the public "Latest Debug Build" release tag and
+      # overwrote its APK with whatever that branch's unreviewed
+      # commit produced.
       # ------------------------------------------------------------------
       - name: Prepare Release Variables
-        if: success() && github.event_name == 'push'
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: release_vars
         run: |
-          export BUILD_NUMBER=$(git rev-list --count HEAD)
-          
-          # Extract version info from properties file
-          MAJOR=$(grep 'versionMajor=' version.properties | cut -d'=' -f2)
-          MINOR=$(grep 'versionMinor=' version.properties | cut -d'=' -f2)
+          # VERSION_NAME/TAG_NAME come from the "Compute Version" step
+          # above (run before the Gradle build itself, so the version
+          # baked into the APK's versionCode/versionName matches what
+          # this step names the release artifact as).
 
-          # Calculate Patch version programmatically based on commits since Minor update
-          MINOR_COMMIT=$(git blame -L '/versionMinor=/',+1 version.properties | awk '{print $1}' | tr -d '^')
-          if [ -n "$MINOR_COMMIT" ]; then
-            PATCH=$(git rev-list --count $MINOR_COMMIT..HEAD)
-          else
-            PATCH=$(grep 'versionPatch=' version.properties | cut -d'=' -f2)
-          fi
-
-          VERSION_NAME="$MAJOR.$MINOR.$PATCH.$BUILD_NUMBER"
-          
-          TAG_NAME="latest-debug-v${MAJOR}.${MINOR}"
-          
           # Dynamic App Name from settings.gradle
           if [ -f "android/settings.gradle.kts" ]; then
              APP_NAME=$(grep 'rootProject.name' android/settings.gradle.kts | sed -E "s/.*=.*[\"'](.*)[\"']/\1/")
@@ -231,31 +263,24 @@ jobs:
           else
              APP_NAME="App"
           fi
-          
+
           # Locate built APK
           APK_ORIGINAL=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-          
+
           if [ -z "$APK_ORIGINAL" ]; then
              echo "Error: No APK found to release!"
              exit 1
           fi
 
           TARGET_NAME="${APP_NAME}-${VERSION_NAME}-debug.apk"
-          
+
           # Rename for release
           mv "$APK_ORIGINAL" "$TARGET_NAME"
-          
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+
           echo "APK_FILE=$TARGET_NAME" >> $GITHUB_ENV
-          
-          # Package Build Tools (Optional)
-          mkdir -p build_tools_package/tools build_tools_package/native
-          [ -d "app/src/main/assets/tools" ] && cp -r app/src/main/assets/tools/* build_tools_package/tools/ || true
-          [ -d "app/src/main/jniLibs/arm64-v8a" ] && cp -r app/src/main/jniLibs/arm64-v8a/* build_tools_package/native/ || true
-          cd build_tools_package && zip -r ../build-tools.zip . && cd ..
 
       - name: Publish Release
-        if: success() && github.event_name == 'push'
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -266,14 +291,9 @@ jobs:
           git tag -fa $TAG_NAME -m "Latest Debug Build"
           git push origin $TAG_NAME --force
 
-          BUILD_TOOLS="build-tools.zip"
-
           # Check if release exists
           if gh release view $TAG_NAME > /dev/null 2>&1; then
              echo "Updating existing release..."
-
-             # Clean up ONLY the build-tools asset to avoid conflicts
-             gh release delete-asset "$TAG_NAME" "$BUILD_TOOLS" -y || true
 
              gh release edit $TAG_NAME --prerelease \
                --title "Latest Debug Build ($TAG_NAME)" \
@@ -282,14 +302,10 @@ jobs:
 
              # Clobber ensures that if we re-run the workflow on the exact same commit, it replaces the APK instead of failing.
              gh release upload $TAG_NAME "$APK_FILE" --clobber
-             [ -f "$BUILD_TOOLS" ] && gh release upload $TAG_NAME "$BUILD_TOOLS" --clobber
           else
              echo "Creating new release..."
              gh release create $TAG_NAME "$APK_FILE" --prerelease \
                --title "Latest Debug Build ($TAG_NAME)" \
                --notes "Auto-build from commit $GITHUB_SHA" \
                --target $GITHUB_SHA
-             [ -f "$BUILD_TOOLS" ] && gh release upload $TAG_NAME "$BUILD_TOOLS" --clobber
           fi
-
-# Verified setup_libs.sh is not present

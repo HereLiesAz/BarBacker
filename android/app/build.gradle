@@ -8,8 +8,19 @@ android {
         applicationId "com.HereLiesAz.BarBacker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // build-mobile.yml's "Compute Version" step passes these as
+        // -P properties (versionBuild = total commit count, a
+        // monotonically increasing integer valid as versionCode).
+        // Previously these were hardcoded to 1/"1.0" — the workflow
+        // computed a real version but nothing here ever read it, so
+        // every APK ever built, regardless of commit, reported the
+        // same versionCode/versionName. Falls back to 1/"1.0-dev" for
+        // a plain local `./gradlew assembleDebug` with no properties
+        // passed, so local development builds still work.
+        versionCode project.hasProperty('versionBuild') ? (project.property('versionBuild') as Integer) : 1
+        versionName project.hasProperty('versionBuild')
+            ? "${project.property('versionMajor')}.${project.property('versionMinor')}.${project.property('versionPatch')}.${project.property('versionBuild')}"
+            : "1.0-dev"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

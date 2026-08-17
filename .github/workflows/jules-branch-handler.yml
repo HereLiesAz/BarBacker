@@ -5,11 +5,23 @@ on:
 
 jobs:
   manage_branch:
+    # SECURITY: issue_comment always runs in the base-repo context
+    # with full secrets access, even for a comment on a PR opened
+    # from a fork — unlike pull_request, there is no fork/base split
+    # here. Without an author_association check, ANY GitHub user could
+    # comment "@google-labs-jules" on any open PR (including a
+    # malicious fork's own PR) and hand this job's JULES_API_KEY/
+    # GH_TOKEN to an autonomous agent explicitly instructed to merge
+    # into the default branch. author_association is populated by
+    # GitHub itself from the commenter's actual repo permissions, not
+    # anything the commenter controls, so this can't be spoofed the
+    # way a body/actor-name check could be.
     if: |
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@google-labs-jules')) &&
       github.actor != 'google-labs-jules[bot]' && github.actor != 'google-labs-jules' &&
       github.actor != 'github-actions[bot]' && github.actor != 'github-actions' &&
-      !endsWith(github.actor, '[bot]')
+      !endsWith(github.actor, '[bot]') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: write

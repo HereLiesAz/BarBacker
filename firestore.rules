@@ -21,6 +21,19 @@ service cloud.firestore {
         : '';
     }
 
+    // NOTE — accepted staleness window: every check below reads the
+    // ID token's cached `bars` claim, not a live per-bar membership
+    // doc. A kicked or demoted user's existing token keeps its old
+    // claim (and thus old access) until it's next refreshed —
+    // Firebase ID tokens refresh automatically roughly hourly, but
+    // there's no server-side push to invalidate one early. App.tsx
+    // already force-refreshes on the *grant* direction (joining/
+    // promotion take effect immediately); there is no equivalent for
+    // the *revoke* direction without moving authorization off custom
+    // claims entirely (e.g. a live doc read per request), which is a
+    // bigger change than this pass makes. This is the standard
+    // tradeoff of Firebase's custom-claims model, not unique to this
+    // app — see https://firebase.google.com/docs/auth/admin/custom-claims.
     function hasRole(barId) { return isAdmin() || roleIn(barId) != ''; }
     function isManagerPlus(barId) {
       return isAdmin() || roleIn(barId) in ['Manager', 'Owner'];
@@ -29,9 +42,18 @@ service cloud.firestore {
       return isAdmin() || roleIn(barId) == 'Owner';
     }
 
-    // Global /users/{userId} — self-only.
+    // Global /users/{userId} — self-only. `joinedBars` is capped —
+    // onUserRoleChange (Cloud Function) does an unbounded read per
+    // entry in this array on every write to this user's per-bar role
+    // doc, so an unbounded self-writable array here is a billing/cost
+    // amplification vector (write junk ids once, then any ordinary
+    // per-bar write, like a `lastSeen` heartbeat, triggers a fan-out
+    // read of all of them). 50 is far beyond any real person's bar
+    // count.
     match /users/{userId} {
-      allow read, write: if isAuthed() && request.auth.uid == userId;
+      allow read, delete: if isAuthed() && request.auth.uid == userId;
+      allow create, update: if isAuthed() && request.auth.uid == userId &&
+        (!('joinedBars' in request.resource.data) || request.resource.data.joinedBars.size() <= 50);
     }
 
     // Bar documents.
@@ -56,8 +78,17 @@ service cloud.firestore {
       // null == null holds, leaving it unset, and a Manager+ update
       // that tries to introduce/change ownerId is still rejected
       // since only one side would be non-null.
+      //
+      // `subscription` is protected the same way. Nothing in
+      // functions/ writes it today (billing isn't implemented — see
+      // the design doc's Task H1, never built), which means there is
+      // currently NO legitimate write path for it at all; leaving it
+      // unprotected let any Manager flip their own free bar to
+      // 'premium' and unlock every gated feature (theme, POS,
+      // calendar, private 86'd entries, bottle scanner) for free.
       allow update: if isManagerPlus(barId) &&
-        request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null);
+        request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null) &&
+        request.resource.data.get('subscription', null) == resource.data.get('subscription', null);
       // Any bar member (not just Manager+) may bump buttonUsage —
       // it's just per-button tap counts driving sort order, not
       // privileged config, and restricting it to Manager+ meant every
@@ -111,22 +142,30 @@ service cloud.firestore {
         // may only toggle between 'active' and 'off_clock' — this
         // lets a user clock in and back out on their own without
         // being able to self-approve out of 'pending'/'rejected'.
-        // ntfyTopic deliberately is NOT writable here (or readable —
-        // see the `read` rule above, which still exposes this whole
-        // doc to any hasRole() peer): it used to be mirrored onto this
-        // doc so client-side fanout could read every member's topic to
-        // compute who to notify, which is exactly what made it
-        // possible for any bar member to read (and keep, even after
-        // being kicked) a colleague's ntfy topic. Fanout is now
-        // server-side (onRequestCreated Cloud Function, Admin SDK),
-        // which reads the topic off the global users/{uid} doc instead
-        // — self-only, see that match block above.
+        // Both halves of the toggle require the OTHER state as the
+        // starting point (active->off_clock and off_clock->active
+        // only) — previously the off_clock transition was allowed
+        // from any starting status with no check on resource.data.status
+        // at all, so a self-created 'pending' (or Manager-'rejected')
+        // doc could self-write to 'off_clock' and then, via the other
+        // clause below, straight to 'active' — a two-write bypass of
+        // the entire approval join policy. ntfyTopic deliberately is
+        // NOT writable here (or readable — see the `read` rule above,
+        // which still exposes this whole doc to any hasRole() peer):
+        // it used to be mirrored onto this doc so client-side fanout
+        // could read every member's topic to compute who to notify,
+        // which is exactly what made it possible for any bar member
+        // to read (and keep, even after being kicked) a colleague's
+        // ntfy topic. Fanout is now server-side (onRequestCreated
+        // Cloud Function, Admin SDK), which reads the topic off the
+        // global users/{uid} doc instead — self-only, see that match
+        // block above.
         allow write: if isAuthed() && request.auth.uid == userId &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['displayName', 'lastSeen', 'notificationPreferences',
                       'email', 'status', 'jobTitle']) &&
           (!('status' in request.resource.data.diff(resource.data).affectedKeys()) ||
-           request.resource.data.status == 'off_clock' ||
+           (request.resource.data.status == 'off_clock' && resource.data.status == 'active') ||
            (request.resource.data.status == 'active' && resource.data.status == 'off_clock'));
 
         // Managers can flip pending → active, set role/jobTitle for
@@ -202,7 +241,18 @@ service cloud.firestore {
         // moderator-only notes about patrons. The UI also hides the
         // "private" toggle when isPremium is false, but the rules
         // are the authority. Admins (isAdmin) bypass via isManagerPlus.
+        //
+        // submittedBy/submitterName are bound to the caller's own uid
+        // and their own per-bar displayName (not client-asserted) —
+        // previously either could be set to anything, so a Manager
+        // could forge the bar's moderation log to attribute a ban to
+        // a colleague (or the Owner) instead of themselves.
         allow create: if isManagerPlus(barId)
+          && request.resource.data.keys().hasOnly(['patronName', 'submittedBy', 'submitterName', 'visibility', 'reason', 'timestamp'])
+          && request.resource.data.submittedBy == request.auth.uid
+          && request.resource.data.submitterName ==
+               get(/databases/$(database)/documents/bars/$(barId)/users/$(request.auth.uid)).data.get('displayName', '')
+          && request.resource.data.timestamp == request.time
           && (request.resource.data.visibility == 'public'
               || (request.resource.data.visibility == 'private'
                   && (isAdmin()
@@ -223,8 +273,20 @@ service cloud.firestore {
                        (isAuthed() && request.auth.token.email_verified == true &&
                         resource.data.email == request.auth.token.email);
         allow create: if isManagerPlus(barId);
+        // Consumption must be a one-way false -> true transition by
+        // the invitee themselves. Previously `consumed` had no
+        // constraint on its prior value and `consumedBy` was never
+        // checked against the caller at all — an invitee could flip
+        // consumed back to false and reconsume the same invite
+        // indefinitely with an attacker-chosen consumedBy uid, and
+        // onInviteConsumed (Cloud Function) grants that invite's role
+        // to whichever uid the write named, e.g. the bar's Owner.
         allow update: if isAuthed() && request.auth.token.email_verified == true &&
                         resource.data.email == request.auth.token.email &&
+                        resource.data.consumed == false &&
+                        request.resource.data.consumed == true &&
+                        request.resource.data.consumedBy == request.auth.uid &&
+                        request.resource.data.consumedAt == request.time &&
                         request.resource.data.diff(resource.data).affectedKeys()
                           .hasOnly(['consumed', 'consumedBy', 'consumedAt']);
         allow delete: if isManagerPlus(barId);
@@ -334,10 +396,37 @@ service cloud.firestore {
     // Requests — top-level collection, scoped by barId field.
     match /requests/{requestId} {
       allow read: if isAuthed() && hasRole(resource.data.barId);
+      // requesterName/requesterRole are bound to the caller's own
+      // per-bar user doc (like chat's authorName/authorRole) rather
+      // than trusted as client-asserted strings — previously a
+      // member could forge either (e.g. requesterName: "Eve (Owner)")
+      // and have it broadcast verbatim through onRequestCreated's
+      // FCM/ntfy push to the whole bar. timestamp/lastNotification
+      // must be the serverTimestamp() sentinel so a client can't pin
+      // a forged request atop the feed with a future date, or force
+      // an immediate nag-bot re-notify with a stale one. The field
+      // allowlist and photoUrl type check close off arbitrary extra
+      // fields — photoUrl in particular is rendered as a raw
+      // `<img src>` on every other member's device (see App.tsx),
+      // so an unconstrained string there was an open tracking-pixel/
+      // IP-collection vector.
       allow create: if isAuthed()
         && hasRole(request.resource.data.barId)
         && request.resource.data.requesterId == request.auth.uid
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly([
+             'barId', 'label', 'requesterId', 'requesterName', 'requesterRole',
+             'status', 'timestamp', 'lastNotification', 'buttonId', 'photoUrl'
+           ])
+        && request.resource.data.label is string
+        && request.resource.data.label.size() > 0 && request.resource.data.label.size() <= 500
+        && request.resource.data.requesterName ==
+             get(/databases/$(database)/documents/bars/$(request.resource.data.barId)/users/$(request.auth.uid)).data.get('displayName', '')
+        && request.resource.data.requesterRole ==
+             get(/databases/$(database)/documents/bars/$(request.resource.data.barId)/users/$(request.auth.uid)).data.get('role', '')
+        && request.resource.data.timestamp == request.time
+        && request.resource.data.lastNotification == request.time
+        && (!('photoUrl' in request.resource.data) || request.resource.data.photoUrl is string);
       // The only client-side update is claiming: pending -> claimed,
       // touching only the claim fields, with barId/requesterId/label
       // immutable so a member of one bar can't rewrite a request into

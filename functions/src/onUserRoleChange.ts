@@ -1,11 +1,31 @@
 import * as admin from "firebase-admin";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 
-type UserRoleDoc = { barId: string; role: string };
+type UserRoleDoc = { barId: string; role: string; status?: string };
+
+// Statuses that must NOT translate into a live claim. 'pending' means
+// a Manager hasn't approved the join yet (joinPolicy: 'approval');
+// 'rejected' means one explicitly declined it. Every other status
+// ('active', 'off_clock', or historically undefined/legacy docs) is
+// treated as a real member — off_clock is just "not currently on
+// shift", not "not approved".
+//
+// This distinction is security-critical: firestore.rules' hasRole()/
+// isManagerPlus() read ONLY this claim, never the live per-bar doc,
+// so before this filter existed, self-creating a 'pending' doc (which
+// any signed-in user can do — see firestore.rules' self-create rule)
+// granted full read/write access to that bar's chat, roster (with
+// emails), requests, and 86'd list immediately, before any Manager
+// ever saw the approval prompt. joinPolicy:'approval' was gating only
+// what the UI *rendered*, not what the backend actually allowed.
+const UNAPPROVED_STATUSES = new Set(["pending", "rejected"]);
 
 export function computeClaimsForUser(docs: UserRoleDoc[]): { bars: Record<string, string> } {
   const bars: Record<string, string> = {};
-  for (const d of docs) bars[d.barId] = d.role;
+  for (const d of docs) {
+    if (d.status !== undefined && UNAPPROVED_STATUSES.has(d.status)) continue;
+    bars[d.barId] = d.role;
+  }
   return { bars };
 }
 
@@ -20,6 +40,8 @@ export function computeClaimsForUser(docs: UserRoleDoc[]): { bars: Record<string
  *     drops out of the aggregated map).
  *   - The triggering `barId` is always included in the enumeration so that
  *     races against `users/{uid}.joinedBars` writes do not produce stale claims.
+ *   - A doc with status 'pending' or 'rejected' contributes NO claim at
+ *     all for that bar — see computeClaimsForUser above.
  */
 export const onUserRoleChange = onDocumentWritten(
   "bars/{barId}/users/{userId}",
@@ -34,8 +56,9 @@ export const onUserRoleChange = onDocumentWritten(
     await Promise.all(barIds.map(async (barId) => {
       const u = await db.doc(`bars/${barId}/users/${userId}`).get();
       const role = u.data()?.role;
+      const status = u.data()?.status;
       if (u.exists && typeof role === "string") {
-        docs.push({ barId, role });
+        docs.push({ barId, role, status: typeof status === "string" ? status : undefined });
       }
     }));
     const { bars } = computeClaimsForUser(docs);

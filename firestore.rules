@@ -426,7 +426,21 @@ service cloud.firestore {
              get(/databases/$(database)/documents/bars/$(request.resource.data.barId)/users/$(request.auth.uid)).data.get('role', '')
         && request.resource.data.timestamp == request.time
         && request.resource.data.lastNotification == request.time
-        && (!('photoUrl' in request.resource.data) || request.resource.data.photoUrl is string);
+        // A bare "is string" check only constrained the type, not the
+        // value — a client could still point this at an arbitrary
+        // attacker-controlled URL. It's rendered as a raw `<img src>`
+        // on every other member's device (see App.tsx), so that was
+        // an open tracking-pixel/IP-collection vector: every other bar
+        // member's client would fetch whatever URL was set, no user
+        // action needed. Pinned to this bar's own bottlePhotos Storage
+        // path — the only thing sendBottleAlert ever actually uploads
+        // to (see storage.rules' matching bottlePhotos rule) — so it
+        // can't reference another bar's photos or an external host.
+        && (!('photoUrl' in request.resource.data) || (
+             request.resource.data.photoUrl is string &&
+             request.resource.data.photoUrl
+               .matches('^https://firebasestorage\\.googleapis\\.com/v0/b/[^/]+/o/bottlePhotos%2F' + request.resource.data.barId + '%2F.*$')
+           ));
       // The only client-side update is claiming: pending -> claimed,
       // touching only the claim fields, with barId/requesterId/label
       // immutable so a member of one bar can't rewrite a request into

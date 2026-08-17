@@ -14,6 +14,7 @@ getFirestore().settings({ ignoreUndefinedProperties: true });
 
 export { onUserRoleChange } from "./onUserRoleChange";
 export { onRequestCreated } from "./onRequestCreated";
+export { onRequestDeleted } from "./onRequestDeleted";
 export { cleanupStaleRequests } from "./cleanupStaleRequests";
 export { onInviteConsumed } from "./onInviteConsumed";
 export { fileOwnershipClaim, reviewOwnershipClaim } from "./ownershipClaims";

@@ -56,16 +56,30 @@ export function matchBrand(lines: string[], candidates: string[]): string | null
       const normCandidate = normalize(candidate);
       if (!normCandidate) continue;
 
+      const lengthRatio = Math.min(line.length, normCandidate.length) / Math.max(line.length, normCandidate.length);
       let score: number;
       if (line === normCandidate) {
         score = 0;
-      } else if (line.includes(normCandidate) || normCandidate.includes(line)) {
+      } else if (line.includes(normCandidate)) {
+        // The full candidate name appears somewhere in the OCR line —
+        // e.g. "Jameson" inside "JAMESON IRISH WHISKEY 750ML 40% ABV".
+        // Safe regardless of length ratio, since the whole candidate
+        // string had to match, not just a fragment of it.
+        score = 0.05;
+      } else if (normCandidate.includes(line) && lengthRatio >= 0.5) {
+        // The OCR line is a substring OF the candidate — only trusted
+        // when it's not a tiny generic fragment. Without the ratio
+        // guard, a short OCR line like "GIN" is a substring of every
+        // candidate ending in "Gin" (e.g. "Hendrick's Gin"), so a
+        // completely unrelated gin bottle would confidently match
+        // whichever gin brand happens to be first in the candidate
+        // list — a confidently wrong match, not a low-confidence one
+        // that falls through to manual entry.
         score = 0.05;
       } else {
         // Edit distance is only meaningful between strings of
         // comparable length — otherwise a one-word OCR line always
         // "wins" against a long candidate purely on raw distance.
-        const lengthRatio = Math.min(line.length, normCandidate.length) / Math.max(line.length, normCandidate.length);
         if (lengthRatio < 0.5) continue;
         score = levenshtein(line, normCandidate) / normCandidate.length;
       }

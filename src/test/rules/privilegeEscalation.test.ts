@@ -110,10 +110,30 @@ describe("privilege escalation regressions", () => {
     it("still allows a legitimate create with a photoUrl (bottle scanner alert)", async () => {
       const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
       await assertSucceeds(addDoc(collection(db, "requests"), {
-        barId: "bar_A", label: "RESTOCK: Jameson", requesterId: "staff_bob",
+        barId: "bar_A", label: "BEER: Jameson", requesterId: "staff_bob",
         requesterName: "Bob", requesterRole: "Staff",
         status: "pending", timestamp: serverTimestamp(), lastNotification: serverTimestamp(),
-        photoUrl: "https://storage.googleapis.com/bucket/bottlePhotos/bar_A/x.jpg",
+        photoUrl: "https://firebasestorage.googleapis.com/v0/b/some-bucket.appspot.com/o/bottlePhotos%2Fbar_A%2Fstaff_bob_123.jpg?alt=media&token=abc",
+      }));
+    });
+
+    it("denies a photoUrl pointing at an external (tracking-pixel) host", async () => {
+      const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
+      await assertFails(addDoc(collection(db, "requests"), {
+        barId: "bar_A", label: "BEER: Jameson", requesterId: "staff_bob",
+        requesterName: "Bob", requesterRole: "Staff",
+        status: "pending", timestamp: serverTimestamp(), lastNotification: serverTimestamp(),
+        photoUrl: "https://attacker.example/tracking-pixel.gif",
+      }));
+    });
+
+    it("denies a photoUrl pointing at a different bar's bottlePhotos path", async () => {
+      const db = authedAs(env, "staff_bob", { bars: { bar_A: "Staff" } });
+      await assertFails(addDoc(collection(db, "requests"), {
+        barId: "bar_A", label: "BEER: Jameson", requesterId: "staff_bob",
+        requesterName: "Bob", requesterRole: "Staff",
+        status: "pending", timestamp: serverTimestamp(), lastNotification: serverTimestamp(),
+        photoUrl: "https://firebasestorage.googleapis.com/v0/b/some-bucket.appspot.com/o/bottlePhotos%2Fbar_B%2Fstaff_bob_123.jpg?alt=media&token=abc",
       }));
     });
   });

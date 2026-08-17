@@ -31,4 +31,11 @@ describe('matchBrand', () => {
   it('picks the closer of two plausible candidates', () => {
     expect(matchBrand(['GREY GOOSE VODKA'], ['Grey Goose', 'Ketel One'])).toBe('Grey Goose');
   });
+
+  it('does not confidently match a short generic OCR fragment against an unrelated longer candidate', () => {
+    // "GIN" is a substring of "Hendrick's Gin", but that alone
+    // shouldn't be enough to call it a match for a completely
+    // different (and un-candidated, here) gin bottle.
+    expect(matchBrand(['GIN'], ['Hendrick\'s Gin'])).toBeNull();
+  });
 });

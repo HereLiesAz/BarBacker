@@ -27,6 +27,7 @@ import {
   deleteDoc,
   arrayUnion,
   arrayRemove,
+  FieldPath,
 } from 'firebase/firestore';
 // Import initialized Firebase instances and helper functions.
 import {
@@ -727,10 +728,16 @@ function App() {
     }
 
     try {
-      // Update Firestore (arrayUnion ensures uniqueness).
-      await updateDoc(doc(db, 'bars', barId), {
-          [`beerInventory.${brand}`]: arrayUnion(typeName)
-      });
+      // Update Firestore (arrayUnion ensures uniqueness). Uses a
+      // FieldPath instance rather than a `beerInventory.${brand}`
+      // template-string key: Firestore splits string field paths on
+      // literal '.' characters, so a brand name containing a period
+      // (e.g. "St. Pauli Girl") would silently write into a nested
+      // "St" -> " Pauli Girl" sub-object instead of the intended
+      // top-level beerInventory[brand] entry. FieldPath takes each
+      // segment as a separate argument, bypassing that parsing
+      // entirely regardless of what characters the brand name has.
+      await updateDoc(doc(db, 'bars', barId), new FieldPath('beerInventory', brand), arrayUnion(typeName));
     } catch (e) {
       console.error('Failed to save type', e);
       alert('Failed to add type. Only managers can edit the beer inventory.');
@@ -823,9 +830,11 @@ function App() {
       }, { merge: true });
       setBeerInventory(prev => ({ ...prev, [brand]: type ? [type] : [] }));
     } else if (type && !existingTypes.includes(type)) {
-      await updateDoc(doc(db, 'bars', barId), {
-        [`beerInventory.${brand}`]: arrayUnion(type),
-      });
+      // FieldPath, not a `beerInventory.${brand}` string key — see the
+      // comment on the equivalent write in saveType above. Scanned
+      // brand names come straight from OCR and are especially likely
+      // to contain a literal period.
+      await updateDoc(doc(db, 'bars', barId), new FieldPath('beerInventory', brand), arrayUnion(type));
       setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), type] }));
     }
   };
@@ -835,12 +844,28 @@ function App() {
   // exactly as it does for any other request) referencing the bottle
   // by name with the photo attached.
   const sendBottleAlert = async (brand: string, photo: Blob) => {
-    if (!user || !barId) return;
+    // Previously returned silently here — BottleScanner's runAction
+    // only shows an error (and keeps the dialog open) when this
+    // rejects, so a no-op success looked identical to a sent alert:
+    // the dialog just closed as if it had gone out.
+    if (!user || !barId) throw new Error('Not signed into a bar.');
     const path = `bottlePhotos/${barId}/${user.uid}_${Date.now()}.jpg`;
     const photoRef = storageRef(storage, path);
     await uploadBytes(photoRef, photo, { contentType: photo.type || 'image/jpeg' });
     const photoUrl = await getDownloadURL(photoRef);
-    await submitRequest(`RESTOCK: ${brand}`, photoUrl);
+    // Prefixed to match the "BEER" button's exact label (see
+    // constants.ts's restock_beer entry) rather than a made-up
+    // "RESTOCK:" prefix that matched no configured button at all.
+    // getButtonIdForLabel resolved that to no buttonId, and
+    // shouldNotifyMember treats a missing buttonId as "can't tell
+    // who this is for, notify everyone" — so every bottle-scanner
+    // alert (beer or spirits) was mass-notifying the entire bar
+    // regardless of anyone's notification preferences. This isn't a
+    // perfect category match for a scanned spirits bottle, but it's
+    // the same inventory bucket "Add to Menu" already files spirits
+    // into (see addBottleToMenu), so it's at least consistent with
+    // how this feature already treats the two.
+    await submitRequest(`BEER: ${brand}`, photoUrl);
   };
 
   // Add a person to the 86'd list. Visibility decides whether all
@@ -1559,6 +1584,21 @@ function App() {
   // Sorting for main screen.
   const sortedAllButtons = sortButtons(buttons, 'main');
   const mainScreenButtons = sortedAllButtons.filter(btn => !hiddenButtonIds.includes(btn.id));
+
+  // Brand buttons (BEER > a specific brand) are synthesized on the fly
+  // from beerInventory's keys in getDynamicChildren rather than living
+  // in the `buttons` config array — so BottleScanner's "86 It" action
+  // (which hides `brand_${brand}`) was hiding an id that never
+  // appeared in `allButtons`, meaning BarManager's Restorable Buttons
+  // section (which only ever looks at `allButtons`) had nothing to
+  // show: once 86'd, a brand had no path back, premium or not.
+  // Surfacing the hidden ones here — merged into the same array
+  // BarManager already filters into "active" vs "hidden" — gives them
+  // a restore path through the exact same UI, for free.
+  const hiddenBrandButtons: ButtonConfig[] = hiddenButtonIds
+    .filter(id => id.startsWith('brand_'))
+    .map(id => ({ id, label: id.slice('brand_'.length) }));
+  const allButtonsForManager = [...sortedAllButtons, ...hiddenBrandButtons];
   // CUSTOM is a permanent, non-configurable tile appended to every
   // bar's grid — it must be part of the SAME array passed to
   // SortableContext's `items` and to handleDragOver's `items` param
@@ -1598,7 +1638,7 @@ function App() {
         open={showBarManager}
         onClose={() => setShowBarManager(false)}
         barName={barName}
-        allButtons={sortedAllButtons}
+        allButtons={allButtonsForManager}
         hiddenButtonIds={hiddenButtonIds}
         onHideButton={hideButton}
         isPremium={isPremium}

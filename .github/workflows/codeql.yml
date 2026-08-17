@@ -39,7 +39,7 @@ jobs:
     #   - https://gh.io/supported-runners-and-hardware-resources
     #   - https://gh.io/using-larger-runners (GitHub.com only)
     # Consider using larger runners or machines with greater resources for possible analysis time improvements.
-    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       # required for all workflows
       security-events: write
@@ -57,12 +57,20 @@ jobs:
         include:
         - language: actions
           build-mode: none
-        - language: java-kotlin
-          build-mode: autobuild
         - language: javascript-typescript
           build-mode: none
-        - language: swift
-          build-mode: autobuild
+        # java-kotlin and swift were in the auto-detected matrix but
+        # dropped here: both are Capacitor's generated wrapper
+        # boilerplate only (android/app's MainActivity.kt and a couple
+        # of stub test files; ios/App's AppDelegate.swift and a
+        # 1-line SPM package) with no custom app logic to scan, and
+        # `build-mode: autobuild` can't actually build either without
+        # first running `npx cap sync` (which generates files Gradle/
+        # CocoaPods require, e.g. android/capacitor-cordova-android-
+        # plugins/cordova.variables.gradle) — confirmed by autobuild
+        # failing on exactly that missing file. Replicating build-
+        # mobile.yml's full Node+JDK+Gradle(+Firebase secrets) setup
+        # here just to scan boilerplate isn't worth it.
         # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
         # Use `c-cpp` to analyze code written in C, C++ or both
         # Use 'java-kotlin' to analyze code written in Java, Kotlin or both

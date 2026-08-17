@@ -121,7 +121,18 @@ export const ROLE_NOTIFICATION_DEFAULTS: Record<string, string[]> = {
   // Runners focus on moving product.
   'Runner': ['ice', 'glass', 'restock', 'mixers', 'restock_beer'],
   // Security deals with safety.
-  'Security': ['security', 'manager', 'break']
+  'Security': ['security', 'manager', 'break'],
+  // 'Staff' is not a selectable JOB_TITLES entry — it's what
+  // onInviteConsumed.ts (Cloud Function) sets jobTitle to for an
+  // invited member who hasn't picked one yet. Without an entry here,
+  // that fallback chain (member.notificationPreferences ??
+  // ROLE_NOTIFICATION_DEFAULTS[jobTitle] ?? []) landed on the final
+  // [] and an invited member received precisely zero request
+  // notifications — silently, forever, until they manually opened
+  // Notification Settings and picked preferences themselves. Mirrors
+  // Barback's set (the broadest "generic floor worker" default)
+  // rather than defaulting to nothing.
+  'Staff': ['ice', 'glass', 'fruit', 'restock', 'keg', 'trash', 'mixers', 'restock_beer', 'break'],
 };
 
 // POS provider picker honesty (Phase 3 — see

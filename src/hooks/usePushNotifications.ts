@@ -54,14 +54,27 @@ export function usePushNotifications() {
             }).catch((e) => console.error('Failed to create urgent_alerts channel', e));
           }
 
+          // Checked before each addListener (not just once, after all
+          // four) — a fast mount/unmount (React StrictMode's double-
+          // invoke, hot reload) could otherwise unmount and run
+          // cleanup's removeAllListeners() WHILE this sequence of
+          // awaits was still partway through registering listeners;
+          // anything added after that point would never get removed,
+          // since cleanup only runs once per mount. This doesn't
+          // retroactively unregister a listener added in the same
+          // microtask as the cancellation, but it stops the leak from
+          // growing any further once cancellation is observed.
+          if (cancelled) return;
           await PushNotifications.addListener('registration', token => {
             setFcmToken(token.value);
           });
 
+          if (cancelled) return;
           await PushNotifications.addListener('registrationError', err => {
             console.error('Registration error: ', err.error);
           });
 
+          if (cancelled) return;
           await PushNotifications.addListener('pushNotificationReceived', () => {
             if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
             if (!audioRef.current) audioRef.current = new Audio(`${import.meta.env.BASE_URL}alert.wav`);
@@ -72,6 +85,7 @@ export function usePushNotifications() {
             audio.play().catch(() => {});
           });
 
+          if (cancelled) return;
           await PushNotifications.addListener('pushNotificationActionPerformed', () => {
             // Future: open specific request from tap.
           });

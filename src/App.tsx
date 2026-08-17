@@ -143,8 +143,19 @@ function App() {
   // depends on values that should actually trigger it.
   const setSearchParamsRef = useRef(setSearchParams);
   useEffect(() => { setSearchParamsRef.current = setSearchParams; }, [setSearchParams]);
-  // Get the 'bar' param from URL or fallback to localStorage.
-  const initialBarId = searchParams.get('bar') || localStorage.getItem('barId');
+  // Get the 'bar' param from URL or fallback to localStorage. Guarded
+  // — localStorage.getItem can throw (Safari private browsing
+  // historically, a storage-access-restricted iframe context) and
+  // this runs unconditionally on every render of the whole app, so an
+  // unguarded throw here would crash the entire component tree with
+  // no error boundary above it to catch it.
+  const initialBarId = searchParams.get('bar') || (() => {
+    try {
+      return localStorage.getItem('barId');
+    } catch {
+      return null;
+    }
+  })();
   // Store the current Bar ID.
   const [barId, setBarId] = useState<string | null>(initialBarId);
   
@@ -215,6 +226,12 @@ function App() {
   const [editNameValue, setEditNameValue] = useState('');
   const [editNameError, setEditNameError] = useState<string | null>(null);
 
+  // Cap on the persisted ignoredIds list (see below) — nothing ever
+  // pruned old entries as requests they referred to got resolved and
+  // deleted, so this grew by one entry every time anyone tapped
+  // "Ignore," unboundedly, for the lifetime of the browser profile.
+  const MAX_IGNORED_IDS = 200;
+
   // List of request IDs the user has locally ignored/muted. Persisted
   // to localStorage — previously plain useState, so a reload (or the
   // app being killed and reopened, routine on mobile) brought back
@@ -255,7 +272,7 @@ function App() {
 
   // Drag-and-drop sensors + handlers (dnd-kit). Persistence of
   // customOrders happens inside the hook on drag end.
-  const { sensors, activeId, isDraggingRef, handleDragStart, handleDragOver, handleDragEnd } =
+  const { sensors, activeId, isDraggingRef, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } =
     useDragAndDrop({ barId, customOrders, setCustomOrders });
 
   // Memoized lookup map for button IDs. Maps both top-level and child labels to top-level button ID.
@@ -409,8 +426,33 @@ function App() {
 
   // --- 2. Bar Logic (Listeners) ---
   useEffect(() => {
-    // If no user or bar selected, do nothing.
-    if (!user || !barId) return;
+    // If no user or bar selected, clear everything the listeners
+    // below would otherwise leave stale — most critically on sign-out
+    // (see handleLogout) or a bar switch: without this, a second
+    // person signing into the same browser session (a shared device
+    // at the bar) would see the PREVIOUS user's bar name, roster,
+    // beer inventory, and role/permissions still rendered until a
+    // full page reload, since React state isn't reset just because
+    // an effect's guard condition starts failing.
+    if (!user || !barId) {
+      setUserRole(null);
+      setJobTitle('');
+      setUserStatus('active');
+      setDisplayName('');
+      setNotificationPreferences([]);
+      setBarName('');
+      setBarJoinPolicy('open');
+      setButtons(DEFAULT_BUTTONS);
+      setBeerInventory({});
+      setWells([]);
+      setHiddenButtonIds([]);
+      setButtonUsage({});
+      setCustomOrders({});
+      setBarSubscription('free');
+      setBarTheme(undefined);
+      setAllUsers([]);
+      return;
+    }
 
     // Persist Bar ID to URL and LocalStorage.
     setSearchParamsRef.current({ bar: barId });
@@ -508,7 +550,7 @@ function App() {
   // persistent rather than time-windowed, so it's owned by useChat
   // instead — see below.
   useEffect(() => {
-    if (!user || !barId) return;
+    if (!user || !barId) { setRequests([]); return; }
 
     const unsubReq = onSnapshot(
       query(
@@ -532,7 +574,7 @@ function App() {
   // side and avoids the client even attempting a private read it
   // can't decode.
   useEffect(() => {
-    if (!barId) return;
+    if (!barId) { setEightySixEntries([]); return; }
     const canSeePrivate = isPremium && isManagerPlus;
     const q = canSeePrivate
       ? query(collection(db, `bars/${barId}/eightySixed`), orderBy('timestamp', 'desc'), limit(200))
@@ -594,30 +636,50 @@ function App() {
     const tokenRef = doc(db, `bars/${barId}/tokens`, user.uid);
 
     const autoClockIn = async () => {
-      // Store FCM token.
-      await setDoc(tokenRef, {
-        token: fcmToken,
-        updated: serverTimestamp()
-      });
-      // Set status to active and update heartbeat. Rules only permit
-      // this self-write when transitioning from 'off_clock' (or when
-      // status isn't changing at all) — a user still 'pending'
-      // manager approval correctly stays pending here.
-      await updateDoc(userRef, {
-        status: 'active',
-        lastSeen: serverTimestamp()
-      }).catch((e) => console.error('Auto clock-in failed', e));
+      try {
+        // Store FCM token. Previously unguarded — a rejection here
+        // (e.g. a transient offline write) threw out of autoClockIn()
+        // as an unhandled promise rejection (autoClockIn() is called
+        // below with no .then/.catch) AND skipped the updateDoc below
+        // entirely, silently leaving the user un-clocked-in with no
+        // error surfaced anywhere.
+        await setDoc(tokenRef, {
+          token: fcmToken,
+          updated: serverTimestamp()
+        });
+        // Set status to active and update heartbeat. Rules only permit
+        // this self-write when transitioning from 'off_clock' (or when
+        // status isn't changing at all) — a user still 'pending'
+        // manager approval correctly stays pending here.
+        await updateDoc(userRef, {
+          status: 'active',
+          lastSeen: serverTimestamp()
+        });
+      } catch (e) {
+        console.error('Auto clock-in failed', e);
+      }
     };
     autoClockIn();
   }, [user, barId, fcmToken]);
 
 
   // Auto-submit an "(Ask Me)" request if a sub-menu sits open for 60s.
-  useInactivityAutoSubmit(navStack, (label) => submitRequestSafe(label), () => setNavStack([]));
+  useInactivityAutoSubmit(
+    navStack,
+    (label) => submitRequestSafe(label),
+    () => setNavStack([]),
+    undefined,
+    inputDialog.open || quantityPicker.open,
+  );
 
   // --- Actions ---
 
-  // Save a new beer brand to the bar's inventory.
+  // Save a new beer brand to the bar's inventory. firestore.rules
+  // restricts bars/{barId} writes to Manager+ — a Staff member
+  // reaching this action (nothing in the UI currently hides "+ ADD
+  // BRAND" from them) previously got no feedback at all: the write
+  // threw, so neither the optimistic state update nor the dialog-close
+  // ever ran, and the InputDialog just sat there with no explanation.
   const saveBrand = async (brandName: string) => {
     if (!user || !barId) return;
 
@@ -629,10 +691,16 @@ function App() {
         return;
     }
 
-    // Write to Firestore.
-    await setDoc(doc(db, 'bars', barId), {
-        beerInventory: { [brandName]: [] } // Object syntax uses dot notation for updates, but here we merge.
-    }, { merge: true });
+    try {
+      // Write to Firestore.
+      await setDoc(doc(db, 'bars', barId), {
+          beerInventory: { [brandName]: [] } // Object syntax uses dot notation for updates, but here we merge.
+      }, { merge: true });
+    } catch (e) {
+      console.error('Failed to save brand', e);
+      alert('Failed to add brand. Only managers can edit the beer inventory.');
+      return;
+    }
 
     // Update local state optimistically.
     setBeerInventory(prev => ({ ...prev, [brandName]: [] }));
@@ -643,7 +711,8 @@ function App() {
     setNavStack(prev => [...prev, brandBtn]);
   };
 
-  // Save a new beer type (e.g., "Bottle") to a brand.
+  // Save a new beer type (e.g., "Bottle") to a brand. Same Manager+
+  // restriction and same previously-silent-failure issue as saveBrand.
   const saveType = async (typeName: string) => {
     if (!user || !barId || !inputDialog.parentContext) return;
     const brand = inputDialog.parentContext;
@@ -657,10 +726,16 @@ function App() {
         return;
     }
 
-    // Update Firestore (arrayUnion ensures uniqueness).
-    await updateDoc(doc(db, 'bars', barId), {
-        [`beerInventory.${brand}`]: arrayUnion(typeName)
-    });
+    try {
+      // Update Firestore (arrayUnion ensures uniqueness).
+      await updateDoc(doc(db, 'bars', barId), {
+          [`beerInventory.${brand}`]: arrayUnion(typeName)
+      });
+    } catch (e) {
+      console.error('Failed to save type', e);
+      alert('Failed to add type. Only managers can edit the beer inventory.');
+      return;
+    }
 
     // Update local state.
     setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), typeName] }));
@@ -671,7 +746,8 @@ function App() {
     setNavStack(prev => [...prev, typeBtn]);
   };
 
-  // Save a new Well location.
+  // Save a new Well location. Same Manager+ restriction and same
+  // previously-silent-failure issue as saveBrand/saveType.
   const saveWell = async (wellName: string) => {
     if (!user || !barId) return;
 
@@ -683,10 +759,16 @@ function App() {
         return;
     }
 
-    // Add to Firestore.
-    await updateDoc(doc(db, 'bars', barId), {
-        wells: arrayUnion(wellName)
-    });
+    try {
+      // Add to Firestore.
+      await updateDoc(doc(db, 'bars', barId), {
+          wells: arrayUnion(wellName)
+      });
+    } catch (e) {
+      console.error('Failed to save well', e);
+      alert('Failed to add well. Only managers can edit wells.');
+      return;
+    }
 
     // Update local state.
     setWells(prev => [...prev, wellName]);
@@ -700,18 +782,30 @@ function App() {
   // Hide a button from the dashboard.
   const hideButton = async (btnId: string) => {
     if (!user || !barId) return;
-    await updateDoc(doc(db, 'bars', barId), {
-        hiddenButtonIds: arrayUnion(btnId)
-    });
+    try {
+      await updateDoc(doc(db, 'bars', barId), {
+          hiddenButtonIds: arrayUnion(btnId)
+      });
+    } catch (e) {
+      console.error('Failed to hide button', e);
+      alert('Failed to hide. Please try again.');
+      return;
+    }
     setHiddenButtonIds(prev => [...prev, btnId]);
   };
 
   // Unhide a button (premium only).
   const unhideButton = async (btnId: string) => {
     if (!user || !barId) return;
-    await updateDoc(doc(db, 'bars', barId), {
-        hiddenButtonIds: arrayRemove(btnId)
-    });
+    try {
+      await updateDoc(doc(db, 'bars', barId), {
+          hiddenButtonIds: arrayRemove(btnId)
+      });
+    } catch (e) {
+      console.error('Failed to unhide button', e);
+      alert('Failed to restore. Please try again.');
+      return;
+    }
     setHiddenButtonIds(prev => prev.filter(id => id !== btnId));
   };
 
@@ -958,7 +1052,28 @@ function App() {
   const confirmRole = async (title: string, name: string) => {
     if (!user || !barId) return;
 
-    const role = justCreatedBar ? 'Owner' : 'Staff';
+    // Don't trust justCreatedBar alone — it's local UI state that's
+    // lost the moment a user backs out of this screen without
+    // confirming (the arrow-back / Cancel buttons both reset it) and
+    // never restored if they come back to the SAME bar they created
+    // via BarSearch's "already exists, just join it" path, which has
+    // no reason to know they're its creator. Someone who did that
+    // would confirm as 'Staff' on a bar whose ownerId already points
+    // at them — and since fileOwnershipClaim explicitly rejects
+    // "you already own this bar," there would be NO path back to
+    // Owner short of manually editing Firestore. Re-derive from the
+    // same source firestore.rules' self-create rule actually trusts:
+    // bars/{barId}.ownerId.
+    let isCreator = justCreatedBar;
+    if (!isCreator) {
+      try {
+        const barSnap = await getDoc(doc(db, 'bars', barId));
+        isCreator = barSnap.data()?.ownerId === user.uid;
+      } catch (e) {
+        console.error('Failed to verify bar ownership before joining', e);
+      }
+    }
+    const role = isCreator ? 'Owner' : 'Staff';
     const status = (role === 'Owner' || barJoinPolicy !== 'approval') ? 'active' : 'pending';
 
     try {
@@ -1164,8 +1279,25 @@ function App() {
   };
 
   // Sign out — also closes the account dialog that triggered it.
+  //
+  // Clearing barId (and its localStorage mirror) is what actually
+  // matters here, not just calling signOut(): every bar-scoped
+  // listener effect above is gated on `if (!user || !barId)`, and
+  // now clears its own state when that guard fails (see those
+  // effects' comments) — but only `user` was ever going to become
+  // falsy on sign-out, since nothing here ever reset `barId`. On a
+  // shared device, a second person signing in right after would have
+  // had the FIRST person's bar name, roster, requests, and role still
+  // rendered (barId was still set, so every listener just
+  // re-subscribed under the new uid) until a full page reload. Also
+  // matches the reset every other "leave this bar" path already does
+  // (handleLeaveBar, handleSwitchBar, the Cancel button on Approval
+  // Pending) — sign-out was the one path that never did it.
   const handleLogout = async () => {
     await signOut();
+    setBarId(null);
+    setJustCreatedBar(false);
+    localStorage.removeItem('barId');
     setShowAccountDialog(false);
   };
 
@@ -1588,19 +1720,16 @@ function App() {
         onSearchChange={(val) => setInputDialog(prev => ({ ...prev, searchTerm: val }))}
         onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}
         onSelect={(val) => {
-            // Deduplication check — only meaningful for brand/type/well,
-            // which create a new persistent button. 'custom' is free-text
-            // request text, not a button; it should never be blocked just
-            // because the words happen to match an existing button label
-            // (e.g. typing "ice" as a custom note).
-            if (inputDialog.type !== 'custom') {
-                const existingLabels = currentButtonsSource.map(b => b.label.toLowerCase());
-                if (existingLabels.includes(val.toLowerCase())) {
-                    alert('This button already exists!');
-                    return;
-                }
-            }
-
+            // No dedup check here — saveBrand/saveType/saveWell each
+            // already check for an existing match themselves and
+            // navigate straight to it instead of creating a duplicate
+            // (see their "If it already exists, just open it"
+            // branches). This used to also check here first and, on a
+            // match, show a dead-end `alert('This button already
+            // exists!')` instead of ever calling through to that
+            // navigate-to-it behavior — so picking a suggested brand/
+            // type/well that already existed produced a blocking
+            // alert instead of just taking the user there.
             if (inputDialog.type === 'brand') saveBrand(val);
             else if (inputDialog.type === 'type') saveType(val);
             else if (inputDialog.type === 'well') saveWell(val);
@@ -1904,6 +2033,7 @@ function App() {
               onDragStart={handleDragStart}
               onDragOver={(e) => handleDragOver(e, currentContextId, currentButtons)}
               onDragEnd={(e) => handleDragEnd(e, currentContextId)}
+              onDragCancel={handleDragCancel}
             >
               <SortableContext items={currentButtons} strategy={rectSortingStrategy}>
                 <div className="grid grid-cols-2 gap-4 mb-auto">
@@ -1941,6 +2071,7 @@ function App() {
         onDragStart={handleDragStart}
         onDragOver={(e) => handleDragOver(e, 'main', mainScreenButtonsWithCustom)}
         onDragEnd={(e) => handleDragEnd(e, 'main')}
+        onDragCancel={handleDragCancel}
       >
         <SortableContext items={mainScreenButtonsWithCustom} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-2 gap-8 p-6">
@@ -2052,7 +2183,10 @@ function App() {
                         ) : (
                             !isIgnored && (
                                 <md-outlined-button
-                                    onClick={(e: React.MouseEvent<HTMLElement>) => { e.stopPropagation(); setIgnoredIds(prev => [...prev, req.id]); }}
+                                    onClick={(e: React.MouseEvent<HTMLElement>) => {
+                                        e.stopPropagation();
+                                        setIgnoredIds(prev => [...prev, req.id].slice(-MAX_IGNORED_IDS));
+                                    }}
                                     style={{ height: '48px', minWidth: '100px' }}
                                 >
                                     Ignore

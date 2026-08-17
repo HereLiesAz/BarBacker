@@ -7,6 +7,7 @@ import {
   useSensors,
   DragEndEvent,
   DragStartEvent,
+  DragCancelEvent,
 } from '@dnd-kit/core';
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -66,10 +67,38 @@ export function useDragAndDrop({ barId, customOrders, setCustomOrders }: UseDrag
     setActiveId(null);
     isDraggingRef.current = false;
     if (barId && customOrders[contextId]) {
-      await updateDoc(doc(db, 'bars', barId), {
-        [`customOrders.${contextId}`]: customOrders[contextId],
-      });
+      try {
+        await updateDoc(doc(db, 'bars', barId), {
+          [`customOrders.${contextId}`]: customOrders[contextId],
+        });
+      } catch (e) {
+        // handleDragOver already applied this reorder to local state
+        // optimistically as the drag progressed, so the button visibly
+        // moved before this write was even attempted — without
+        // surfacing the failure, a Staff member (customOrders lives on
+        // bars/{barId}, Manager+-only per firestore.rules) would see
+        // their reorder "succeed," only to have it silently revert on
+        // the next reload or remote sync with no explanation.
+        console.error('Failed to save button order', e);
+        alert('Failed to save the new order. Only managers can reorder buttons.');
+      }
     }
+  };
+
+  // dnd-kit fires onDragCancel (Escape key, the draggable unmounting
+  // mid-drag, etc.) INSTEAD OF onDragEnd — without a handler wired to
+  // it, isDraggingRef stayed stuck at `true` forever after any
+  // cancelled drag, since only handleDragEnd ever reset it. The bar
+  // listener effect in App.tsx skips applying a remote customOrders
+  // update while `isDraggingRef.current` is true (so it doesn't
+  // clobber an in-progress local reorder) — once stuck, that made
+  // this client permanently stop picking up anyone else's button
+  // reordering for the rest of the session. No Firestore write here:
+  // a cancelled drag shouldn't persist whatever order handleDragOver
+  // had optimistically applied.
+  const handleDragCancel = (_event: DragCancelEvent) => {
+    setActiveId(null);
+    isDraggingRef.current = false;
   };
 
   return {
@@ -79,5 +108,6 @@ export function useDragAndDrop({ barId, customOrders, setCustomOrders }: UseDrag
     handleDragStart,
     handleDragOver,
     handleDragEnd,
+    handleDragCancel,
   };
 }

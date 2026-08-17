@@ -5,11 +5,22 @@ on:
 
 jobs:
   handle_issue:
+    # SECURITY: this workflow feeds the issue title/body directly into
+    # an autonomous coding agent's prompt (see below) and grants it
+    # issues:write. Without an author_association check, literally
+    # anyone who can open an issue on this public repo could steer
+    # that agent via prompt injection in the issue body — and, chained
+    # with jules-branch-handler.yml's merge-on-comment flow, turn that
+    # into an unauthorized merge to main. author_association reflects
+    # the issue author's actual repo permissions as GitHub itself
+    # computed them, not anything the author controls.
     if: |
       github.actor != 'google-labs-jules[bot]' && github.actor != 'google-labs-jules' &&
       github.actor != 'github-actions[bot]' && github.actor != 'github-actions' &&
-      !endsWith(github.actor, '[bot]')
+      !endsWith(github.actor, '[bot]') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       issues: write

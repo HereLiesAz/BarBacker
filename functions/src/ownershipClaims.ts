@@ -1,6 +1,21 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
+// Pure decision logic for reviewOwnershipClaim, extracted so it's
+// directly unit-testable without mocking the Admin SDK. Manager+ (or
+// admin) may review, EXCEPT the claimant reviewing their own claim —
+// see the comment at its call site in reviewOwnershipClaim for why
+// this can't just be "Owner-only" instead.
+export function canReviewClaim(
+  reviewerUid: string,
+  claimantId: string,
+  reviewerRole: string | undefined,
+  isAdmin: boolean
+): boolean {
+  if (reviewerUid === claimantId) return false;
+  return isAdmin || reviewerRole === "Owner" || reviewerRole === "Manager";
+}
+
 // ownershipClaims is `allow write: if false` in firestore.rules —
 // writes flow through these two callables only, which is what the
 // rules comment on that collection has always claimed but nothing
@@ -72,9 +87,6 @@ export const reviewOwnershipClaim = onCall(async (request) => {
   const barsClaims = (auth.token.bars as Record<string, string> | undefined) ?? {};
   const isAdmin = auth.token.admin === true;
   const role = barsClaims[barId];
-  if (!isAdmin && role !== "Owner" && role !== "Manager") {
-    throw new HttpsError("permission-denied", "Only a Manager or Owner of this bar can review claims.");
-  }
 
   const db = getFirestore();
   const claimRef = db.doc(`bars/${barId}/ownershipClaims/${claimId}`);
@@ -83,6 +95,19 @@ export const reviewOwnershipClaim = onCall(async (request) => {
   const claim = claimDoc.data()!;
   if (claim.status !== "pending") {
     throw new HttpsError("failed-precondition", "This claim was already reviewed.");
+  }
+  // Blocks a reviewer approving their own claim — file one as a
+  // Manager, then immediately approve it, and you're Owner with the
+  // real Owner demoted — as well as anyone who isn't Manager+/admin.
+  // See canReviewClaim's comment for why this is "not the claimant"
+  // rather than "must be Owner".
+  if (!canReviewClaim(auth.uid, claim.claimantId, role, isAdmin)) {
+    throw new HttpsError(
+      "permission-denied",
+      claim.claimantId === auth.uid
+        ? "You cannot review your own ownership claim."
+        : "Only a Manager or Owner of this bar can review claims."
+    );
   }
 
   if (!approve) {
@@ -98,16 +123,27 @@ export const reviewOwnershipClaim = onCall(async (request) => {
   const barDoc = await barRef.get();
   const previousOwnerId = barDoc.data()?.ownerId as string | undefined;
 
+  // The claimant may already be a member here (the comment above this
+  // function calls that out explicitly — "a real owner reclaiming a
+  // bar staff set up" doesn't necessarily mean they're new to it).
+  // Preserve their existing joinedAt instead of always stamping now,
+  // the same way onInviteConsumed.ts already does for the equivalent
+  // case — otherwise an existing long-tenured member who wins an
+  // ownership claim has their join date silently reset to today.
+  const claimantRef = db.doc(`bars/${barId}/users/${claim.claimantId}`);
+  const existingClaimantDoc = await claimantRef.get();
+  const existingJoinedAt = existingClaimantDoc.data()?.joinedAt;
+
   const batch = db.batch();
   batch.update(barRef, { ownerId: claim.claimantId });
   batch.set(
-    db.doc(`bars/${barId}/users/${claim.claimantId}`),
+    claimantRef,
     {
       role: "Owner",
       jobTitle: "Owner",
       status: "active",
       displayName: claim.claimantName || "Owner",
-      joinedAt: FieldValue.serverTimestamp(),
+      joinedAt: existingJoinedAt ?? FieldValue.serverTimestamp(),
       lastSeen: FieldValue.serverTimestamp(),
     },
     { merge: true }

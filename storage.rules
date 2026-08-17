@@ -11,12 +11,23 @@ service firebase.storage {
     // by any signed-in user. Writes are restricted to Manager+ of
     // that specific bar, checked against the same `bars` custom claim
     // firestore.rules uses (stamped by the onUserRoleChange Cloud
-    // Function), plus the `admin` claim for moderation. Size/type
-    // limits mirror the client-side check in ThemeEditor.tsx so a
-    // client that skips the UI validation can't bypass it.
-    match /bars/{barId}/logo.{ext} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
+    // Function), plus the `admin` claim for moderation. Size limit
+    // mirrors the client-side check in ThemeEditor.tsx. contentType
+    // is a client-supplied header, not a verification of the actual
+    // bytes — Storage rules cannot inspect file contents — so treat
+    // this as a UX nicety, not a security boundary; it's still useful
+    // against a client that skips the UI validation, just not against
+    // a deliberately malicious one.
+    //
+    // Wildcards must occupy a whole path segment (`logo.{ext}` is
+    // invalid rules syntax and fails to compile, which silently
+    // dropped this ENTIRE FILE and left the bucket governed by
+    // whatever was last set in the Firebase console — see the header
+    // comment above). {fileName} matches the whole segment; the
+    // string check below re-narrows it to "logo.<ext>" specifically.
+    match /bars/{barId}/{fileName} {
+      allow read: if request.auth != null && fileName.matches('logo\\..+');
+      allow write: if request.auth != null && fileName.matches('logo\\..+') &&
         (request.auth.token.admin == true ||
          request.auth.token.get('bars', {}).get(barId, '') in ['Manager', 'Owner']) &&
         request.resource.size < 2 * 1024 * 1024 &&
@@ -24,15 +35,21 @@ service firebase.storage {
     }
 
     // Bottle-scanner photos (BottleScanner.tsx "Send Alert" action).
-    // Unlike the logo, any bar member can write here — the whole
+    // Unlike the logo, any bar member can WRITE here — the whole
     // point is a bartender/barback flagging something to a manager,
     // not just managers themselves. Membership is "holds any role for
     // this bar", the same check firestore.rules' hasRole() does.
-    // Readable by any signed-in user, matching the logo rule, since a
-    // request's photo is only ever shown to other members of the same
-    // bar anyway (firestore.rules gates the /requests doc itself).
+    //
+    // READ is scoped to that same membership (not "any signed-in
+    // user" as the logo rule is) — unlike the logo, this is
+    // per-bar content that shouldn't be fetchable by an outsider, an
+    // ex-staff member of a different bar, or anyone else who happens
+    // across the download URL (which never expires and is stored
+    // un-redacted on the /requests doc every bar member can read).
     match /bottlePhotos/{barId}/{fileName} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null &&
+        (request.auth.token.admin == true ||
+         request.auth.token.get('bars', {}).get(barId, '') != '');
       allow write: if request.auth != null &&
         (request.auth.token.admin == true ||
          request.auth.token.get('bars', {}).get(barId, '') != '') &&

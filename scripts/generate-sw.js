@@ -14,8 +14,24 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Helper function to safely get env vars or fallback.
-const getEnv = (key, fallback) => process.env[key] || fallback;
+// Helper function to retrieve a required env var, failing the build
+// (not silently substituting a placeholder) if it's missing.
+// Previously this fell back to strings like 'YOUR_API_KEY' — tsc,
+// vite build, and the deploy workflow all succeeded either way, so a
+// missing/rotated/renamed VITE_FIREBASE_* secret produced a shipped
+// firebase-messaging-sw.js that called
+// firebase.initializeApp({apiKey: "YOUR_API_KEY", ...}) with no build
+// signal at all. Background push silently doesn't work for anyone
+// until someone notices. Mirrors generate-google-services.js's
+// already-fail-closed pattern for the same class of secret.
+const getEnv = (key) => {
+  const val = process.env[key];
+  if (!val) {
+    console.error(`Error: Environment variable ${key} is missing.`);
+    process.exit(1);
+  }
+  return val;
+};
 
 // Define the content of the Service Worker.
 // We use a template string to inject environment variables at build time.
@@ -26,12 +42,12 @@ importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compa
 
 // Initialize Firebase with injected configuration.
 const firebaseConfig = {
-  apiKey: "${getEnv('VITE_FIREBASE_API_KEY', 'YOUR_API_KEY')}",
-  authDomain: "${getEnv('VITE_FIREBASE_AUTH_DOMAIN', 'YOUR_AUTH_DOMAIN')}",
-  projectId: "${getEnv('VITE_FIREBASE_PROJECT_ID', 'YOUR_PROJECT_ID')}",
-  storageBucket: "${getEnv('VITE_FIREBASE_STORAGE_BUCKET', 'YOUR_STORAGE_BUCKET')}",
-  messagingSenderId: "${getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID', 'YOUR_MESSAGING_SENDER_ID')}",
-  appId: "${getEnv('VITE_FIREBASE_APP_ID', 'YOUR_APP_ID')}"
+  apiKey: "${getEnv('VITE_FIREBASE_API_KEY')}",
+  authDomain: "${getEnv('VITE_FIREBASE_AUTH_DOMAIN')}",
+  projectId: "${getEnv('VITE_FIREBASE_PROJECT_ID')}",
+  storageBucket: "${getEnv('VITE_FIREBASE_STORAGE_BUCKET')}",
+  messagingSenderId: "${getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID')}",
+  appId: "${getEnv('VITE_FIREBASE_APP_ID')}"
 };
 
 firebase.initializeApp(firebaseConfig);

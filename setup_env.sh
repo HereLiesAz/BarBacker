@@ -24,18 +24,18 @@ if ! command_exists wget || ! command_exists unzip; then
     fi
 fi
 
-# 1. Java Setup (JDK 17)
+# 1. Java Setup (JDK 21)
 if ! command_exists java; then
-    echo "Java not found. Installing OpenJDK 17..."
+    echo "Java not found. Installing OpenJDK 21..."
     if command_exists apt-get; then
         sudo apt-get update
-        sudo apt-get install -y openjdk-17-jdk
+        sudo apt-get install -y openjdk-21-jdk
     elif command_exists yum; then
-        sudo yum install -y java-17-openjdk
+        sudo yum install -y java-21-openjdk
     elif command_exists apk; then
-        sudo apk add openjdk17
+        sudo apk add openjdk21
     else
-        echo "Error: Package manager not found. Please install JDK 17 manually."
+        echo "Error: Package manager not found. Please install JDK 21 manually."
         exit 1
     fi
 else
@@ -65,7 +65,7 @@ if [ ! -d "$ANDROID_HOME" ]; then
 
     # Install basic SDK packages
     yes | sdkmanager --licenses
-    sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+    sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 else
     echo "Android SDK directory exists."
 fi

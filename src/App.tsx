@@ -32,9 +32,11 @@ import {
 import {
   db,
   functions,
+  storage,
   requestNotificationPermission,
 } from './firebase';
 import { httpsCallable } from 'firebase/functions';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 // Import custom hook for fetching the latest APK release.
 import { useLatestRelease } from './hooks/useLatestRelease';
 import { usePwaInstallPrompt } from './hooks/usePwaInstallPrompt';
@@ -72,7 +74,7 @@ import '@material/web/menu/menu-item.js';
 
 // Import Types and Constants.
 import { Bar, BarTheme, ButtonConfig, Request, BarUser, EightySixEntry } from './types';
-import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS } from './constants';
+import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS, DEFAULT_SPIRITS } from './constants';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
 import { useBarTheme } from './hooks/useBarTheme';
@@ -82,6 +84,7 @@ import RoleSelector from './components/RoleSelector';
 import NotificationSettings from './components/NotificationSettings';
 import BarManager from './components/BarManager';
 import EightySixDialog from './components/EightySixDialog';
+import BottleScanner from './components/BottleScanner';
 import ThemeEditor from './components/ThemeEditor';
 import InputDialog from './components/InputDialog';
 import { WhoIsOnDialog } from './components/WhoIsOnDialog';
@@ -394,6 +397,7 @@ function App() {
   // 86'd list state and dialog visibility.
   const [eightySixEntries, setEightySixEntries] = useState<EightySixEntry[]>([]);
   const [showEightySixDialog, setShowEightySixDialog] = useState(false);
+  const [showBottleScanner, setShowBottleScanner] = useState(false);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [showPOSSettings, setShowPOSSettings] = useState(false);
   const [showCalendarSettings, setShowCalendarSettings] = useState(false);
@@ -709,6 +713,40 @@ function App() {
         hiddenButtonIds: arrayRemove(btnId)
     });
     setHiddenButtonIds(prev => prev.filter(id => id !== btnId));
+  };
+
+  // BottleScanner "Add to Menu" action. Mirrors saveBrand/saveType
+  // above but without their navigation side effects (this isn't part
+  // of the request-button nav flow) and combined into one call, since
+  // a scanned bottle may be a brand-new brand, a new type on an
+  // existing brand, or already fully present (a no-op either way).
+  const addBottleToMenu = async (brand: string, type: string) => {
+    if (!barId) return;
+    const existingTypes = beerInventory[brand];
+    if (!existingTypes) {
+      await setDoc(doc(db, 'bars', barId), {
+        beerInventory: { [brand]: type ? [type] : [] },
+      }, { merge: true });
+      setBeerInventory(prev => ({ ...prev, [brand]: type ? [type] : [] }));
+    } else if (type && !existingTypes.includes(type)) {
+      await updateDoc(doc(db, 'bars', barId), {
+        [`beerInventory.${brand}`]: arrayUnion(type),
+      });
+      setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), type] }));
+    }
+  };
+
+  // BottleScanner "Send Alert" action: upload the captured photo,
+  // then submit a normal request (server-side FCM/ntfy fanout applies
+  // exactly as it does for any other request) referencing the bottle
+  // by name with the photo attached.
+  const sendBottleAlert = async (brand: string, photo: Blob) => {
+    if (!user || !barId) return;
+    const path = `bottlePhotos/${barId}/${user.uid}_${Date.now()}.jpg`;
+    const photoRef = storageRef(storage, path);
+    await uploadBytes(photoRef, photo, { contentType: photo.type || 'image/jpeg' });
+    const photoUrl = await getDownloadURL(photoRef);
+    await submitRequest(`RESTOCK: ${brand}`, photoUrl);
   };
 
   // Add a person to the 86'd list. Visibility decides whether all
@@ -1445,6 +1483,19 @@ function App() {
       />
 
       {isPremium && (
+        <BottleScanner
+          open={showBottleScanner}
+          onClose={() => setShowBottleScanner(false)}
+          isManagerPlus={isManagerPlus}
+          candidates={[...DEFAULT_SPIRITS, ...DEFAULT_BEERS, ...Object.keys(beerInventory)]}
+          existingBrands={Object.keys(beerInventory)}
+          onAddToMenu={addBottleToMenu}
+          onEightySix={(brand) => hideButton(`brand_${brand}`)}
+          onSendAlert={sendBottleAlert}
+        />
+      )}
+
+      {isPremium && (
         <ThemeEditor
           open={showThemeEditor}
           onClose={() => setShowThemeEditor(false)}
@@ -1716,6 +1767,12 @@ function App() {
                             <md-icon slot="start">block</md-icon>
                             <div slot="headline">86'd List</div>
                         </md-menu-item>
+                        {isPremium && (
+                          <md-menu-item onClick={() => setShowBottleScanner(true)}>
+                              <md-icon slot="start">photo_camera</md-icon>
+                              <div slot="headline">Scan Bottle</div>
+                          </md-menu-item>
+                        )}
                         <md-menu-item onClick={() => setShowNotificationSettings(true)}>
                             <md-icon slot="start">settings</md-icon>
                             <div slot="headline">Pagers</div>
@@ -1950,12 +2007,21 @@ function App() {
                         className={`w-full grid grid-cols-[33vw_1fr_auto] items-center gap-2 p-3 transition-colors border-b border-[#333] ${isIgnored ? 'bg-[#1a1a1a] opacity-60' : 'bg-[#2C1A1A]'}`}
                     >
                         {/* Request Info */}
-                        <div className="flex flex-col overflow-hidden mr-2">
-                            <span className={`font-bold text-lg leading-tight truncate ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
-                            <div className="flex flex-wrap gap-1 text-xs text-gray-400 mt-1 truncate">
-                                <span>{req.requesterName}</span>
-                                <span>•</span>
-                                <span>{formatTime(req.timestamp)}</span>
+                        <div className="flex items-center gap-2 overflow-hidden mr-2">
+                            {req.photoUrl && (
+                                <img
+                                    src={req.photoUrl}
+                                    alt=""
+                                    className="w-10 h-10 rounded object-cover flex-shrink-0"
+                                />
+                            )}
+                            <div className="flex flex-col overflow-hidden">
+                                <span className={`font-bold text-lg leading-tight truncate ${isIgnored ? 'text-gray-400' : 'text-red-100'}`}>{req.label}</span>
+                                <div className="flex flex-wrap gap-1 text-xs text-gray-400 mt-1 truncate">
+                                    <span>{req.requesterName}</span>
+                                    <span>•</span>
+                                    <span>{formatTime(req.timestamp)}</span>
+                                </div>
                             </div>
                         </div>
 

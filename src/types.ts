@@ -101,6 +101,9 @@ export interface Request {
   claimedBy?: string;
   // Optional: The timestamp of the last notification sent for this request (used for throttling).
   lastNotification?: import('firebase/firestore').FieldValue | import('firebase/firestore').Timestamp;
+  // Optional: Firebase Storage download URL for a photo attached to
+  // this request — set by the bottle scanner's "Send Alert" action.
+  photoUrl?: string;
 }
 
 // Define the data model for a 'ChatMessage' document. Replaces the

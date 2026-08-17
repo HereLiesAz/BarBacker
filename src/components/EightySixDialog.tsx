@@ -22,7 +22,6 @@ interface EightySixDialogProps {
   onDelete: (entryId: string) => Promise<void>;
   isPremium: boolean;
   userRole: string | null;
-  currentUserId?: string;
 }
 
 const EightySixDialog = ({ open, onClose, entries, onAdd, onDelete, isPremium, userRole }: EightySixDialogProps) => {
@@ -172,7 +171,7 @@ const EightySixDialog = ({ open, onClose, entries, onAdd, onDelete, isPremium, u
                       )}
                     </div>
                     {canDelete && (
-                      <md-icon-button slot="end" onClick={() => setConfirmDeleteId(entry.id)}>
+                      <md-icon-button slot="end" aria-label={`Remove ${entry.patronName} from 86'd list`} onClick={() => setConfirmDeleteId(entry.id)}>
                         <md-icon>close</md-icon>
                       </md-icon-button>
                     )}

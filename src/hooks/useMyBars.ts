@@ -74,6 +74,14 @@ export function useMyBars(user: User | null) {
         setDoc(userRef, { ntfyTopic: newTopic }, { merge: true })
           .catch(e => console.warn('Failed to persist ntfy topic', e));
       }
+    }, (err) => {
+      // Previously had no error handler at all: if this listener ever
+      // errored (permission-denied, offline), globalNtfyTopic stayed
+      // null forever with nothing logged — NotificationSettings reads
+      // that as "still loading" and shows a spinner-less "Loading..."
+      // badge indefinitely, with no way for the user to tell it's
+      // actually failed rather than just slow.
+      console.error('Failed to load user doc / ntfy topic', err);
     });
     return () => unsub();
   }, [user]);

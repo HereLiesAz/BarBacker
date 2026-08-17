@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CalendarView } from './CalendarView';
 import { CalendarEvent } from '../types';
@@ -45,16 +45,20 @@ describe('CalendarView', () => {
 
   it('shows Edit/Delete for a local event but not for an externally-owned one', () => {
     renderView();
-    // Local event gets both; external event gets neither.
+    // Local event gets both; external event gets neither. The confirm-delete
+    // dialog's own Delete button is always mounted (just unopened), so one
+    // extra 'Delete' is expected alongside the event row's.
     expect(screen.getAllByText('Edit').length).toBe(1);
-    expect(screen.getAllByText('Delete').length).toBe(1);
+    expect(screen.getAllByText('Delete').length).toBe(2);
   });
 
   it('hides Add Event and Edit/Delete entirely for non-Manager+ viewers', () => {
     renderView({ isManagerPlus: false });
     expect(screen.queryByText('Add Event')).not.toBeInTheDocument();
     expect(screen.queryByText('Edit')).not.toBeInTheDocument();
-    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+    // Only the (unopened) confirm-delete dialog's own Delete button remains;
+    // no event row renders one when the viewer isn't Manager+.
+    expect(screen.getAllByText('Delete').length).toBe(1);
   });
 
   it('shows an empty state with no events', () => {
@@ -62,10 +66,23 @@ describe('CalendarView', () => {
     expect(screen.getByText('No events.')).toBeInTheDocument();
   });
 
-  it('calls onDelete for the right event', () => {
+  it('calls onDelete for the right event after confirming', async () => {
     renderView();
-    fireEvent.click(screen.getByText('Delete'));
-    expect(mockOnDelete).toHaveBeenCalledWith('e1');
+    // Two 'Delete' texts exist: the event row's, and the (unopened)
+    // confirm dialog's own button, in that DOM order.
+    fireEvent.click(screen.getAllByText('Delete')[0]);
+    expect(mockOnDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByText('Delete')[1]);
+    await waitFor(() => expect(mockOnDelete).toHaveBeenCalledWith('e1'));
+  });
+
+  it('does not delete when the confirmation is cancelled', () => {
+    renderView();
+    fireEvent.click(screen.getAllByText('Delete')[0]);
+    // Two 'Cancel' texts exist: the (unopened) edit dialog's, and the
+    // confirm-delete dialog's, in that DOM order.
+    fireEvent.click(screen.getAllByText('Cancel')[1]);
+    expect(mockOnDelete).not.toHaveBeenCalled();
   });
 
   it('opens the add-event form and creates an event on save', async () => {

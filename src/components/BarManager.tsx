@@ -119,10 +119,15 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
                     <div slot="headline">{btn.label}</div>
                     {/* Button Icon */}
                     <md-icon slot="start">{btn.icon || 'circle'}</md-icon>
-                    {/* Delete Action */}
-                    <md-icon-button slot="end" onClick={() => handleDeleteClick(btn.id)}>
-                        <md-icon>close</md-icon>
-                    </md-icon-button>
+                    {/* Delete Action — Manager+ only; writes to the bar doc are
+                        rejected by firestore.rules for anyone else, so a
+                        visible-but-broken control here would just alert a
+                        confusing "failed, try again" for Staff. */}
+                    {isManagerPlus && (
+                      <md-icon-button slot="end" aria-label={`Remove ${btn.label}`} onClick={() => handleDeleteClick(btn.id)}>
+                          <md-icon>close</md-icon>
+                      </md-icon-button>
+                    )}
                     </md-list-item>
                 ))}
                 {/* Empty State */}
@@ -162,8 +167,8 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
              </div>
            )}
 
-           {/* Hidden Buttons (Premium Only) */}
-           {isPremium && hiddenButtons.length > 0 && (
+           {/* Hidden Buttons (Manager+, Premium Only) */}
+           {isManagerPlus && isPremium && hiddenButtons.length > 0 && (
                <div className="mt-4 border border-red-800 rounded overflow-y-auto max-h-[30vh]">
                    <div className="bg-red-900/20 p-2 text-xs font-bold text-red-400 uppercase">Restorable Buttons (Premium)</div>
                    <md-list>
@@ -171,7 +176,7 @@ const BarManager = ({ open, onClose, barName, allButtons, hiddenButtonIds, onHid
                            <md-list-item key={btn.id}>
                                <div slot="headline">{btn.label}</div>
                                <md-icon slot="start">{btn.icon || 'circle'}</md-icon>
-                               <md-icon-button slot="end" onClick={() => onUnhideButton && onUnhideButton(btn.id)}>
+                               <md-icon-button slot="end" aria-label={`Restore ${btn.label}`} onClick={() => onUnhideButton && onUnhideButton(btn.id)}>
                                    <md-icon>restore</md-icon>
                                </md-icon-button>
                            </md-list-item>

@@ -38,6 +38,8 @@ export function CalendarView({ open, onClose, events, isManagerPlus, onCreate, o
   const [editing, setEditing] = useState<CalendarEvent | 'new' | null>(null);
   const [form, setForm] = useState({ title: '', start: '', end: '', type: 'event', description: '' });
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const upcoming = [...events].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
@@ -56,6 +58,7 @@ export function CalendarView({ open, onClose, events, isManagerPlus, onCreate, o
   const handleSave = async () => {
     if (!form.title.trim() || !form.start || !form.end) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const payload = {
         title: form.title.trim(),
@@ -67,8 +70,27 @@ export function CalendarView({ open, onClose, events, isManagerPlus, onCreate, o
       if (editing === 'new') await onCreate(payload);
       else if (editing) await onUpdate(editing.id, payload);
       setEditing(null);
+    } catch (e) {
+      // Previously uncaught — onCreate/onUpdate rejecting (permission
+      // denied, offline) surfaced nothing at all: the dialog just sat
+      // there with the Save button re-enabled and no indication
+      // anything had gone wrong.
+      console.error('Failed to save calendar event', e);
+      setSaveError('Failed to save. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDeleteId) return;
+    try {
+      await onDelete(confirmDeleteId);
+    } catch (e) {
+      console.error('Failed to delete calendar event', e);
+      alert('Failed to delete. Please try again.');
+    } finally {
+      setConfirmDeleteId(null);
     }
   };
 
@@ -98,7 +120,7 @@ export function CalendarView({ open, onClose, events, isManagerPlus, onCreate, o
                 {canEdit && (
                   <div className="flex flex-col gap-1 shrink-0">
                     <md-text-button onClick={() => openEdit(event)}>Edit</md-text-button>
-                    <md-text-button onClick={() => onDelete(event.id)}>Delete</md-text-button>
+                    <md-text-button onClick={() => setConfirmDeleteId(event.id)}>Delete</md-text-button>
                   </div>
                 )}
               </div>
@@ -127,10 +149,22 @@ export function CalendarView({ open, onClose, events, isManagerPlus, onCreate, o
           </select>
           <md-filled-text-field label="Description" value={form.description}
             onInput={(e: any) => setForm((f) => ({ ...f, description: e.target.value }))} />
+          {saveError && <div className="text-xs text-red-400">{saveError}</div>}
         </div>
         <div slot="actions">
           <md-text-button onClick={() => setEditing(null)}>Cancel</md-text-button>
-          <md-filled-button disabled={!form.title.trim() || saving || undefined} onClick={handleSave}>Save</md-filled-button>
+          <md-filled-button disabled={!form.title.trim() || saving || undefined} onClick={handleSave}>
+            {saving ? 'Saving…' : 'Save'}
+          </md-filled-button>
+        </div>
+      </MdDialog>
+
+      <MdDialog open={confirmDeleteId !== null} onClose={() => setConfirmDeleteId(null)}>
+        <div slot="headline">Delete Event?</div>
+        <div slot="content">This can't be undone.</div>
+        <div slot="actions">
+          <md-text-button onClick={() => setConfirmDeleteId(null)}>Cancel</md-text-button>
+          <md-filled-button className="btn-alert" onClick={handleConfirmDelete}>Delete</md-filled-button>
         </div>
       </MdDialog>
     </>

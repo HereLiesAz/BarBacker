@@ -39,7 +39,7 @@ export function useRequestActions({
   userRole,
   getButtonIdForLabel,
 }: UseRequestActionsArgs) {
-  const submitRequest = useCallback(async (label: string) => {
+  const submitRequest = useCallback(async (label: string, photoUrl?: string) => {
     if (!user || !barId) return;
     if (navigator.vibrate) navigator.vibrate(100);
 
@@ -59,6 +59,10 @@ export function useRequestActions({
       // filtering without re-deriving it from the bar's button
       // config, which neither has access to.
       ...(btnId ? { buttonId: btnId } : {}),
+      // Set by the bottle scanner's "Send Alert" action — lets the
+      // request card show the scanned bottle photo instead of just
+      // its recognized/typed name.
+      ...(photoUrl ? { photoUrl } : {}),
     });
   }, [user, barId, displayName, userRole, getButtonIdForLabel]);
 

@@ -20,6 +20,21 @@ export const DEFAULT_BEERS = [
   'Shiner Bock', 'Shock Top', 'Sierra Nevada Pale Ale', 'Sol', 'St. Pauli Girl', 'Stella Artois', 'Tecate', 'Victoria', 'Yuengling'
 ];
 
+// Common spirits/liquor brand names — used the same way as
+// DEFAULT_BEERS (brand suggestions), and also as the candidate pool
+// bottleRecognition.ts fuzzy-matches OCR'd label text against for the
+// bottle scanner.
+export const DEFAULT_SPIRITS = [
+  'Absolut', 'Bacardi', 'Bacardi Superior', 'Baileys Irish Cream', 'Bombay Sapphire', 'Bulleit Bourbon', 'Bulleit Rye',
+  'Buffalo Trace', 'Campari', 'Captain Morgan', 'Casamigos Blanco', 'Casamigos Reposado', 'Chivas Regal', 'Ciroc',
+  'Cointreau', 'Crown Royal', 'Don Julio Blanco', 'Don Julio Reposado', 'Dewar\'s', 'Fireball', 'Glenfiddich', 'Glenlivet',
+  'Goslings Black Seal', 'Grand Marnier', 'Grey Goose', 'Hendrick\'s Gin', 'Hennessy VS', 'Jack Daniel\'s', 'Jägermeister',
+  'Jameson', 'Jim Beam', 'Johnnie Walker Black', 'Johnnie Walker Red', 'Jose Cuervo', 'Kahlúa', 'Ketel One',
+  'Knob Creek', 'Macallan 12', 'Maker\'s Mark', 'Malibu', 'Patrón Silver', 'Patrón Reposado', 'Ricard', 'Sailor Jerry',
+  'Skyy Vodka', 'Smirnoff', 'Southern Comfort', 'Suntory Toki', 'Svedka', 'Tanqueray', 'Tito\'s Handmade Vodka',
+  'Woodford Reserve',
+];
+
 // Define the default button configuration for a new bar.
 // This structure creates the initial grid of request buttons.
 export const DEFAULT_BUTTONS: ButtonConfig[] = [

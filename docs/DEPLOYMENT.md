@@ -61,6 +61,18 @@ site using the rewrite in `firebase.json`, or the function's own Cloud
 Run URL. Left unset, the feed URL is deliberately not shown rather than
 handing out a link that 404s.
 
+### BottleScanner (on-device OCR)
+
+`BottleScanner.tsx` / `utils/bottleRecognition.ts` (premium bars only)
+uses `tesseract.js` to OCR a scanned bottle label entirely client-side
+— no server call, no cloud vision API. Recognition itself runs
+on-device via WebAssembly, but by default `tesseract.js` fetches its
+worker script, wasm core, and English trained-data file from a public
+CDN (jsdelivr) the first time a bar uses the scanner, then caches
+them in the browser. That first fetch needs outbound network access;
+everything after is served from cache. No env vars or server
+provisioning are required for this feature.
+
 ## Android Deployment
 
 The Android application is a Capacitor wrapper around the web app.

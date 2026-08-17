@@ -674,7 +674,12 @@ function App() {
 
   // --- Actions ---
 
-  // Save a new beer brand to the bar's inventory.
+  // Save a new beer brand to the bar's inventory. firestore.rules
+  // restricts bars/{barId} writes to Manager+ — a Staff member
+  // reaching this action (nothing in the UI currently hides "+ ADD
+  // BRAND" from them) previously got no feedback at all: the write
+  // threw, so neither the optimistic state update nor the dialog-close
+  // ever ran, and the InputDialog just sat there with no explanation.
   const saveBrand = async (brandName: string) => {
     if (!user || !barId) return;
 
@@ -686,10 +691,16 @@ function App() {
         return;
     }
 
-    // Write to Firestore.
-    await setDoc(doc(db, 'bars', barId), {
-        beerInventory: { [brandName]: [] } // Object syntax uses dot notation for updates, but here we merge.
-    }, { merge: true });
+    try {
+      // Write to Firestore.
+      await setDoc(doc(db, 'bars', barId), {
+          beerInventory: { [brandName]: [] } // Object syntax uses dot notation for updates, but here we merge.
+      }, { merge: true });
+    } catch (e) {
+      console.error('Failed to save brand', e);
+      alert('Failed to add brand. Only managers can edit the beer inventory.');
+      return;
+    }
 
     // Update local state optimistically.
     setBeerInventory(prev => ({ ...prev, [brandName]: [] }));
@@ -700,7 +711,8 @@ function App() {
     setNavStack(prev => [...prev, brandBtn]);
   };
 
-  // Save a new beer type (e.g., "Bottle") to a brand.
+  // Save a new beer type (e.g., "Bottle") to a brand. Same Manager+
+  // restriction and same previously-silent-failure issue as saveBrand.
   const saveType = async (typeName: string) => {
     if (!user || !barId || !inputDialog.parentContext) return;
     const brand = inputDialog.parentContext;
@@ -714,10 +726,16 @@ function App() {
         return;
     }
 
-    // Update Firestore (arrayUnion ensures uniqueness).
-    await updateDoc(doc(db, 'bars', barId), {
-        [`beerInventory.${brand}`]: arrayUnion(typeName)
-    });
+    try {
+      // Update Firestore (arrayUnion ensures uniqueness).
+      await updateDoc(doc(db, 'bars', barId), {
+          [`beerInventory.${brand}`]: arrayUnion(typeName)
+      });
+    } catch (e) {
+      console.error('Failed to save type', e);
+      alert('Failed to add type. Only managers can edit the beer inventory.');
+      return;
+    }
 
     // Update local state.
     setBeerInventory(prev => ({ ...prev, [brand]: [...(prev[brand] || []), typeName] }));
@@ -728,7 +746,8 @@ function App() {
     setNavStack(prev => [...prev, typeBtn]);
   };
 
-  // Save a new Well location.
+  // Save a new Well location. Same Manager+ restriction and same
+  // previously-silent-failure issue as saveBrand/saveType.
   const saveWell = async (wellName: string) => {
     if (!user || !barId) return;
 
@@ -740,10 +759,16 @@ function App() {
         return;
     }
 
-    // Add to Firestore.
-    await updateDoc(doc(db, 'bars', barId), {
-        wells: arrayUnion(wellName)
-    });
+    try {
+      // Add to Firestore.
+      await updateDoc(doc(db, 'bars', barId), {
+          wells: arrayUnion(wellName)
+      });
+    } catch (e) {
+      console.error('Failed to save well', e);
+      alert('Failed to add well. Only managers can edit wells.');
+      return;
+    }
 
     // Update local state.
     setWells(prev => [...prev, wellName]);
@@ -757,18 +782,30 @@ function App() {
   // Hide a button from the dashboard.
   const hideButton = async (btnId: string) => {
     if (!user || !barId) return;
-    await updateDoc(doc(db, 'bars', barId), {
-        hiddenButtonIds: arrayUnion(btnId)
-    });
+    try {
+      await updateDoc(doc(db, 'bars', barId), {
+          hiddenButtonIds: arrayUnion(btnId)
+      });
+    } catch (e) {
+      console.error('Failed to hide button', e);
+      alert('Failed to hide. Please try again.');
+      return;
+    }
     setHiddenButtonIds(prev => [...prev, btnId]);
   };
 
   // Unhide a button (premium only).
   const unhideButton = async (btnId: string) => {
     if (!user || !barId) return;
-    await updateDoc(doc(db, 'bars', barId), {
-        hiddenButtonIds: arrayRemove(btnId)
-    });
+    try {
+      await updateDoc(doc(db, 'bars', barId), {
+          hiddenButtonIds: arrayRemove(btnId)
+      });
+    } catch (e) {
+      console.error('Failed to unhide button', e);
+      alert('Failed to restore. Please try again.');
+      return;
+    }
     setHiddenButtonIds(prev => prev.filter(id => id !== btnId));
   };
 
@@ -1015,7 +1052,28 @@ function App() {
   const confirmRole = async (title: string, name: string) => {
     if (!user || !barId) return;
 
-    const role = justCreatedBar ? 'Owner' : 'Staff';
+    // Don't trust justCreatedBar alone — it's local UI state that's
+    // lost the moment a user backs out of this screen without
+    // confirming (the arrow-back / Cancel buttons both reset it) and
+    // never restored if they come back to the SAME bar they created
+    // via BarSearch's "already exists, just join it" path, which has
+    // no reason to know they're its creator. Someone who did that
+    // would confirm as 'Staff' on a bar whose ownerId already points
+    // at them — and since fileOwnershipClaim explicitly rejects
+    // "you already own this bar," there would be NO path back to
+    // Owner short of manually editing Firestore. Re-derive from the
+    // same source firestore.rules' self-create rule actually trusts:
+    // bars/{barId}.ownerId.
+    let isCreator = justCreatedBar;
+    if (!isCreator) {
+      try {
+        const barSnap = await getDoc(doc(db, 'bars', barId));
+        isCreator = barSnap.data()?.ownerId === user.uid;
+      } catch (e) {
+        console.error('Failed to verify bar ownership before joining', e);
+      }
+    }
+    const role = isCreator ? 'Owner' : 'Staff';
     const status = (role === 'Owner' || barJoinPolicy !== 'approval') ? 'active' : 'pending';
 
     try {
@@ -1662,19 +1720,16 @@ function App() {
         onSearchChange={(val) => setInputDialog(prev => ({ ...prev, searchTerm: val }))}
         onClose={() => setInputDialog(prev => ({ ...prev, open: false }))}
         onSelect={(val) => {
-            // Deduplication check — only meaningful for brand/type/well,
-            // which create a new persistent button. 'custom' is free-text
-            // request text, not a button; it should never be blocked just
-            // because the words happen to match an existing button label
-            // (e.g. typing "ice" as a custom note).
-            if (inputDialog.type !== 'custom') {
-                const existingLabels = currentButtonsSource.map(b => b.label.toLowerCase());
-                if (existingLabels.includes(val.toLowerCase())) {
-                    alert('This button already exists!');
-                    return;
-                }
-            }
-
+            // No dedup check here — saveBrand/saveType/saveWell each
+            // already check for an existing match themselves and
+            // navigate straight to it instead of creating a duplicate
+            // (see their "If it already exists, just open it"
+            // branches). This used to also check here first and, on a
+            // match, show a dead-end `alert('This button already
+            // exists!')` instead of ever calling through to that
+            // navigate-to-it behavior — so picking a suggested brand/
+            // type/well that already existed produced a blocking
+            // alert instead of just taking the user there.
             if (inputDialog.type === 'brand') saveBrand(val);
             else if (inputDialog.type === 'type') saveType(val);
             else if (inputDialog.type === 'well') saveWell(val);

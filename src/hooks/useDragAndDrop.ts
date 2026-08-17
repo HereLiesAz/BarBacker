@@ -67,9 +67,21 @@ export function useDragAndDrop({ barId, customOrders, setCustomOrders }: UseDrag
     setActiveId(null);
     isDraggingRef.current = false;
     if (barId && customOrders[contextId]) {
-      await updateDoc(doc(db, 'bars', barId), {
-        [`customOrders.${contextId}`]: customOrders[contextId],
-      });
+      try {
+        await updateDoc(doc(db, 'bars', barId), {
+          [`customOrders.${contextId}`]: customOrders[contextId],
+        });
+      } catch (e) {
+        // handleDragOver already applied this reorder to local state
+        // optimistically as the drag progressed, so the button visibly
+        // moved before this write was even attempted — without
+        // surfacing the failure, a Staff member (customOrders lives on
+        // bars/{barId}, Manager+-only per firestore.rules) would see
+        // their reorder "succeed," only to have it silently revert on
+        // the next reload or remote sync with no explanation.
+        console.error('Failed to save button order', e);
+        alert('Failed to save the new order. Only managers can reorder buttons.');
+      }
     }
   };
 

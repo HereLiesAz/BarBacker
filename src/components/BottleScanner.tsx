@@ -34,10 +34,13 @@ type Stage = 'idle' | 'capturing' | 'recognizing' | 'ready';
 type Action = 'menu' | '86' | 'alert';
 
 // Camera capture + on-device OCR (tesseract.js, running entirely
-// client-side — no photo or recognized text is ever sent to a
-// server) for premium bars. Point the camera at a bottle, confirm
+// client-side — the photo never leaves the device just to recognize
+// the label) for premium bars. Point the camera at a bottle, confirm
 // the recognized (or manually typed) brand, then either add it to
-// the menu, 86 it, or send a photo-referencing alert to staff.
+// the menu, 86 it, or send a photo-referencing alert to staff — that
+// last action does upload the photo, to this bar's own Storage
+// bucket (see App.tsx's sendBottleAlert), so staff can see what was
+// scanned; it isn't sent anywhere outside the app's own backend.
 const BottleScanner = ({
   open, onClose, isManagerPlus, candidates, existingBrands, onAddToMenu, onEightySix, onSendAlert,
 }: BottleScannerProps) => {
@@ -48,6 +51,15 @@ const BottleScanner = ({
   const [type, setType] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submittingAction, setSubmittingAction] = useState<Action | null>(null);
+  // Bumped on every close; handleCapture snapshots it and checks it
+  // after each await so a capture/OCR run still in flight when the
+  // user closes the dialog mid-recognition can't land its result
+  // afterward. MdDialog keeps this component mounted regardless of
+  // `open` (only the attribute toggles), so without this guard the
+  // async chain would resolve after reset() already ran and silently
+  // repopulate stage/photo/brand with stale data — the next open
+  // would show a capture the user never took.
+  const closeTokenRef = useRef(0);
 
   const reset = () => {
     setStage('idle');
@@ -60,32 +72,49 @@ const BottleScanner = ({
   };
 
   const handleClose = () => {
+    closeTokenRef.current += 1;
     reset();
     onClose();
   };
 
   const handleCapture = async () => {
+    const token = closeTokenRef.current;
     setError(null);
     setStage('capturing');
     try {
       const result = await Camera.takePhoto({});
+      if (closeTokenRef.current !== token) return;
       if (!result.webPath) throw new Error('No photo captured.');
       const blob = await (await fetch(result.webPath)).blob();
+      if (closeTokenRef.current !== token) return;
       photoBlobRef.current = blob;
       setPhotoUrl(result.webPath);
 
       setStage('recognizing');
       const lines = await recognizeBottleText(blob);
+      if (closeTokenRef.current !== token) return;
       setBrand(matchBrand(lines, candidates) ?? '');
       setStage('ready');
     } catch (e) {
+      if (closeTokenRef.current !== token) return;
       console.error('Bottle capture/recognition failed', e);
       setError(e instanceof Error ? e.message : 'Failed to capture or read the bottle label.');
       setStage('idle');
     }
   };
 
-  const brandExists = existingBrands.some((b) => b.toLowerCase() === brand.trim().toLowerCase());
+  const trimmedBrand = brand.trim();
+  // Case-insensitive existence check, but every downstream write is
+  // case-sensitive — beerInventory keys in App.tsx's addBottleToMenu
+  // and the `brand_${brand}` hideButton id are both looked up/built
+  // by exact string match. Scanning (or manually correcting to)
+  // "JAMESON" against an existing "Jameson" entry needs to resolve to
+  // "Jameson" everywhere downstream, or "Add to Menu" silently
+  // creates a second, disconnected "JAMESON" entry and "86 It" writes
+  // a hidden-button id that matches no real button.
+  const matchedExistingBrand = existingBrands.find((b) => b.toLowerCase() === trimmedBrand.toLowerCase());
+  const brandExists = !!matchedExistingBrand;
+  const canonicalBrand = matchedExistingBrand ?? trimmedBrand;
 
   const runAction = async (action: Action, fn: () => Promise<void>) => {
     if (submittingAction) return;
@@ -165,7 +194,7 @@ const BottleScanner = ({
               <md-outlined-button
                 className="btn-alert"
                 disabled={!!submittingAction || undefined}
-                onClick={() => runAction('86', () => onEightySix(brand.trim()))}
+                onClick={() => runAction('86', () => onEightySix(canonicalBrand))}
               >
                 {submittingAction === '86' ? 'Marking…' : '86 It'}
               </md-outlined-button>
@@ -173,7 +202,7 @@ const BottleScanner = ({
             {isManagerPlus && (
               <md-filled-button
                 disabled={!brand.trim() || !!submittingAction || undefined}
-                onClick={() => runAction('menu', () => onAddToMenu(brand.trim(), type.trim()))}
+                onClick={() => runAction('menu', () => onAddToMenu(canonicalBrand, type.trim()))}
               >
                 {submittingAction === 'menu' ? 'Adding…' : 'Add to Menu'}
               </md-filled-button>

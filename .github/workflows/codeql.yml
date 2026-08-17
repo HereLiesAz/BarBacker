@@ -19,6 +19,18 @@ on:
   schedule:
     - cron: '42 4 * * 5'
 
+# Auto-generated setup had no concurrency control at all: a push to
+# main and every PR push each started their own set of scans with
+# nothing to cancel a superseded one, so rapid merges (this repo
+# routinely opens and merges PRs within minutes) left several runs —
+# some already stale — piling up in_progress simultaneously. head_ref
+# (set for pull_request events, the PR's source branch) falls back to
+# ref (push/schedule/workflow_dispatch) so a PR's own re-pushes cancel
+# their own previous scan without colliding with main's group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

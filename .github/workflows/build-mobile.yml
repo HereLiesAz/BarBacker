@@ -1,29 +1,26 @@
 name: Merged Build & Release
 
 on:
-  # Previously `branches: ["**"]` — every push to every branch. Once a
-  # branch has an open PR against main, that meant the SAME commit
-  # triggered two independent runs: one from this push trigger (group
-  # keyed on refs/heads/<branch>) and one from the pull_request
-  # trigger below (group keyed on refs/pull/<n>/merge) — different
-  # concurrency groups, so `cancel-in-progress` never saw them as the
-  # same thing and both ran to completion, doubling build minutes and
-  # doubling the "Report Failure to Jules" duplicate-issue risk for
-  # every push while a PR was open. Restricted to main: a feature
-  # branch's own build/test signal already comes from pull_request
-  # once its PR exists (which is effectively always, in this repo's
-  # workflow — a branch is pushed and its PR opened immediately
-  # after), and the release steps below already only ever fire on a
-  # push to main, so this doesn't change what gets released.
+  # This workflow builds the release APK and, on main, publishes it —
+  # it has no reason to run on every branch push or on PRs (PR-side
+  # rules/functions coverage already comes from rules-tests.yml; this
+  # one is specifically the Android release pipeline). Previously also
+  # had `branches: ["**"]` on push plus a pull_request trigger, which
+  # meant a single commit on an open PR's branch fired two separate
+  # runs — one from each trigger, in different concurrency groups, so
+  # neither cancelled the other. Restricting to main-only removes the
+  # PR-side run entirely rather than just deduping it.
   push:
-    branches: [ "main" ]
-  pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
-# ⚡ Concurrency: Cancels the entire job if a new push comes in.
+# ⚡ Concurrency: cancels an in-progress run for the same branch when a
+# new one starts. head_ref (set for pull_request-family events, the
+# PR's source branch) falls back to ref (set for push/workflow_dispatch)
+# so a manual dispatch against a non-main branch still gets its own
+# group instead of colliding with whatever ref happened to run last.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:

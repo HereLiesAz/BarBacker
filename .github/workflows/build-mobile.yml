@@ -28,6 +28,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Reports presence/absence only — never the values — for the
+      # four secrets the next step needs. Added because "the secret is
+      # definitely set" and "secrets.KEYSTORE_PRIVATE resolves empty
+      # at runtime" turned out to both be true at once here: the
+      # workflow only ever reported the first symptom (empty), with no
+      # way to tell whether ALL four were missing or just one, or
+      # distinguish a genuinely-unset secret from an empty-string
+      # value. GitHub Actions secret names are matched exactly
+      # (case-sensitive) against what's configured in Settings →
+      # Secrets and variables → Actions → Repository secrets — a name
+      # that doesn't match byte-for-byte (typo, extra whitespace,
+      # different casing) resolves to empty with no error, identical
+      # to the secret never having been added at all.
+      - name: Check keystore secret presence (names only, never values)
+        env:
+          KEYSTORE_PRIVATE: ${{ secrets.KEYSTORE_PRIVATE }}
+          KEYSTORE_CHAIN: ${{ secrets.KEYSTORE_CHAIN }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "Keystore secret status (values never printed, only whether each is set):"
+          for name in KEYSTORE_PRIVATE KEYSTORE_CHAIN KEYSTORE_PASSWORD KEY_ALIAS; do
+            if [[ -n "${!name}" ]]; then
+              echo "  $name: set"
+            else
+              echo "  $name: MISSING or empty"
+            fi
+          done
+
       - name: Generate Keystore from Secrets
         env:
           KEYSTORE_PRIVATE: ${{ secrets.KEYSTORE_PRIVATE }}

@@ -1,4 +1,4 @@
-name: Firestore Rules Tests
+name: Rules and Functions Tests
 
 on:
   push:
@@ -12,6 +12,7 @@ permissions:
 jobs:
   rules:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -49,26 +50,31 @@ jobs:
       - name: Pre-download Firestore emulator JAR
         run: firebase setup:emulators:firestore
 
-      - name: Start Firestore emulator
-        # Background the emulator and wait for the port to open so we
-        # can see startup output in its own log file if it dies.
+      - name: Start Firestore + Storage emulators
+        # Background the emulators and wait for both ports to open so
+        # we can see startup output in its own log file if either
+        # dies. Storage is included alongside Firestore because
+        # src/test/storage-rules.test.ts needs it — storage.rules had
+        # a syntax error that silently made the whole file
+        # unenforceable for months, undetected precisely because no
+        # CI job had ever loaded it.
         shell: bash
         run: |
-          firebase emulators:start --only firestore --project barbacker-rules-test \
+          firebase emulators:start --only firestore,storage --project barbacker-rules-test \
             > emulator.log 2>&1 &
           echo $! > emulator.pid
           for i in $(seq 1 60); do
-            if (echo > /dev/tcp/127.0.0.1/8080) 2>/dev/null; then
-              echo "emulator up after ${i}s"
+            if (echo > /dev/tcp/127.0.0.1/8080) 2>/dev/null && (echo > /dev/tcp/127.0.0.1/9199) 2>/dev/null; then
+              echo "emulators up after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "emulator did not come up; tail of emulator.log:"
+          echo "emulators did not come up; tail of emulator.log:"
           tail -200 emulator.log
           exit 1
 
-      - name: Run Firestore rules tests
+      - name: Run Firestore + Storage rules tests
         run: npx vitest --run --config vitest.rules.config.ts
 
       - name: Stop emulator
@@ -80,3 +86,32 @@ jobs:
           fi
           echo "--- emulator.log tail ---"
           tail -200 emulator.log || true
+
+  # Nothing in CI previously built or tested functions/ at all — a
+  # type error or a broken test there could reach main green and only
+  # surface when someone ran a manual deploy. This doesn't need the
+  # emulators the `rules` job above does; it just needs the package to
+  # actually compile and its own unit tests to actually pass.
+  functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check + build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test

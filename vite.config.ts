@@ -68,6 +68,7 @@ export default defineConfig({
       // place in the jsdom suite.
       '**/firestore-rules.test.ts',
       'src/test/rules/**',
+      'src/test/storage-rules.test.ts',
       // The Cloud Functions package has its own vitest config; the
       // root suite shouldn't pick it up.
       'functions/**',

@@ -2,7 +2,16 @@
 
 ## Web Deployment (GitHub Pages)
 
-The web application is hosted on GitHub Pages.
+The web application is hosted on GitHub Pages, deployed automatically
+by `.github/workflows/deploy.yml` on every push to `main` (via
+`peaceiris/actions-gh-pages`). The `npm run deploy` command below is
+the same thing run by hand — use it only for an out-of-band deploy,
+not as the normal path, and only with every `VITE_FIREBASE_*` env var
+set locally first (see "Required environment variables" below):
+`scripts/generate-sw.js` silently falls back to placeholder
+credentials for any that are missing, so a build without them
+succeeds but ships a service worker that can never receive push
+notifications.
 
 1.  **Build**:
     ```bash
@@ -20,13 +29,24 @@ The web application is hosted on GitHub Pages.
     ```
     This pushes the `dist` folder to the `gh-pages` branch.
 
-## Cloud Functions Deployment
+## Cloud Functions, Firestore Rules, and Storage Rules Deployment
 
-Not currently automated in CI — deploy manually from `functions/`:
+Not currently automated in CI — deploy manually. `firebase deploy`
+with no `--only` flag deploys functions, Firestore rules/indexes, and
+Storage rules together and is the simplest way to avoid the three
+drifting out of sync (e.g. shipping a Cloud Function that depends on a
+rules change without the rules change itself, which is exactly what
+would have happened deploying the bottle-scanner feature under the
+command this doc used to list here):
 ```bash
-cd functions && npm run build
-firebase deploy --only functions
+cd functions && npm run build && cd ..
+firebase deploy --only functions,firestore:rules,firestore:indexes,storage
 ```
+`firebase deploy --only functions` alone (the old instruction here)
+deploys functions ONLY — it does not touch `firestore.rules`,
+`firestore.indexes.json`, or `storage.rules`, even though all three
+are wired into `firebase.json` and any of them can change alongside
+a functions change.
 
 ### Required environment variables
 

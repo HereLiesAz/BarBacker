@@ -178,10 +178,6 @@ function App() {
   // 'Owner' instead of 'Staff'. Reset to false the moment it's
   // consumed or the user backs out of bar selection.
   const [justCreatedBar, setJustCreatedBar] = useState(false);
-  // The bar's join policy ('open' | 'approval'), read off the bar
-  // document. Determines whether confirmRole writes status 'active'
-  // or 'pending' for a joining (non-creator) user.
-  const [barJoinPolicy, setBarJoinPolicy] = useState<'open' | 'approval'>('open');
   // Store the user's notification preferences (list of button IDs).
   const [notificationPreferences, setNotificationPreferences] = useState<string[]>([]);
 
@@ -442,7 +438,6 @@ function App() {
       setDisplayName('');
       setNotificationPreferences([]);
       setBarName('');
-      setBarJoinPolicy('open');
       setButtons(DEFAULT_BUTTONS);
       setBeerInventory({});
       setWells([]);
@@ -492,7 +487,6 @@ function App() {
       if (d.exists()) {
         const data = d.data() as Bar;
         setBarName(data.name);
-        setBarJoinPolicy(data.joinPolicy === 'approval' ? 'approval' : 'open');
 
         // Merge default buttons with custom bar buttons.
         if (data.buttons) {
@@ -1090,16 +1084,31 @@ function App() {
     // same source firestore.rules' self-create rule actually trusts:
     // bars/{barId}.ownerId.
     let isCreator = justCreatedBar;
+    // Same staleness problem as isCreator above, and the same fix:
+    // barJoinPolicy is only as fresh as the bar-config listener's
+    // last snapshot, but RoleSelector renders (and is tappable) the
+    // moment userRole is null — before that listener's FIRST snapshot
+    // has necessarily arrived. A user who confirms fast, or on a slow
+    // connection, computed status from barJoinPolicy's 'open' default
+    // even when the bar's real joinPolicy was 'approval', and
+    // firestore.rules' self-create rule checks the server's actual
+    // value — status=='active' against a real 'approval' policy is
+    // rejected outright, surfacing as "Failed to join this bar" with
+    // no indication why. Reading it fresh here (reusing the same
+    // getDoc as the ownership check, when one was needed) closes that
+    // window instead of just working around one symptom of it.
+    let joinPolicy: string = 'open';
     if (!isCreator) {
       try {
         const barSnap = await getDoc(doc(db, 'bars', barId));
         isCreator = barSnap.data()?.ownerId === user.uid;
+        joinPolicy = barSnap.data()?.joinPolicy ?? 'open';
       } catch (e) {
         console.error('Failed to verify bar ownership before joining', e);
       }
     }
     const role = isCreator ? 'Owner' : 'Staff';
-    const status = (role === 'Owner' || barJoinPolicy !== 'approval') ? 'active' : 'pending';
+    const status = (role === 'Owner' || joinPolicy !== 'approval') ? 'active' : 'pending';
 
     try {
       // Update Global User Document with joined bar.

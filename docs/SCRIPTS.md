@@ -1,6 +1,6 @@
 # Scripts Documentation
 
-The `scripts/` directory contains Node.js scripts used for build automation and maintenance.
+The `scripts/` directory contains plain Node.js scripts used for build automation and scheduled maintenance — these are separate from the actual Cloud Functions backend (`functions/`, see [ARCHITECTURE.md](ARCHITECTURE.md) and [DATA_MODEL.md](DATA_MODEL.md)), which handles real-time notification fanout, OAuth, and its own scheduled jobs.
 
 ## `generate-sw.js`
 *   **Purpose**: Generates the `firebase-messaging-sw.js` service worker file.
@@ -13,15 +13,16 @@ The `scripts/` directory contains Node.js scripts used for build automation and 
 *   **How**: It reads individual fields from environment variables (e.g., `VITE_FIREBASE_PROJECT_ID`) and constructs the JSON file at `android/app/google-services.json`.
 
 ## `enrich-bars.js`
-*   **Purpose**: A utility script to backfill data or perform batch updates on Bar documents.
-*   **Usage**: Run manually to migrate data schemas (e.g., adding a default button configuration to all bars).
+*   **Purpose**: Backfills/normalizes `bars` documents (e.g. filling in missing fields from an OpenStreetMap lookup).
+*   **Runs**: Scheduled every 6 hours via `.github/workflows/enrich-bars.yml`, using `FIREBASE_SERVICE_ACCOUNT`. Also runnable manually (`workflow_dispatch`) or locally.
 
 ## `deduplicate.js`
-*   **Purpose**: A maintenance script to remove duplicate entries if they occur.
+*   **Purpose**: Finds and removes duplicate `bars` documents (e.g. two entries for the same venue created independently via search).
+*   **Runs**: Scheduled daily at 2 AM UTC via `.github/workflows/deduplicate.yml`, using `FIREBASE_SERVICE_ACCOUNT`. Also runnable manually or locally.
 
 ## `nag-bot.js`
-*   **Purpose**: A standalone bot script (likely run on a server) that monitors requests and sends reminders if they are not claimed.
-*   **Status**: Currently experimental/optional.
+*   **Purpose**: Re-notifies (FCM + `ntfy.sh`) anyone who hasn't dismissed a pending request that matches their notification preferences — the same eligibility logic as the server-side `onRequestCreated` Cloud Function (`shouldNagUserAbout` mirrors `notifyEligibility.ts`; kept manually in sync since nothing shares a build step between `scripts/` and `functions/`). Chunks its FCM sends at 400 tokens (under the SDK's 500 hard limit) and bumps each bar's `lastNotification` immediately after that bar's send attempt, not once at the end for every bar.
+*   **Runs**: Scheduled every 5 minutes via `.github/workflows/nag.yml`, using `FIREBASE_SERVICE_ACCOUNT`. Also runnable manually or locally — this is the primary reliability net for missed pushes, not an optional/experimental feature.
 
 ## `debug-test.cjs`
 *   **Purpose**: A CommonJS script for testing the debugging utilities in a standalone node environment.

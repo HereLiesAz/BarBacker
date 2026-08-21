@@ -1,5 +1,16 @@
 # Feature Set Hardening + Build-Out — Design
 
+> **Status: all four phases shipped**, plus a subsequent multi-round
+> adversarial audit pass. This is the original design doc, kept for
+> historical context — for current status and what's actually open,
+> see [`future-features.md`](future-features.md); for the
+> as-implemented data model and architecture, see
+> [`../DATA_MODEL.md`](../DATA_MODEL.md) and
+> [`../ARCHITECTURE.md`](../ARCHITECTURE.md). Some specifics below
+> (e.g. the ownership-claim waterfall's exact steps) may have been
+> simplified during implementation — those docs, not this one, are
+> the source of truth for current behavior.
+
 **Date:** 2026-05-21
 **Scope:** Staff-side feature set only. Customer-facing ordering PWA deferred to a separate brainstorm.
 

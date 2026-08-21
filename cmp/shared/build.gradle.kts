@@ -62,6 +62,9 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.mlkit.text.recognition)
+            implementation(libs.androidx.credentials)
+            implementation(libs.androidx.credentials.play.services)
+            implementation(libs.google.id)
         }
 
         val desktopMain by getting

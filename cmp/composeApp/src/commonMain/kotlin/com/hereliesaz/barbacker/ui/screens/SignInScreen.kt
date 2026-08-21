@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hereliesaz.barbacker.data.SocialProvider
 import com.hereliesaz.barbacker.ui.theme.BarBackerColors
 
 /**
@@ -57,7 +60,10 @@ fun RestoringScreen() {
 fun SignInScreen(
     isRegistering: Boolean,
     authError: String?,
+    /** Providers this platform and build can actually run. Often empty. */
+    socialProviders: List<SocialProvider>,
     onSetRegistering: (Boolean) -> Unit,
+    onSocialSignIn: (SocialProvider) -> Unit,
     onSubmit: (email: String, password: String) -> Unit,
 ) {
     var email by rememberSaveable { mutableStateOf("") }
@@ -126,6 +132,48 @@ fun SignInScreen(
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                 ) {
                     Text(if (isRegistering) "Create Account" else "Clock In")
+                }
+            }
+
+            // Only providers this platform and build can actually run.
+            // A "Sign in with Apple" button on Android would open a flow
+            // that needs a confidential client secret this app has no
+            // safe place to keep, so it is absent rather than broken.
+            if (socialProviders.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    HorizontalDivider(
+                        color = BarBackerColors.Outline,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "OR",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = BarBackerColors.OnSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                    HorizontalDivider(
+                        color = BarBackerColors.Outline,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                socialProviders.forEach { provider ->
+                    OutlinedButton(
+                        onClick = { onSocialSignIn(provider) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .padding(bottom = 8.dp),
+                    ) {
+                        Text("Continue with ${provider.label}")
+                    }
                 }
             }
 

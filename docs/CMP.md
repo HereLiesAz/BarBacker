@@ -72,17 +72,32 @@ VITE_FIREBASE_MESSAGING_SENDER_ID
 VITE_FIREBASE_APP_ID
 ```
 
-One more is optional:
+These are optional, and each feature reports itself unsupported rather
+than failing when its value is absent:
 
 ```
 VITE_ICAL_FEED_BASE_URL
+VITE_GOOGLE_SERVER_CLIENT_ID
+VITE_GOOGLE_DESKTOP_CLIENT_ID
+VITE_GOOGLE_DESKTOP_CLIENT_SECRET
+VITE_GOOGLE_IOS_CLIENT_ID
 ```
 
-It names where the outbound iCal feed is actually served from — a Cloud
-Function, on a different host from everything else. Deliberately outside
-the required set, so a deployment that never enabled the feed still runs;
-Calendar Settings then says the link cannot be shown rather than
+`VITE_ICAL_FEED_BASE_URL` names where the outbound iCal feed is actually
+served from — a Cloud Function, on a different host from everything else.
+Without it, Calendar Settings says the link cannot be shown rather than
 constructing one that 404s.
+
+The `VITE_GOOGLE_*` values are OAuth client ids for Google sign-in, and
+which one each platform needs is not interchangeable:
+
+| Value | Used by | Notes |
+|---|---|---|
+| `SERVER_CLIENT_ID` | Android | The project's **web** client id, not the Android one — it is the audience Firebase expects in the ID token, and the Android client id yields a token Firebase rejects. |
+| `DESKTOP_CLIENT_ID` / `_SECRET` | Desktop | A "Desktop app" client. The secret is **not** confidential — it ships in the binary, and PKCE is what protects the flow; Google's token endpoint simply asks for it. |
+| `IOS_CLIENT_ID` | iOS | Its reversed form is the redirect scheme, and must also appear under `CFBundleURLTypes` in `Info.plist`. |
+
+With none of them set, the sign-in screen shows email and password only.
 
 Where each platform looks for them:
 
@@ -208,7 +223,7 @@ without the refresh, every role-gated read stays denied for up to an hour.
 
 ## Testing
 
-`./gradlew :shared:desktopTest` runs the shared suite: 116 tests covering
+`./gradlew :shared:desktopTest` runs the shared suite: 123 tests covering
 the ported pure logic — contrast colour, brand matching, the button label
 resolver, sort order, sub-menu synthesis, tap classification, reorder
 arithmetic, picked-image identity, OCR line filtering, event-time
@@ -248,6 +263,11 @@ fails if it is lost:
 - OCR emits stray single glyphs from a label's border. Each one is
   another chance for the brand matcher to find a spurious substring hit,
   so one-character lines never reach it.
+- PKCE's `code_challenge` is base64url with no padding, and the platforms
+  disagree enough that it is hand-rolled. Both tail cases are pinned:
+  getting one wrong yields a challenge that fails only for some digests,
+  which looks like an intermittent sign-in bug rather than an encoder
+  one.
 
 ## Status
 
@@ -287,6 +307,10 @@ Working end to end:
   add-to-menu / 86 / send-alert actions
 - Remote images: the bar's logo in the theme editor, and a scanned
   bottle's photo on the request row it is attached to
+- Google sign-in on Android (Credential Manager) and desktop (a loopback
+  redirect with PKCE), alongside email and password
+- The ntfy deep link: the notification screen mints an account topic on
+  first open and hands it straight to the ntfy app
 
 Not built yet — the PWA remains the complete client:
 
@@ -298,10 +322,12 @@ Not built yet — the PWA remains the complete client:
   `PhotoCapture.ios.kt`, and `BottleRecognizer.ios.kt` are written
   against `UIDocumentPickerViewController`, `UIImagePickerController`,
   and Vision respectively, but with no macOS runner and no Xcode project
-  none has ever been compiled. Treat them as first drafts. The camera one
-  also needs an `NSCameraUsageDescription` in `Info.plist`, or iOS
-  terminates the app the moment the picker opens. Android and desktop are
-  built in CI.
+  none has ever been compiled. `SocialSignIn.ios.kt` joins them —
+  `ASWebAuthenticationSession` for Google, `ASAuthorizationController` for
+  Apple. Treat them all as first drafts. The camera one also needs an
+  `NSCameraUsageDescription` in `Info.plist`, or iOS terminates the app
+  the moment the picker opens, and Apple sign-in needs the "Sign in with
+  Apple" capability on the target. Android and desktop are built in CI.
 - **The bottle scanner needs a camera and OCR, so desktop has neither
   half.** ML Kit is Android-only and Vision is Apple-only; the
   alternatives were bundling a Tesseract native library per desktop
@@ -311,9 +337,12 @@ Not built yet — the PWA remains the complete client:
 - **Desktop push.** There is no FCM transport for a JVM app. The
   provider reports this explicitly rather than registering nothing and
   looking broken; the in-app alert loop is what pages a desktop user.
-- **ntfy deep linking.** The notification-settings screen shows the
-  topic for manual subscription but has no `ntfy://` link.
-- **Google and Apple sign-in.** Email/password only.
+- **Apple sign-in away from iOS.** Apple's web flow needs a client
+  secret that is a JWT signed with a private key — a real confidential
+  credential, which an app shipped to devices has nowhere safe to keep.
+  Doing it properly needs a Cloud Function to run the exchange, and that
+  does not exist. The button is hidden on Android and desktop rather than
+  offered and broken.
 
 Deliberately absent, because the PWA has no such feature either:
 inventory *removal*. Wells, brands, and types are added from the grid's

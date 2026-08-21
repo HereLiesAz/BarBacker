@@ -2,6 +2,8 @@ package com.hereliesaz.barbacker.data
 
 import com.hereliesaz.barbacker.logWarning
 import dev.gitlive.firebase.auth.FirebaseAuth
+import dev.gitlive.firebase.auth.GoogleAuthProvider
+import dev.gitlive.firebase.auth.OAuthProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
@@ -31,6 +33,18 @@ interface AuthRepository {
 
     suspend fun signIn(email: String, password: String)
     suspend fun register(email: String, password: String)
+
+    /**
+     * Signs in with tokens a platform sign-in flow already obtained.
+     *
+     * Firebase links by verified email, so signing in with Google using
+     * the address of an existing password account attaches the provider
+     * to that same account rather than creating a second one — which is
+     * what keeps a bartender's memberships from vanishing because they
+     * tapped a different button this time.
+     */
+    suspend fun signInWithSocial(credential: SocialCredential)
+
     suspend fun signOut()
 
     /**
@@ -74,6 +88,26 @@ class FirebaseAuthRepository(private val auth: FirebaseAuth) : AuthRepository {
 
     override suspend fun register(email: String, password: String) {
         auth.createUserWithEmailAndPassword(email, password)
+    }
+
+    override suspend fun signInWithSocial(credential: SocialCredential) {
+        val authCredential = when (credential.provider) {
+            SocialProvider.Google -> GoogleAuthProvider.credential(
+                idToken = credential.idToken,
+                accessToken = credential.accessToken,
+            )
+
+            // rawNonce, not the hash that went to Apple: Firebase hashes
+            // this itself and compares, and passing the already-hashed
+            // value fails as a generic invalid-credential error.
+            SocialProvider.Apple -> OAuthProvider.credential(
+                providerId = credential.provider.wire,
+                accessToken = credential.accessToken,
+                idToken = credential.idToken,
+                rawNonce = credential.rawNonce,
+            )
+        }
+        auth.signInWithCredential(authCredential)
     }
 
     override suspend fun signOut() {

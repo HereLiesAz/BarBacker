@@ -155,6 +155,14 @@ data class AppUiState(
     /** Keyed by provider id. Manager+ only. */
     val posConnections: Map<String, POSConnectionStatus> = emptyMap(),
     val posMenu: List<POSMenuItem> = emptyList(),
+
+    /**
+     * This account's ntfy topic, for the iOS push fallback.
+     *
+     * Account-level rather than per-bar: it is what the server-side fanout
+     * publishes to, and an iOS user subscribes to it once.
+     */
+    val ntfyTopic: String? = null,
 ) {
     val currentUser get() = (auth as? AuthState.SignedIn)?.user
 

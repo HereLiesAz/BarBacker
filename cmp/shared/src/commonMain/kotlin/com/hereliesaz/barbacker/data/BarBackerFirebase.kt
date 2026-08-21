@@ -38,6 +38,9 @@ data class BarBackerFirebaseConfig(
      * the feed simply has none.
      */
     val icalFeedBaseUrl: String? = null,
+
+    /** Google OAuth client ids, absent when this build has none. */
+    val googleOAuth: GoogleOAuthConfig? = null,
 ) {
     internal fun toFirebaseOptions() = FirebaseOptions(
         applicationId = applicationId,

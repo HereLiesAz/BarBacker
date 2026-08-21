@@ -7,6 +7,8 @@ import dev.gitlive.firebase.auth.FirebaseAuth
 import dev.gitlive.firebase.auth.auth
 import dev.gitlive.firebase.firestore.FirebaseFirestore
 import dev.gitlive.firebase.firestore.firestore
+import dev.gitlive.firebase.functions.FirebaseFunctions
+import dev.gitlive.firebase.functions.functions
 import dev.gitlive.firebase.initialize
 
 /**
@@ -49,6 +51,7 @@ class BarBackerFirebase private constructor(
     val app: FirebaseApp,
     val auth: FirebaseAuth,
     val firestore: FirebaseFirestore,
+    val functions: FirebaseFunctions,
 ) {
     companion object {
         /**
@@ -64,6 +67,10 @@ class BarBackerFirebase private constructor(
                 app = app,
                 auth = Firebase.auth(app),
                 firestore = Firebase.firestore(app),
+                // Default region (us-central1), matching where the web
+                // client's getFunctions(app) points and where the
+                // callables are actually deployed.
+                functions = Firebase.functions(app),
             )
         }
     }

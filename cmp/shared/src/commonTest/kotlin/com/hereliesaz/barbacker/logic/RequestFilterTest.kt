@@ -121,6 +121,44 @@ class VisibleRequestsTest {
     }
 }
 
+class OutstandingAlertsTest {
+
+    private fun request(id: String) =
+        Request(id = id, label = "ICE", requesterId = "u", barId = "bar1")
+
+    @Test
+    fun sounds_when_an_unmuted_request_is_waiting() {
+        assertTrue(hasOutstandingAlerts(listOf(request("1")), emptySet()))
+    }
+
+    @Test
+    fun stays_silent_when_every_request_is_muted() {
+        // The loop repeats every minute. Without this, muting a page would
+        // dim it visually but keep making noise until someone else resolved
+        // it — which defeats the point of muting entirely.
+        assertFalse(hasOutstandingAlerts(listOf(request("1")), setOf("1")))
+    }
+
+    @Test
+    fun sounds_when_one_of_several_is_unmuted() {
+        assertTrue(hasOutstandingAlerts(listOf(request("1"), request("2")), setOf("1")))
+    }
+
+    @Test
+    fun stays_silent_with_nothing_waiting() {
+        assertFalse(hasOutstandingAlerts(emptyList(), emptySet()))
+    }
+
+    @Test
+    fun a_muted_request_still_counts_as_visible() {
+        // The two questions are deliberately different: a muted page stays
+        // on screen and countable, it just stops making noise.
+        val muted = listOf(request("1"))
+        assertFalse(hasOutstandingAlerts(muted, setOf("1")))
+        assertTrue(muted.isNotEmpty())
+    }
+}
+
 class ButtonPendingTest {
 
     private fun pending(id: String, label: String) =

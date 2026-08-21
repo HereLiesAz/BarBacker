@@ -63,6 +63,7 @@ fun App(platformContext: Any? = null) {
         AppContainer(
             firebase = BarBackerFirebase.initialize(config, platformContext),
             store = createKeyValueStore(platformContext),
+            platformContext = platformContext,
         )
     }
 
@@ -81,6 +82,8 @@ private fun BarBackerApp(container: AppContainer) {
             eightySix = container.eightySix,
             ownershipClaims = container.ownershipClaims,
             placeSearch = container.placeSearch,
+            pushTokens = container.pushTokens,
+            alerter = container.alerter,
             store = container.store,
         )
     }

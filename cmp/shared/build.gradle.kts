@@ -44,6 +44,7 @@ kotlin {
             api(libs.firebase.firestore)
             implementation(libs.firebase.storage)
             implementation(libs.firebase.functions)
+            implementation(libs.firebase.messaging)
 
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)

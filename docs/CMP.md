@@ -175,10 +175,10 @@ without the refresh, every role-gated read stays denied for up to an hour.
 
 ## Testing
 
-`./gradlew :shared:desktopTest` runs the shared suite: 70 tests covering
+`./gradlew :shared:desktopTest` runs the shared suite: 75 tests covering
 the ported pure logic — contrast colour, brand matching, the button label
-resolver, sort order, sub-menu synthesis, and the request visibility
-filter.
+resolver, sort order, sub-menu synthesis, the request visibility filter,
+and alert eligibility.
 
 These are the pieces where a silent divergence from the PWA would be
 hardest to notice, so each behavioural subtlety is pinned by a test that
@@ -194,6 +194,10 @@ fails if it is lost:
 - An explicitly empty preference list is not overwritten by job-title
   defaults.
 - Brand sub-menus key off the label, not the `brand_`-prefixed id.
+- Muted requests stay *visible* but stop being *alert-worthy* — two
+  genuinely different questions, and conflating them would either
+  silently drop pages or keep making noise about ones deliberately set
+  aside.
 
 ## Status
 
@@ -214,15 +218,22 @@ Working end to end:
   the 86'd list, and ownership claims
 - Premium bar theming, with a readability check on the branded label
   colour
+- Push registration on Android and iOS, plus the in-app alert loop that
+  sounds and vibrates every minute while un-muted pages are waiting
 
 Not built yet — the PWA remains the complete client:
 
 - **Calendar, POS settings, and the bottle scanner.** The domain models
   are ported; the screens are not.
-- **Push notifications.** No FCM registration, so the nag loop and
-  server-side fanout do not reach this client. The notification-settings
-  screen shows the ntfy topic for manual subscription but has no
-  `ntfy://` deep link.
+- **iOS push delivery.** The token code is shared with Android, but iOS
+  needs an APNs capability and entitlement configured in an Xcode
+  project that does not exist yet (see `cmp/iosApp/README.md`). Until
+  then iOS falls back to the in-app alert loop.
+- **Desktop push.** There is no FCM transport for a JVM app. The
+  provider reports this explicitly rather than registering nothing and
+  looking broken; the in-app alert loop is what pages a desktop user.
+- **ntfy deep linking.** The notification-settings screen shows the
+  topic for manual subscription but has no `ntfy://` link.
 - **Drag-to-reorder.** The grid honours a saved order; it cannot write one.
 - **Bar management.** No invite form, button hiding, or inventory editing.
 - **Google and Apple sign-in.** Email/password only.

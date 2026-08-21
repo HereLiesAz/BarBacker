@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hereliesaz.barbacker.ASK_ME_SUFFIX
 import com.hereliesaz.barbacker.INVITE_CHECK_TIMEOUT_MILLIS
+import com.hereliesaz.barbacker.Alerter
 import com.hereliesaz.barbacker.MAX_IGNORED_IDS
+import com.hereliesaz.barbacker.NAG_INTERVAL_MILLIS
 import com.hereliesaz.barbacker.NOTIFICATION_DEFAULTS_BY_TITLE
 import com.hereliesaz.barbacker.REQUEST_WINDOW_MILLIS
 import com.hereliesaz.barbacker.REQUEST_WINDOW_REFRESH_MILLIS
@@ -24,10 +26,12 @@ import com.hereliesaz.barbacker.data.PLACE_SEARCH_DEBOUNCE_MILLIS
 import com.hereliesaz.barbacker.data.PLACE_SEARCH_MIN_LENGTH
 import com.hereliesaz.barbacker.data.PlaceResult
 import com.hereliesaz.barbacker.data.PlaceSearchRepository
+import com.hereliesaz.barbacker.data.PushTokenProvider
 import com.hereliesaz.barbacker.data.RequestAlreadyClaimedException
 import com.hereliesaz.barbacker.data.RequestRepository
 import com.hereliesaz.barbacker.logWarning
 import com.hereliesaz.barbacker.logic.dynamicChildrenOf
+import com.hereliesaz.barbacker.logic.hasOutstandingAlerts
 import com.hereliesaz.barbacker.logic.requestLabelFor
 import com.hereliesaz.barbacker.model.Bar
 import com.hereliesaz.barbacker.model.BarRole
@@ -73,6 +77,8 @@ class AppViewModel(
     private val eightySix: EightySixRepository,
     private val ownershipClaims: OwnershipClaimRepository,
     private val placeSearch: PlaceSearchRepository,
+    private val pushTokens: PushTokenProvider,
+    private val alerter: Alerter,
     private val store: KeyValueStore,
 ) : ViewModel() {
 
@@ -238,6 +244,59 @@ class AppViewModel(
         watchForAutoClockIn()
         watchBarIdForChatReset()
         watchSearchQuery()
+        watchForPushRegistration()
+        startNagLoop()
+    }
+
+    /**
+     * Registers this device's push token once the member is active in a bar.
+     *
+     * Gated on ACTIVE rather than merely present: a pending member must not
+     * be paged for a bar that has not admitted them yet, and the rules
+     * would reject the write anyway.
+     *
+     * The matching de-registration lives in [goOffClock] and
+     * [MembershipRepository.leave] — deleting the token document is what
+     * actually stops the pages, and leaving it behind means the nag cron
+     * keeps waking a phone whose shift ended.
+     */
+    private fun watchForPushRegistration() {
+        viewModelScope.launch {
+            if (!pushTokens.isSupported) return@launch
+            combine(barIdFlow, uidFlow, barScope.map { it.membership?.status }) {
+                    barId, uid, status ->
+                Triple(barId, uid, status)
+            }.distinctUntilChanged().collect { (barId, uid, status) ->
+                if (barId == null || uid == null || status != MemberStatus.Active) {
+                    return@collect
+                }
+                val token = pushTokens.currentToken() ?: return@collect
+                runCatching { memberships.registerPushToken(barId, uid, token) }
+                    .onFailure { logWarning("Could not register the push token", it) }
+            }
+        }
+    }
+
+    /**
+     * Sounds an alert while un-muted pages are outstanding.
+     *
+     * This is the in-app half of paging, and it is what actually works on
+     * the tablet sitting open behind the bar — the case push handles worst.
+     * Muted requests are excluded, which is the whole point of muting; the
+     * loop would otherwise keep sounding for a page someone deliberately
+     * set aside.
+     */
+    private fun startNagLoop() {
+        viewModelScope.launch {
+            while (true) {
+                delay(NAG_INTERVAL_MILLIS)
+                val current = state.value
+                if (current.screen != Screen.Dashboard) continue
+                if (hasOutstandingAlerts(current.visibleRequests, current.ignoredIds)) {
+                    alerter.alert()
+                }
+            }
+        }
     }
 
     /**

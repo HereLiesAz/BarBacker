@@ -27,6 +27,8 @@ lifecycle = "2.9.4"
 # setContent; there is no multiplatform equivalent because the entry
 # point is inherently per-platform.
 androidxActivity = "1.9.3"
+# ContextCompat, for the Android 13+ notification permission check.
+androidxCore = "1.13.1"
 
 # GitLive's Firebase KMP wrappers. Publishes android/ios/jvm/js/macos
 # targets — notably NOT wasmJs, which is why the web build stays on the
@@ -45,6 +47,7 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
 
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
 
 lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle" }
 lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
@@ -53,6 +56,7 @@ firebase-auth = { module = "dev.gitlive:firebase-auth", version.ref = "gitliveFi
 firebase-firestore = { module = "dev.gitlive:firebase-firestore", version.ref = "gitliveFirebase" }
 firebase-storage = { module = "dev.gitlive:firebase-storage", version.ref = "gitliveFirebase" }
 firebase-functions = { module = "dev.gitlive:firebase-functions", version.ref = "gitliveFirebase" }
+firebase-messaging = { module = "dev.gitlive:firebase-messaging", version.ref = "gitliveFirebase" }
 
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }

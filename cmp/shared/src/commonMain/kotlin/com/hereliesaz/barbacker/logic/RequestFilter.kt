@@ -49,6 +49,20 @@ fun visibleRequests(
     .sortedBy { it.id in ignoredIds }
 
 /**
+ * Whether the in-app alert loop should sound.
+ *
+ * Muted requests are excluded, which is the entire point of muting — the
+ * loop repeats every minute, so a page someone deliberately set aside
+ * would otherwise keep making noise until it was resolved by someone else.
+ *
+ * Note this differs from [visibleRequests], which keeps muted entries
+ * (sorted last) so they stay countable and recoverable. Visible and
+ * alert-worthy are genuinely different questions.
+ */
+fun hasOutstandingAlerts(visible: List<Request>, ignoredIds: Set<String>): Boolean =
+    visible.any { it.id !in ignoredIds }
+
+/**
  * Whether a grid tile should render its pending/pulsing state.
  *
  * A prefix match, so a page for "GARNISH: LIMES" lights up the GARNISH

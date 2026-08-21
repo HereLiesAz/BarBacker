@@ -16,4 +16,8 @@ class AppContainer(
     val bars: BarRepository = FirebaseBarRepository(firebase.firestore)
     val memberships: MembershipRepository = FirebaseMembershipRepository(firebase.firestore)
     val requests: RequestRepository = FirebaseRequestRepository(firebase.firestore)
+    val chat: ChatRepository = FirebaseChatRepository(firebase.firestore)
+    val eightySix: EightySixRepository = FirebaseEightySixRepository(firebase.firestore)
+    val ownershipClaims: OwnershipClaimRepository =
+        FirebaseOwnershipClaimRepository(firebase.firestore, firebase.functions)
 }

@@ -13,7 +13,10 @@ import com.hereliesaz.barbacker.logic.visibleRequests
 import com.hereliesaz.barbacker.model.Bar
 import com.hereliesaz.barbacker.model.BarUser
 import com.hereliesaz.barbacker.model.ButtonConfig
+import com.hereliesaz.barbacker.model.ChatMessage
+import com.hereliesaz.barbacker.model.EightySixEntry
 import com.hereliesaz.barbacker.model.MemberStatus
+import com.hereliesaz.barbacker.model.OwnershipClaim
 import com.hereliesaz.barbacker.model.Request
 import com.hereliesaz.barbacker.model.SubscriptionTier
 
@@ -74,6 +77,34 @@ data class AppUiState(
 
     /** A transient message for the user; cleared once shown. */
     val message: String? = null,
+
+    // --- Feature surfaces layered over the dashboard. ---
+
+    /**
+     * Which overlay is open, if any.
+     *
+     * One value rather than a boolean per dialog. The web client carries
+     * fourteen independent flags, which makes "two dialogs open at once"
+     * representable and has produced exactly that bug; here it cannot
+     * happen.
+     */
+    val activeDialog: ActiveDialog = ActiveDialog.None,
+
+    /** Pinned messages driving the marquee. Live whenever a bar is selected. */
+    val pinnedMessages: List<ChatMessage> = emptyList(),
+
+    /** Scrollback, oldest first. Only populated while the chat panel is open. */
+    val chatMessages: List<ChatMessage> = emptyList(),
+
+    /** Pages loaded by "load earlier", oldest first, prepended to [chatMessages]. */
+    val olderChatMessages: List<ChatMessage> = emptyList(),
+    val chatHasMore: Boolean = true,
+    val chatLoadingMore: Boolean = false,
+    val latestMessageAt: Long = 0L,
+    val chatLastReadAt: Long = 0L,
+
+    val eightySixEntries: List<EightySixEntry> = emptyList(),
+    val pendingOwnershipClaims: List<OwnershipClaim> = emptyList(),
 ) {
     val currentUser get() = (auth as? AuthState.SignedIn)?.user
 
@@ -166,7 +197,44 @@ data class AppUiState(
         if (parent == null) sorted + CUSTOM_REQUEST_BUTTON else sorted
     }
 
+    /** Scrollback with earlier pages prepended, oldest first. */
+    val fullChatHistory: List<ChatMessage> by lazy { olderChatMessages + chatMessages }
+
+    /**
+     * Whether to show the unread dot.
+     *
+     * Suppressed while the panel is open, since anything arriving then is
+     * already on screen.
+     */
+    val chatHasUnread: Boolean
+        get() = activeDialog != ActiveDialog.Chat && latestMessageAt > chatLastReadAt
+
+    /**
+     * Whether this member may see private 86'd entries.
+     *
+     * Drives the QUERY, not a display filter — a member without it never
+     * requests private entries, so the reason text never reaches them.
+     */
+    val canSeePrivateEightySix: Boolean get() = isPremium && isManagerPlus
+
+    val clockedInMembers: List<BarUser> by lazy {
+        roster.filter { it.status == MemberStatus.Active }
+    }
+
+    val offClockMembers: List<BarUser> by lazy {
+        roster.filter { it.status == MemberStatus.OffClock }
+    }
+
     companion object {
         const val MAIN_CONTEXT_ID = "main"
     }
+}
+
+/** The overlays reachable from the dashboard. */
+enum class ActiveDialog {
+    None,
+    Chat,
+    EightySix,
+    Roster,
+    NotificationSettings,
 }

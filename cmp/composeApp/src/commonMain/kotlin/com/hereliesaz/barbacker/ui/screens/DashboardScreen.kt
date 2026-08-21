@@ -26,14 +26,23 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +53,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -71,14 +83,20 @@ data class DashboardActions(
     val onCancel: (String) -> Unit,
     val onIgnore: (String) -> Unit,
     val onOpenRoster: () -> Unit,
+    val onOpenChat: () -> Unit,
+    val onOpenEightySix: () -> Unit,
+    val onOpenNotificationSettings: () -> Unit,
     val onSwitchBar: () -> Unit,
+    val onGoOffClock: () -> Unit,
 )
 
 @Composable
 fun DashboardScreen(state: AppUiState, actions: DashboardActions) {
     Surface(color = BarBackerColors.Background, modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            DashboardTopBar(state = state, onSwitchBar = actions.onSwitchBar)
+            DashboardTopBar(state = state, actions = actions)
+
+            PinnedMarquee(pinned = state.pinnedMessages, onClick = actions.onOpenChat)
 
             Box(modifier = Modifier.weight(1f)) {
                 ButtonGrid(state = state, onButtonTapped = actions.onButtonTapped)
@@ -97,14 +115,15 @@ fun DashboardScreen(state: AppUiState, actions: DashboardActions) {
 }
 
 @Composable
-private fun DashboardTopBar(state: AppUiState, onSwitchBar: () -> Unit) {
+private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
+    var menuOpen by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(BarBackerColors.Surface)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -115,27 +134,101 @@ private fun DashboardTopBar(state: AppUiState, onSwitchBar: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            // Job title, falling back to the privilege tier — the two are
-            // different axes and the title is the more useful label.
-            Text(
-                text = state.membership?.jobTitle?.wire
-                    ?: state.membership?.role?.wire.orEmpty(),
-                style = MaterialTheme.typography.bodySmall,
-                color = BarBackerColors.OnSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Job title, falling back to the privilege tier — the two
+                // are different axes and the title is the more useful label.
+                Text(
+                    text = state.membership?.jobTitle?.wire
+                        ?: state.membership?.role?.wire.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = BarBackerColors.OnSurfaceVariant,
+                )
+                Text(
+                    text = " · ${state.barName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = BarBackerColors.OnSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
-        Text(
-            text = state.barName,
-            fontWeight = FontWeight.Bold,
-            fontSize = 18.sp,
-            color = BarBackerColors.Primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
+        Box {
+            IconButton(onClick = actions.onOpenChat) {
+                Icon(
+                    Icons.Filled.Forum,
+                    contentDescription = "Chat",
+                    tint = BarBackerColors.OnSurface,
+                )
+            }
+            if (state.chatHasUnread) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .size(10.dp)
+                        .background(BarBackerColors.Error, CircleShape),
+                )
+            }
+        }
 
-        TextButton(onClick = onSwitchBar) { Text("Switch") }
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "Menu",
+                    tint = BarBackerColors.OnSurface,
+                )
+            }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Who's On") },
+                    leadingIcon = { Icon(Icons.Filled.Group, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        actions.onOpenRoster()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("86'd List") },
+                    leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        actions.onOpenEightySix()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Pagers") },
+                    leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        actions.onOpenNotificationSettings()
+                    },
+                )
+                HorizontalDivider(color = BarBackerColors.Outline)
+                DropdownMenuItem(
+                    text = { Text("Switch Bar") },
+                    leadingIcon = { Icon(Icons.Filled.SyncAlt, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        actions.onSwitchBar()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Clock Out") },
+                    leadingIcon = {
+                        Icon(Icons.Filled.PowerSettingsNew, contentDescription = null)
+                    },
+                    onClick = {
+                        menuOpen = false
+                        actions.onGoOffClock()
+                    },
+                )
+            }
+        }
     }
     HorizontalDivider(color = BarBackerColors.Outline)
 }

@@ -204,7 +204,13 @@ Working end to end:
 - The join flow, including invite consumption and approval-pending
 - The dashboard: request grid, sub-menu drill-down with synthesised
   children, sending pages, and claim / cancel / mute
-- Realtime updates for the bar config, membership, roster, and requests
+- Chat, with pinning, deletion, paged scrollback, the dashboard marquee,
+  and an unread badge
+- The 86'd list, including premium private entries
+- The roster, with the Manager+ approval and ownership-claim queues
+- Per-member notification preferences
+- Realtime updates for bar config, membership, roster, requests, chat,
+  the 86'd list, and ownership claims
 - Premium bar theming, with a readability check on the branded label
   colour
 
@@ -213,12 +219,14 @@ Not built yet — the PWA remains the complete client:
 - **OpenStreetMap bar search.** Needs an HTTP client this module does not
   carry yet. Joining a bar you are not already a member of currently
   happens through an invite link.
-- **Chat, the 86'd list, calendar, POS settings, and the bottle
-  scanner.** The domain models are ported; the screens are not.
+- **Calendar, POS settings, and the bottle scanner.** The domain models
+  are ported; the screens are not.
 - **Push notifications.** No FCM registration, so the nag loop and
-  server-side fanout do not reach this client.
+  server-side fanout do not reach this client. The notification-settings
+  screen shows the ntfy topic for manual subscription but has no
+  `ntfy://` deep link.
 - **Drag-to-reorder.** The grid honours a saved order; it cannot write one.
-- **The roster dialog.** The approvals badge renders but opens nothing.
+- **Bar management.** No invite form, button hiding, or inventory editing.
 - **Google and Apple sign-in.** Email/password only.
 
 One caveat worth stating plainly: the Firestore read and write paths

@@ -26,15 +26,21 @@ import com.hereliesaz.barbacker.data.AppContainer
 import com.hereliesaz.barbacker.data.BarBackerFirebase
 import com.hereliesaz.barbacker.data.createKeyValueStore
 import com.hereliesaz.barbacker.data.loadFirebaseConfig
+import com.hereliesaz.barbacker.ui.ActiveDialog
+import com.hereliesaz.barbacker.ui.AppUiState
 import com.hereliesaz.barbacker.ui.AppViewModel
 import com.hereliesaz.barbacker.ui.Screen
 import com.hereliesaz.barbacker.ui.screens.ApprovalPendingScreen
 import com.hereliesaz.barbacker.ui.screens.BarSelectionScreen
+import com.hereliesaz.barbacker.ui.screens.ChatPanel
 import com.hereliesaz.barbacker.ui.screens.CheckingInviteScreen
 import com.hereliesaz.barbacker.ui.screens.DashboardActions
 import com.hereliesaz.barbacker.ui.screens.DashboardScreen
+import com.hereliesaz.barbacker.ui.screens.EightySixDialog
+import com.hereliesaz.barbacker.ui.screens.NotificationSettingsDialog
 import com.hereliesaz.barbacker.ui.screens.RestoringScreen
 import com.hereliesaz.barbacker.ui.screens.RoleSelectionScreen
+import com.hereliesaz.barbacker.ui.screens.RosterDialog
 import com.hereliesaz.barbacker.ui.screens.SignInScreen
 import com.hereliesaz.barbacker.ui.theme.BarBackerColors
 import com.hereliesaz.barbacker.ui.theme.BarBackerTheme
@@ -71,6 +77,9 @@ private fun BarBackerApp(container: AppContainer) {
             bars = container.bars,
             memberships = container.memberships,
             requests = container.requests,
+            chat = container.chat,
+            eightySix = container.eightySix,
+            ownershipClaims = container.ownershipClaims,
             store = container.store,
         )
     }
@@ -137,15 +146,77 @@ private fun BarBackerApp(container: AppContainer) {
                             onUnclaim = viewModel::unclaimRequest,
                             onCancel = viewModel::cancelRequest,
                             onIgnore = viewModel::ignoreRequest,
-                            // The roster dialog is not built yet; approvals
-                            // are reachable from the badge once it lands.
-                            onOpenRoster = {},
+                            onOpenRoster = { viewModel.openDialog(ActiveDialog.Roster) },
+                            onOpenChat = { viewModel.openDialog(ActiveDialog.Chat) },
+                            onOpenEightySix = { viewModel.openDialog(ActiveDialog.EightySix) },
+                            onOpenNotificationSettings = {
+                                viewModel.openDialog(ActiveDialog.NotificationSettings)
+                            },
                             onSwitchBar = viewModel::backToBarSelection,
+                            onGoOffClock = viewModel::goOffClock,
                         ),
                     )
                 }
+
+                // Overlays live outside the screen `when` so they compose
+                // above whichever screen is showing. In practice only the
+                // dashboard opens them.
+                DashboardDialogs(state = state, viewModel = viewModel)
             }
         }
+    }
+}
+
+@Composable
+private fun DashboardDialogs(state: AppUiState, viewModel: AppViewModel) {
+    when (state.activeDialog) {
+        ActiveDialog.None -> Unit
+
+        ActiveDialog.Chat -> ChatPanel(
+            messages = state.fullChatHistory,
+            hasMore = state.chatHasMore,
+            loadingMore = state.chatLoadingMore,
+            currentUserId = state.currentUser?.uid.orEmpty(),
+            isManagerPlus = state.isManagerPlus,
+            onLoadMore = viewModel::loadOlderChat,
+            onSend = viewModel::sendChatMessage,
+            onTogglePin = viewModel::toggleChatPin,
+            onDelete = viewModel::deleteChatMessage,
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.EightySix -> EightySixDialog(
+            entries = state.eightySixEntries,
+            isPremium = state.isPremium,
+            isManagerPlus = state.isManagerPlus,
+            onAdd = viewModel::addEightySixEntry,
+            onDelete = viewModel::deleteEightySixEntry,
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.Roster -> RosterDialog(
+            clockedIn = state.clockedInMembers,
+            offClock = state.offClockMembers,
+            pending = state.pendingMembers,
+            ownershipClaims = state.pendingOwnershipClaims,
+            isManagerPlus = state.isManagerPlus,
+            onApproveMember = viewModel::approveMember,
+            onRejectMember = viewModel::rejectMember,
+            onReviewClaim = viewModel::reviewOwnershipClaim,
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.NotificationSettings -> NotificationSettingsDialog(
+            // The job title, falling back to the privilege tier — this is
+            // the key the defaults are stored under.
+            roleLabel = state.membership?.jobTitle?.wire
+                ?: state.membership?.role?.wire.orEmpty(),
+            currentPreferences = state.notificationPreferences,
+            buttons = state.buttons,
+            ntfyTopic = null,
+            onSave = viewModel::saveNotificationPreferences,
+            onClose = viewModel::closeDialog,
+        )
     }
 }
 

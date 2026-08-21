@@ -46,6 +46,13 @@ mlkitTextRecognition = "16.0.1"
 # configured per platform rather than pulling in a second HTTP stack.
 coil = "3.3.0"
 
+# Credential Manager + Google's ID-token helper, for Google sign-in on
+# Android. The modern replacement for the deprecated Google Sign-In SDK;
+# needs Play Services on the device, which every Android build here
+# already assumes for FCM.
+androidxCredentials = "1.3.0"
+googleId = "1.1.1"
+
 # HTTP, for the OpenStreetMap place lookup. Engines differ per platform:
 # OkHttp on Android, CIO on desktop, Darwin on iOS.
 ktor = "3.5.2"
@@ -68,6 +75,10 @@ firebase-firestore = { module = "dev.gitlive:firebase-firestore", version.ref = 
 firebase-storage = { module = "dev.gitlive:firebase-storage", version.ref = "gitliveFirebase" }
 firebase-functions = { module = "dev.gitlive:firebase-functions", version.ref = "gitliveFirebase" }
 firebase-messaging = { module = "dev.gitlive:firebase-messaging", version.ref = "gitliveFirebase" }
+
+androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "androidxCredentials" }
+androidx-credentials-play-services = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "androidxCredentials" }
+google-id = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleId" }
 
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }

@@ -160,5 +160,8 @@ cmp/build/
 cmp/*/build/
 cmp/local.properties
 cmp/.kotlin/
-cmp/iosApp/iosApp.xcodeproj/project.xcworkspace/
-cmp/iosApp/iosApp.xcodeproj/xcuserdata/
+# The whole project is generated from project.yml by XcodeGen, so it is
+# a build output rather than a source file — see cmp/iosApp/README.md.
+cmp/iosApp/iosApp.xcodeproj/
+# Firebase project values, like the PWA's .env.
+cmp/iosApp/Config.xcconfig

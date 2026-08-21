@@ -18,6 +18,12 @@ class AppContainer(
     platformContext: Any? = null,
     /** Where the outbound iCal feed is served from, if configured. */
     val icalFeedBaseUrl: String? = null,
+
+    /** Google OAuth client ids, absent when this build has none. */
+    googleOAuth: GoogleOAuthConfig? = null,
+
+    /** Whether the Apple sign-in Cloud Functions are deployed for this project. */
+    appleWebSignIn: Boolean = false,
 ) {
     val auth: AuthRepository = FirebaseAuthRepository(firebase.auth)
     val bars: BarRepository = FirebaseBarRepository(firebase.firestore)
@@ -36,10 +42,7 @@ class AppContainer(
 
     /**
      * One client for the whole process. Ktor clients own a connection pool
-     * and a dispatcher, so creating one per search would leak both.
-     */
-    /**
-     * Shared by the place search and the image loader.
+     * and a dispatcher, so creating one per caller would leak both.
      *
      * Exposed rather than private so Coil fetches over the engine already
      * configured for this platform, instead of resolving a second one of
@@ -50,6 +53,22 @@ class AppContainer(
 
     val placeSearch: PlaceSearchRepository =
         DefaultPlaceSearchRepository(firebase.firestore, httpClient)
+
+    // Declared after httpClient and urls, because Kotlin initialises
+    // properties in declaration order and the browser-based flows take
+    // both — moving this up yields a null client at construction time.
+    val socialSignIn: SocialSignIn =
+        createSocialSignIn(platformContext, googleOAuth, httpClient, urls).let { platform ->
+            // Apple's web flow is entirely common code, so it is layered
+            // on here rather than duplicated into each `actual`. iOS's
+            // native sheet already supports Apple and therefore keeps
+            // winning; only Android and desktop fall through to it.
+            if (appleWebSignIn) {
+                CombinedSocialSignIn(platform, AppleWebSignIn(firebase.functions, urls))
+            } else {
+                platform
+            }
+        }
 
     val pushTokens: PushTokenProvider = createPushTokenProvider(platformContext)
     val alerter: Alerter = createAlerter(platformContext)

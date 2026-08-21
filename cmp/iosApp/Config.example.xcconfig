@@ -1,0 +1,36 @@
+// Copy to Config.xcconfig and fill in. The copy is gitignored: this
+// client reads its Firebase project from configuration the same way the
+// PWA does, so nothing project-specific is committed here either.
+//
+//     cp Config.example.xcconfig Config.xcconfig
+//
+// Values reach the app through Info.plist, which project.yml points at
+// these settings — see docs/CMP.md for what each one is.
+//
+// Two traps in this file format, both silent:
+//
+//   * `//` starts a comment ANYWHERE on a line, so a value containing a
+//     URL is truncated at the scheme's slashes. That is why there is no
+//     VITE_ICAL_FEED_BASE_URL here; if you need one, define
+//     SLASHES = /$()/ and write https:$(SLASHES)example.com.
+//   * Values are not quoted. Trailing whitespace is part of the value,
+//     and an API key with a stray space fails as an invalid key.
+
+VITE_FIREBASE_API_KEY =
+VITE_FIREBASE_AUTH_DOMAIN =
+VITE_FIREBASE_PROJECT_ID =
+VITE_FIREBASE_STORAGE_BUCKET =
+VITE_FIREBASE_MESSAGING_SENDER_ID =
+VITE_FIREBASE_APP_ID =
+
+// Optional — Google sign-in. BOTH are needed: the client's Google config
+// hangs off the server (web) client id, so an iOS client id on its own
+// leaves the button hidden. The reversed form is the client id with its
+// dot-separated parts in reverse order, and is the redirect scheme.
+VITE_GOOGLE_SERVER_CLIENT_ID =
+VITE_GOOGLE_IOS_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID =
+
+// Your Apple Developer team id, for signing. Also settable in Xcode's
+// Signing & Capabilities pane instead.
+BARBACKER_DEVELOPMENT_TEAM =

@@ -1,0 +1,176 @@
+# XcodeGen spec for the iOS app shell.
+#
+# An .xcodeproj is a directory of generated XML full of opaque UUIDs —
+# unreviewable in a diff, and unbuildable on the Linux hosts this
+# repository's CI runs on, so committing one would mean committing
+# something nobody here could verify. This file is the same project
+# expressed as something a person can read, and `xcodegen generate`
+# turns it into the real thing on a Mac:
+#
+#     brew install xcodegen && cd cmp/iosApp && xcodegen generate
+#
+# Regenerating is safe and expected — the .xcodeproj is a build output,
+# not a source file, and is gitignored as one. Change this file, not the
+# project, or the next regeneration silently reverts you.
+#
+# Everything below is written blind: there is no macOS runner here, so
+# none of it has been generated or built. Treat the first run as a
+# review, not a formality.
+
+name: iosApp
+
+options:
+  bundleIdPrefix: com.hereliesaz
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  defaultConfig: Debug
+
+configs:
+  Debug: debug
+  Release: release
+
+packages:
+  # GitLive's Firebase bindings are cinterop headers over the real
+  # Firebase iOS SDK; the SDK itself still has to be linked into the app.
+  #
+  # The major version has to match what GitLive 2.6.0's cinterop was
+  # generated against — a mismatch surfaces as missing selectors at
+  # link time, not as a version warning. Check the upstream
+  # firebase-kotlin-sdk release notes before moving this.
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: "11.0.0"
+
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+
+    sources:
+      - path: iosApp
+        excludes:
+          # Neither is a resource. Left in, XcodeGen files them under
+          # Resources and they ship inside the app — the entitlements as
+          # a readable copy of what the app is allowed to do, and the
+          # Info.plist (which XcodeGen writes here) as a second copy of
+          # itself.
+          - "*.entitlements"
+          - "Info.plist"
+
+    dependencies:
+      # One product per Firebase service the shared code touches. Listing
+      # only FirebaseCore would compile and then fail to link the moment
+      # the Kotlin side calls Firestore.
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: Firebase
+        product: FirebaseFunctions
+      - package: Firebase
+        product: FirebaseStorage
+      - package: Firebase
+        product: FirebaseMessaging
+
+    # Project configuration lives in a file that is NOT committed, the
+    # same way every other client here reads its Firebase project from
+    # the environment rather than from a checked-in artifact. Copy
+    # Config.example.xcconfig to Config.xcconfig before generating.
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hereliesaz.barbacker
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # Where embedAndSignAppleFrameworkForXcode leaves ComposeApp.framework.
+        FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../composeApp/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+        # Kotlin/Native writes the framework into composeApp/build, well
+        # outside the target's sandbox. Xcode 15 turned script
+        # sandboxing on by default, which turns the write this build
+        # phase exists to perform into a permission error partway
+        # through the build.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # Set to your team, or fill it in in Xcode's Signing pane. Left
+        # empty here because a team id is account-specific and belongs no
+        # more in this repository than an API key does.
+        DEVELOPMENT_TEAM: $(BARBACKER_DEVELOPMENT_TEAM)
+      configs:
+        # Two files rather than one with a build-setting placeholder:
+        # `aps-environment` is read by the signing machinery before build
+        # settings are substituted, so a placeholder there yields a
+        # provisioning error that names nothing useful.
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: iosApp/iosApp.debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: iosApp/iosApp.release.entitlements
+
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: BarBacker
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Answers App Store Connect's export-compliance question up front.
+        # HTTPS to Firebase is exempt; without this every upload stops to
+        # ask the same question again.
+        ITSAppUsesNonExemptEncryption: false
+
+        # Wakes the app for a page that arrives while it is backgrounded.
+        UIBackgroundModes:
+          - remote-notification
+
+        # iOS terminates the app the instant a picker opens without the
+        # matching usage description — not a permission denial, a crash.
+        NSCameraUsageDescription: >-
+          BarBacker uses the camera to read a bottle label so it can be
+          added to the menu or 86'd without typing.
+        NSPhotoLibraryUsageDescription: >-
+          BarBacker needs your photo library to set your bar's logo.
+
+        # The client reads its Firebase project from here, matching the
+        # PWA's VITE_* names so one .env drives every client. The values
+        # come from Config.xcconfig and are substituted at build time, so
+        # nothing project-specific is committed.
+        VITE_FIREBASE_API_KEY: $(VITE_FIREBASE_API_KEY)
+        VITE_FIREBASE_AUTH_DOMAIN: $(VITE_FIREBASE_AUTH_DOMAIN)
+        VITE_FIREBASE_PROJECT_ID: $(VITE_FIREBASE_PROJECT_ID)
+        VITE_FIREBASE_STORAGE_BUCKET: $(VITE_FIREBASE_STORAGE_BUCKET)
+        VITE_FIREBASE_MESSAGING_SENDER_ID: $(VITE_FIREBASE_MESSAGING_SENDER_ID)
+        VITE_FIREBASE_APP_ID: $(VITE_FIREBASE_APP_ID)
+
+        # Optional. Each feature reports itself unsupported rather than
+        # failing when its value is absent — see docs/CMP.md. Google
+        # sign-in needs BOTH ids: the config object hangs off the server
+        # one, so an iOS client id alone leaves it switched off.
+        VITE_GOOGLE_SERVER_CLIENT_ID: $(VITE_GOOGLE_SERVER_CLIENT_ID)
+        VITE_GOOGLE_IOS_CLIENT_ID: $(VITE_GOOGLE_IOS_CLIENT_ID)
+
+        # Google's iOS convention: the redirect scheme is the client id
+        # with its dot-separated parts reversed.
+        # ASWebAuthenticationSession claims a scheme without help from
+        # Info.plist, so this is belt and braces — but it is what every
+        # other tool looking at the bundle expects to find.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.googleusercontent.apps
+            CFBundleURLSchemes:
+              - $(GOOGLE_REVERSED_CLIENT_ID)
+
+    preBuildScripts:
+      # Must run before "Compile Sources": the Swift here imports
+      # ComposeApp, which this phase is what produces.
+      - name: Build the Compose framework
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :composeApp:embedAndSignAppleFrameworkForXcode

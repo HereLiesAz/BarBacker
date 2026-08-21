@@ -79,6 +79,8 @@ fun App(platformContext: Any? = null) {
             store = createKeyValueStore(platformContext),
             platformContext = platformContext,
             icalFeedBaseUrl = config.icalFeedBaseUrl,
+            googleOAuth = config.googleOAuth,
+            appleWebSignIn = config.appleWebSignIn,
         )
     }
 
@@ -101,6 +103,7 @@ private fun BarBackerApp(container: AppContainer) {
             pos = container.pos,
             urls = container.urls,
             bottleRecognizer = container.bottleRecognizer,
+            socialSignIn = container.socialSignIn,
             icalFeedBaseUrl = container.icalFeedBaseUrl,
             placeSearch = container.placeSearch,
             pushTokens = container.pushTokens,
@@ -138,7 +141,9 @@ private fun BarBackerApp(container: AppContainer) {
                     Screen.SignIn -> SignInScreen(
                         isRegistering = state.isRegistering,
                         authError = state.authError,
+                        socialProviders = viewModel.availableSocialProviders,
                         onSetRegistering = viewModel::setRegistering,
+                        onSocialSignIn = viewModel::signInWith,
                         onSubmit = viewModel::signIn,
                     )
 
@@ -272,7 +277,8 @@ private fun DashboardDialogs(state: AppUiState, viewModel: AppViewModel) {
                 ?: state.membership?.role?.wire.orEmpty(),
             currentPreferences = state.notificationPreferences,
             buttons = state.buttons,
-            ntfyTopic = null,
+            ntfyTopic = state.ntfyTopic,
+            onSubscribeNtfy = viewModel::subscribeToNtfy,
             onSave = viewModel::saveNotificationPreferences,
             onClose = viewModel::closeDialog,
         )

@@ -1,6 +1,7 @@
 package com.hereliesaz.barbacker.data
 
 import com.hereliesaz.barbacker.logWarning
+import com.hereliesaz.barbacker.secureRandomHex
 import com.hereliesaz.barbacker.model.BarRole
 import com.hereliesaz.barbacker.model.BarUser
 import com.hereliesaz.barbacker.model.MemberStatus
@@ -44,6 +45,17 @@ interface MembershipRepository {
     fun rosterFlow(barId: String?): Flow<List<BarUser>>
 
     fun accountFlow(uid: String?): Flow<AccountProfile>
+
+    /**
+     * Mints and stores an ntfy topic for this account if it has none.
+     *
+     * One topic per ACCOUNT, not per bar or per device: it is what the
+     * server-side fanout publishes to, and an iOS user subscribes to it
+     * once in the ntfy app. Existing accounts keep whatever topic they
+     * already have — regenerating would silently orphan a subscription
+     * someone set up months ago and stop their pages arriving.
+     */
+    suspend fun ensureNtfyTopic(uid: String): String
 
     /**
      * Writes the membership document that admits [uid] to the bar.
@@ -196,6 +208,21 @@ class FirebaseMembershipRepository(
         emit(AccountProfile())
     }
 
+    override suspend fun ensureNtfyTopic(uid: String): String {
+        val reference = firestore.document(Paths.user(uid))
+        val existing = reference.get().field<String>(Fields.NTFY_TOPIC)
+        if (!existing.isNullOrBlank()) return existing
+
+        // 16 bytes of CSPRNG output. The topic is a bearer secret —
+        // whoever knows it can subscribe to this account's pages — so it
+        // has to be unguessable rather than merely unique.
+        val topic = "$NTFY_TOPIC_PREFIX${secureRandomHex(NTFY_TOPIC_BYTES)}"
+        // Merge-set rather than update: the account document may not
+        // exist yet for someone who has never joined a bar.
+        reference.set(mapOf(Fields.NTFY_TOPIC to topic), merge = true)
+        return topic
+    }
+
     override suspend fun join(
         barId: String,
         uid: String,
@@ -330,5 +357,10 @@ class FirebaseMembershipRepository(
             merge = true,
         )
         return true
+    }
+
+    private companion object {
+        const val NTFY_TOPIC_PREFIX = "barbacker-"
+        const val NTFY_TOPIC_BYTES = 16
     }
 }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Development APNs. A build signed with this entitlement gets a
+	     device token from Apple's sandbox gateway, which is a different
+	     token space from production: sending a sandbox token to the
+	     production gateway fails with BadDeviceToken rather than with
+	     anything that names the mismatch. Release uses the other file. -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- Sign in with Apple. Without this the native sheet in
+	     SocialSignIn.ios.kt fails at ASAuthorizationController with an
+	     unknown-error rather than saying the capability is missing. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+</dict>
+</plist>

@@ -22,7 +22,7 @@ scratch, so nothing durable can live there.
 |---|---|---|
 | Android | Builds in CI | `minSdk` 24, `compileSdk` 36 |
 | Desktop (JVM) | Builds in CI | Windows, macOS, Linux via Compose Desktop |
-| iOS | Configured, not built in CI | Needs a macOS runner with Xcode |
+| iOS | Configured, not built in CI | Project generated from `iosApp/project.yml`; needs a macOS runner with Xcode |
 | Web | Not a target | Served by the existing PWA |
 
 Web is deliberately absent. Compose Multiplatform's web target is
@@ -44,7 +44,7 @@ cmp/
   gradle/libs.versions.toml   Version catalog
   shared/                     Domain model, pure logic, Firebase data layer
   composeApp/                 Compose UI plus the per-platform entry points
-  iosApp/                     Swift shim for hosting the Compose view
+  iosApp/                     Swift shim, plus the XcodeGen project spec
 ```
 
 `shared` carries no Compose dependency, so the domain model and the
@@ -72,17 +72,45 @@ VITE_FIREBASE_MESSAGING_SENDER_ID
 VITE_FIREBASE_APP_ID
 ```
 
-One more is optional:
+These are optional, and each feature reports itself unsupported rather
+than failing when its value is absent:
 
 ```
 VITE_ICAL_FEED_BASE_URL
+VITE_GOOGLE_SERVER_CLIENT_ID
+VITE_GOOGLE_DESKTOP_CLIENT_ID
+VITE_GOOGLE_DESKTOP_CLIENT_SECRET
+VITE_GOOGLE_IOS_CLIENT_ID
+VITE_APPLE_SIGN_IN
 ```
 
-It names where the outbound iCal feed is actually served from — a Cloud
-Function, on a different host from everything else. Deliberately outside
-the required set, so a deployment that never enabled the feed still runs;
-Calendar Settings then says the link cannot be shown rather than
+`VITE_ICAL_FEED_BASE_URL` names where the outbound iCal feed is actually
+served from — a Cloud Function, on a different host from everything else.
+Without it, Calendar Settings says the link cannot be shown rather than
 constructing one that 404s.
+
+The `VITE_GOOGLE_*` values are OAuth client ids for Google sign-in, and
+which one each platform needs is not interchangeable:
+
+| Value | Used by | Notes |
+|---|---|---|
+| `SERVER_CLIENT_ID` | Android | The project's **web** client id, not the Android one — it is the audience Firebase expects in the ID token, and the Android client id yields a token Firebase rejects. |
+| `DESKTOP_CLIENT_ID` / `_SECRET` | Desktop | A "Desktop app" client. The secret is **not** confidential — it ships in the binary, and PKCE is what protects the flow; Google's token endpoint simply asks for it. |
+| `IOS_CLIENT_ID` | iOS | Its reversed form is the redirect scheme, and must also appear under `CFBundleURLTypes` in `Info.plist`. |
+
+With none of them set, the sign-in screen shows email and password only.
+
+`VITE_APPLE_SIGN_IN` is a flag, not a credential — `true`, `1`, `yes`, or
+`on`; anything else, including absent, is off. It says whether the Apple
+sign-in Cloud Functions (`appleAuthBegin`, `appleAuthCallback`,
+`appleAuthClaim`) are deployed for this project, which is the one thing
+the client cannot work out for itself and has to answer before drawing a
+button. It therefore has to be set to match the deployment: on where the
+functions are absent gives a button that opens a browser to nothing; off
+where they are present just hides a feature. iOS ignores it — its Apple
+sign-in is the native sheet and needs no server at all. The server side
+takes `APPLE_SERVICE_ID` and `APPLE_OAUTH_CALLBACK_BASE_URL`; see
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
 Where each platform looks for them:
 
@@ -123,7 +151,9 @@ Running desktop against a real project:
   # ...and the rest
 ```
 
-iOS needs macOS with Xcode; see `cmp/iosApp/README.md`.
+iOS needs macOS with Xcode, plus XcodeGen to turn `cmp/iosApp/project.yml`
+into the project — the `.xcodeproj` is a generated build output and is
+not committed. See `cmp/iosApp/README.md`.
 
 An `ANDROID_HOME` pointing at an SDK with platform 36 is required for the
 Android target. Create `cmp/local.properties` with `sdk.dir=<path>` if the
@@ -208,7 +238,7 @@ without the refresh, every role-gated read stays denied for up to an hour.
 
 ## Testing
 
-`./gradlew :shared:desktopTest` runs the shared suite: 116 tests covering
+`./gradlew :shared:desktopTest` runs the shared suite: 123 tests covering
 the ported pure logic — contrast colour, brand matching, the button label
 resolver, sort order, sub-menu synthesis, tap classification, reorder
 arithmetic, picked-image identity, OCR line filtering, event-time
@@ -248,6 +278,20 @@ fails if it is lost:
 - OCR emits stray single glyphs from a label's border. Each one is
   another chance for the brand matcher to find a spurious substring hit,
   so one-character lines never reach it.
+- PKCE's `code_challenge` is base64url with no padding, and the platforms
+  disagree enough that it is hand-rolled. Both tail cases are pinned:
+  getting one wrong yields a challenge that fails only for some digests,
+  which looks like an intermittent sign-in bug rather than an encoder
+  one.
+- Apple's web flow is usually described as needing a client secret that
+  is a JWT signed with a .p8 private key. That is true of the *token
+  exchange*, and the exchange is skipped: asking for
+  `response_type=code id_token` returns the identity token in the
+  callback itself, and the identity token is the only thing Firebase
+  wants. What the flow does still need is a public HTTPS redirect, since
+  Apple will not redirect to a custom scheme or to loopback — which is
+  why it goes through Cloud Functions rather than finishing on the
+  device the way Google's does.
 
 ## Status
 
@@ -270,8 +314,12 @@ Working end to end:
   the 86'd list, and ownership claims
 - Premium bar theming, with the tile label derived from the accent colour
   it sits on
-- Push registration on Android and iOS, plus the in-app alert loop that
-  sounds and vibrates every minute while un-muted pages are waiting
+- Push registration on Android and iOS — iOS asks for notification
+  permission and registers with APNs from the shared code rather than
+  from an app delegate, since FCM cannot mint a token before Firebase is
+  configured and Firebase is configured in the first composition — plus
+  the in-app alert loop that sounds and vibrates every minute while
+  un-muted pages are waiting
 - Bar management for Manager+: hiding grid buttons, restoring hidden ones
   on premium, and inviting staff or managers by email
 - The theme editor: brand colours, font, and a logo uploaded to Storage
@@ -287,21 +335,30 @@ Working end to end:
   add-to-menu / 86 / send-alert actions
 - Remote images: the bar's logo in the theme editor, and a scanned
   bottle's photo on the request row it is attached to
+- Google sign-in on Android (Credential Manager) and desktop (a loopback
+  redirect with PKCE), alongside email and password
+- Apple sign-in: the native sheet on iOS, and on Android and desktop a
+  browser round trip through three Cloud Functions, shown only where
+  those are deployed
+- The ntfy deep link: the notification screen mints an account topic on
+  first open and hands it straight to the ntfy app
 
 Not built yet — the PWA remains the complete client:
 
-- **iOS push delivery.** The token code is shared with Android, but iOS
-  needs an APNs capability and entitlement configured in an Xcode
-  project that does not exist yet (see `cmp/iosApp/README.md`). Until
-  then iOS falls back to the in-app alert loop.
-- **The iOS UIKit interop is unverified.** `ImagePicker.ios.kt`,
-  `PhotoCapture.ios.kt`, and `BottleRecognizer.ios.kt` are written
-  against `UIDocumentPickerViewController`, `UIImagePickerController`,
-  and Vision respectively, but with no macOS runner and no Xcode project
-  none has ever been compiled. Treat them as first drafts. The camera one
-  also needs an `NSCameraUsageDescription` in `Info.plist`, or iOS
-  terminates the app the moment the picker opens. Android and desktop are
-  built in CI.
+- **Everything iOS is unverified.** There is no macOS runner and no Mac
+  in the loop, so nothing here — not the project spec, not the Swift,
+  not the Kotlin — has ever been compiled. `ImagePicker.ios.kt`,
+  `PhotoCapture.ios.kt`, `BottleRecognizer.ios.kt`, and
+  `SocialSignIn.ios.kt` are drafts against
+  `UIDocumentPickerViewController`, `UIImagePickerController`, Vision,
+  and AuthenticationServices; `cmp/iosApp/project.yml` is a draft of the
+  Xcode project. The pieces that would otherwise be invisible failures
+  are all declared there — the APNs entitlement and background mode,
+  Sign in with Apple, `NSCameraUsageDescription` (without which iOS
+  terminates the app the moment the picker opens rather than denying
+  anything), the Gradle framework phase, and the script-sandboxing
+  setting that phase needs — but declaring them is not the same as
+  having watched them work. Android and desktop are built in CI.
 - **The bottle scanner needs a camera and OCR, so desktop has neither
   half.** ML Kit is Android-only and Vision is Apple-only; the
   alternatives were bundling a Tesseract native library per desktop
@@ -311,10 +368,6 @@ Not built yet — the PWA remains the complete client:
 - **Desktop push.** There is no FCM transport for a JVM app. The
   provider reports this explicitly rather than registering nothing and
   looking broken; the in-app alert loop is what pages a desktop user.
-- **ntfy deep linking.** The notification-settings screen shows the
-  topic for manual subscription but has no `ntfy://` link.
-- **Google and Apple sign-in.** Email/password only.
-
 Deliberately absent, because the PWA has no such feature either:
 inventory *removal*. Wells, brands, and types are added from the grid's
 "+ ADD …" tiles in both clients, and a brand is taken off the floor by

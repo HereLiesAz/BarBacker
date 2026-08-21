@@ -89,6 +89,18 @@ of them is read via `process.env.*` with no fallback.
 | `POS_OAUTH_CALLBACK_BASE_URL` | `functions/src/pos/oauth.ts` | Public base URL the `oauthCallback` function is reachable at — Square redirects here after consent. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | `functions/src/calendar/google.ts`, `functions/src/calendar/oauth.ts` | Google Cloud OAuth 2.0 client credentials, scoped to the Calendar API. |
 | `CALENDAR_OAUTH_CALLBACK_BASE_URL` | `functions/src/calendar/oauth.ts`, `functions/src/calendar/calendars.ts`, `functions/src/calendar/resubscribe.ts` | Public base URL the `calendarOauthCallback` and `calendarWebhook` functions are reachable at — used both as the OAuth redirect target and as the base for Google's push-notification webhook. |
+| `APPLE_SERVICE_ID` | `functions/src/appleAuth.ts` | The **Services ID** from Apple's developer portal (not a bundle identifier), used as the `client_id` of Apple's web sign-in. Only the Compose Multiplatform client's Android and desktop targets need this; iOS uses the native sheet and the PWA uses Firebase's own handler. |
+| `APPLE_OAUTH_CALLBACK_BASE_URL` | `functions/src/appleAuth.ts` | Public base URL the `appleAuthCallback` function is reachable at. Apple form-posts the result here, so `<base>/appleAuthCallback` must also be registered as a Return URL on the Services ID — and must be HTTPS, since Apple refuses custom schemes and loopback alike. |
+
+Apple sign-in needs no private key here, which is worth stating because
+the opposite is usually assumed. The `.p8` client secret is what Apple's
+*token endpoint* requires, and `appleAuthCallback` never calls it: the
+authorize request asks for `response_type=code id_token`, so the identity
+token arrives in the callback POST, and that token is all Firebase wants.
+What does have to be set up outside these two variables is the Apple
+provider in Firebase Authentication, configured with the same Services
+ID — that is the audience the identity token carries, and Firebase
+rejects a token whose `aud` it does not recognise.
 
 Toast (`functions/src/pos/toast.ts`) doesn't use OAuth-redirect
 credentials — a manager enters partner-issued `clientId`/`clientSecret`/

@@ -33,16 +33,74 @@ internal object FirebaseConfigKeys {
      */
     const val ICAL_FEED_BASE_URL = "VITE_ICAL_FEED_BASE_URL"
 
+    /**
+     * Google OAuth client ids, all OPTIONAL.
+     *
+     * Absent means Google sign-in reports itself unsupported rather than
+     * failing at the point someone taps it. `SERVER_CLIENT_ID` is the
+     * project's **web** client id — Android's Credential Manager wants
+     * that one, because it is the audience Firebase expects in the ID
+     * token, and the Android client id yields a token Firebase rejects.
+     *
+     * The desktop "secret" is not confidential: an installed-app client
+     * ships it inside the binary, and PKCE is what actually protects that
+     * flow. It is here because Google's token endpoint asks for it, not
+     * because it protects anything.
+     */
+    const val GOOGLE_SERVER_CLIENT_ID = "VITE_GOOGLE_SERVER_CLIENT_ID"
+    const val GOOGLE_DESKTOP_CLIENT_ID = "VITE_GOOGLE_DESKTOP_CLIENT_ID"
+    const val GOOGLE_DESKTOP_CLIENT_SECRET = "VITE_GOOGLE_DESKTOP_CLIENT_SECRET"
+    const val GOOGLE_IOS_CLIENT_ID = "VITE_GOOGLE_IOS_CLIENT_ID"
+
+    /**
+     * Whether the Apple sign-in Cloud Functions are deployed, OPTIONAL.
+     *
+     * A flag rather than a client id because the client needs nothing
+     * from Apple: `appleAuthBegin` builds the authorize URL server-side,
+     * where the Service ID lives. All this answers is whether there is a
+     * server half to talk to — which `isSupported` has to answer without
+     * a round trip, since it decides whether to draw the button at all.
+     *
+     * It therefore has to be set to match the deployment. Setting it
+     * where the functions are absent yields a button that opens a browser
+     * to nothing; leaving it unset where they are present just hides a
+     * feature.
+     */
+    const val APPLE_SIGN_IN = "VITE_APPLE_SIGN_IN"
+
     val ALL = listOf(
         API_KEY, AUTH_DOMAIN, PROJECT_ID, STORAGE_BUCKET, MESSAGING_SENDER_ID, APP_ID,
     )
+
+    /**
+     * Reads a boolean flag out of a string-valued config source.
+     *
+     * All three platforms hand these over as strings — an `Info.plist`
+     * entry, a Gradle `buildConfigField`, a JVM system property — and a
+     * plain `== "true"` would quietly treat the `1` someone typed in a
+     * `.env` as off. Anything unrecognised is off, since a flag nobody
+     * set should not turn a feature on.
+     */
+    internal fun isTruthy(value: String?): Boolean =
+        value?.trim()?.lowercase() in setOf("1", "true", "yes", "on")
 
     /** Builds a config from a lookup, or null if any REQUIRED value is missing. */
     fun build(lookup: (String) -> String?): BarBackerFirebaseConfig? {
         val values = ALL.associateWith { lookup(it)?.takeIf(String::isNotBlank) }
         if (values.values.any { it == null }) return null
+        val serverClientId = lookup(GOOGLE_SERVER_CLIENT_ID)?.takeIf(String::isNotBlank)
         return BarBackerFirebaseConfig(
             icalFeedBaseUrl = lookup(ICAL_FEED_BASE_URL)?.takeIf(String::isNotBlank),
+            appleWebSignIn = isTruthy(lookup(APPLE_SIGN_IN)),
+            googleOAuth = serverClientId?.let {
+                GoogleOAuthConfig(
+                    serverClientId = it,
+                    desktopClientId = lookup(GOOGLE_DESKTOP_CLIENT_ID)?.takeIf(String::isNotBlank),
+                    desktopClientSecret =
+                        lookup(GOOGLE_DESKTOP_CLIENT_SECRET)?.takeIf(String::isNotBlank),
+                    iosClientId = lookup(GOOGLE_IOS_CLIENT_ID)?.takeIf(String::isNotBlank),
+                )
+            },
             apiKey = values.getValue(API_KEY)!!,
             authDomain = values.getValue(AUTH_DOMAIN)!!,
             projectId = values.getValue(PROJECT_ID)!!,

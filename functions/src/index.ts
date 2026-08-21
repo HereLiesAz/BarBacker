@@ -17,6 +17,12 @@ export { onRequestCreated } from "./onRequestCreated";
 export { onRequestDeleted } from "./onRequestDeleted";
 export { cleanupStaleRequests } from "./cleanupStaleRequests";
 export { onInviteConsumed } from "./onInviteConsumed";
+export {
+  appleAuthBegin,
+  appleAuthCallback,
+  appleAuthClaim,
+  cleanupAppleAuthSessions,
+} from "./appleAuth";
 export { fileOwnershipClaim, reviewOwnershipClaim } from "./ownershipClaims";
 export { migrateNoticesToChat } from "./migrateNoticesToChat";
 export { onChatPinned } from "./onChatPinned";

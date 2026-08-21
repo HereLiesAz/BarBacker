@@ -40,6 +40,9 @@ import com.hereliesaz.barbacker.data.PlaceSearchRepository
 import com.hereliesaz.barbacker.data.POSSales
 import com.hereliesaz.barbacker.data.PosRepository
 import com.hereliesaz.barbacker.data.PushTokenProvider
+import com.hereliesaz.barbacker.data.SocialProvider
+import com.hereliesaz.barbacker.data.SocialSignIn
+import com.hereliesaz.barbacker.data.SocialSignInCancelledException
 import com.hereliesaz.barbacker.data.RequestAlreadyClaimedException
 import com.hereliesaz.barbacker.data.RequestRepository
 import com.hereliesaz.barbacker.data.StorageRepository
@@ -105,6 +108,7 @@ class AppViewModel(
     private val pos: PosRepository,
     private val urls: UrlOpener,
     private val bottleRecognizer: BottleRecognizer,
+    private val socialSignIn: SocialSignIn,
     private val placeSearch: PlaceSearchRepository,
     private val pushTokens: PushTokenProvider,
     private val alerter: Alerter,
@@ -343,6 +347,7 @@ class AppViewModel(
             icalFeedBaseUrl = icalFeedBaseUrl,
             posConnections = integrations.pos.connections,
             posMenu = integrations.pos.menu,
+            ntfyTopic = account.ntfyTopic,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
 
@@ -570,6 +575,42 @@ class AppViewModel(
      * otherwise become null — on a shared tablet behind a bar, that leaves
      * the previous person's floor still rendered.
      */
+    /**
+     * Which social buttons the sign-in screen should offer.
+     *
+     * Computed once rather than per recomposition: it depends only on the
+     * build's OAuth config and the platform, neither of which changes
+     * while the app is running.
+     */
+    val availableSocialProviders: List<SocialProvider> =
+        SocialProvider.entries.filter(socialSignIn::isSupported)
+
+    /**
+     * Runs a platform sign-in flow, then hands the tokens to Firebase.
+     *
+     * A cancel clears the error rather than setting one — someone backing
+     * out of the account picker has not failed at anything, and an error
+     * banner for it is just noise.
+     */
+    fun signInWith(provider: SocialProvider) {
+        localState.update { it.copy(authError = null) }
+        viewModelScope.launch {
+            try {
+                auth.signInWithSocial(socialSignIn.authenticate(provider))
+            } catch (e: SocialSignInCancelledException) {
+                // Deliberate. Nothing to report.
+            } catch (e: Exception) {
+                logWarning("${provider.label} sign-in failed", e)
+                localState.update {
+                    it.copy(
+                        authError = e.message
+                            ?: "${provider.label} sign-in failed. Please try again.",
+                    )
+                }
+            }
+        }
+    }
+
     fun signOut() {
         viewModelScope.launch {
             auth.signOut()
@@ -1330,6 +1371,11 @@ class AppViewModel(
     // --- Dialogs --------------------------------------------------------
 
     fun openDialog(dialog: ActiveDialog) {
+        // Minted lazily, when the screen that shows it opens, rather than
+        // on every sign-in: most accounts never touch ntfy, and writing a
+        // topic nobody asked for is a write per account for nothing.
+        if (dialog == ActiveDialog.NotificationSettings) mintNtfyTopicIfNeeded()
+
         if (dialog == ActiveDialog.Chat) {
             // Stamp the read watermark on open, which is what clears the
             // unread dot. Clock-based rather than server-based on purpose:
@@ -1347,6 +1393,23 @@ class AppViewModel(
     }
 
     fun closeDialog() = localState.update { it.copy(activeDialog = ActiveDialog.None) }
+
+    private fun mintNtfyTopicIfNeeded() {
+        val current = state.value
+        if (current.ntfyTopic != null) return
+        val uid = current.currentUser?.uid ?: return
+        viewModelScope.launch {
+            runCatching { memberships.ensureNtfyTopic(uid) }
+                // The account listener delivers the new value, so nothing
+                // is assigned here. A failure is logged rather than shown:
+                // the screen's other half — the per-button toggles — still
+                // works, and ntfy is a fallback most users never use.
+                .onFailure { logWarning("Could not mint an ntfy topic", it) }
+        }
+    }
+
+    /** Opens the ntfy app on this topic. Returns false if nothing could handle it. */
+    fun subscribeToNtfy(topic: String): Boolean = urls.open("ntfy://subscribe/$topic")
 
     // --- Chat -----------------------------------------------------------
 

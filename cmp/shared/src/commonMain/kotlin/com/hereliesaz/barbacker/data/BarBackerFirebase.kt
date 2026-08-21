@@ -38,6 +38,16 @@ data class BarBackerFirebaseConfig(
      * the feed simply has none.
      */
     val icalFeedBaseUrl: String? = null,
+
+    /** Google OAuth client ids, absent when this build has none. */
+    val googleOAuth: GoogleOAuthConfig? = null,
+
+    /**
+     * Whether the Apple sign-in Cloud Functions are deployed for this
+     * project. Off means Android and desktop hide the Apple button; iOS
+     * has its own native flow and ignores this entirely.
+     */
+    val appleWebSignIn: Boolean = false,
 ) {
     internal fun toFirebaseOptions() = FirebaseOptions(
         applicationId = applicationId,

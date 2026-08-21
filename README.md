@@ -9,6 +9,7 @@
 *   [Components](docs/COMPONENTS.md)
 *   [Deployment](docs/DEPLOYMENT.md)
 *   [Scripts](docs/SCRIPTS.md)
+*   [Compose Multiplatform client](docs/CMP.md) — the in-progress native client for Android, iOS, and desktop
 *   [Security Policy](SECURITY.md)
 *   [Agent/contributor guidelines](AGENTS.md)
 

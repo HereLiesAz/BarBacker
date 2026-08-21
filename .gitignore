@@ -153,3 +153,12 @@ public/firebase-messaging-sw.js
 
 # Local Claude Code settings
 .claude/
+
+# Compose Multiplatform client (cmp/)
+cmp/.gradle/
+cmp/build/
+cmp/*/build/
+cmp/local.properties
+cmp/.kotlin/
+cmp/iosApp/iosApp.xcodeproj/project.xcworkspace/
+cmp/iosApp/iosApp.xcodeproj/xcuserdata/

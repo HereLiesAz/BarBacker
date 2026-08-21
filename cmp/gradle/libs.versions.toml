@@ -1,0 +1,60 @@
+[versions]
+# Toolchain. Kotlin and Compose Multiplatform are version-locked to each
+# other: CMP 1.11.1's runtime declares kotlin-stdlib 2.2.20, so bumping
+# one without the other will produce compiler-plugin ABI errors.
+kotlin = "2.2.20"
+agp = "8.13.2"
+composeMultiplatform = "1.11.1"
+
+# Android SDK levels. minSdk 24 matches the Capacitor wrapper's floor
+# (Firebase's own minimum is 23; 24 buys us java.time desugaring-free
+# APIs on the Android side).
+androidMinSdk = "24"
+androidTargetSdk = "36"
+androidCompileSdk = "36"
+
+# KMP libraries.
+coroutines = "1.10.2"
+serialization = "1.9.0"
+datetime = "0.7.1"
+
+# JetBrains' multiplatform ports of the AndroidX artifacts. These are
+# `org.jetbrains.androidx.*`, NOT `androidx.*` — the latter are
+# Android-only and will not resolve for the iOS/desktop targets.
+lifecycle = "2.9.4"
+
+# Android-only. `activity-compose` is what provides ComponentActivity's
+# setContent; there is no multiplatform equivalent because the entry
+# point is inherently per-platform.
+androidxActivity = "1.9.3"
+
+# GitLive's Firebase KMP wrappers. Publishes android/ios/jvm/js/macos
+# targets — notably NOT wasmJs, which is why the web build stays on the
+# existing PWA rather than becoming a Compose/Wasm target.
+gitliveFirebase = "2.6.0"
+
+[libraries]
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
+
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
+
+lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle" }
+lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+
+firebase-auth = { module = "dev.gitlive:firebase-auth", version.ref = "gitliveFirebase" }
+firebase-firestore = { module = "dev.gitlive:firebase-firestore", version.ref = "gitliveFirebase" }
+firebase-storage = { module = "dev.gitlive:firebase-storage", version.ref = "gitliveFirebase" }
+firebase-functions = { module = "dev.gitlive:firebase-functions", version.ref = "gitliveFirebase" }
+
+[plugins]
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+# Ships with Kotlin itself since 2.0 — the version ref is deliberate.
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+androidLibrary = { id = "com.android.library", version.ref = "agp" }

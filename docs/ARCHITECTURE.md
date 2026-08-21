@@ -2,6 +2,8 @@
 
 **BarBacker** is a React single-page app deployed two ways — a static site (GitHub Pages) and a Capacitor-wrapped native Android app — backed by Firebase (Firestore, Auth, Storage, Cloud Messaging) and a Cloud Functions backend that owns everything that shouldn't run on the client: notification fanout, third-party OAuth, and scheduled maintenance.
 
+A second client is in progress: a Kotlin/Compose Multiplatform app under `cmp/`, targeting Android, iOS, and desktop natively. It is a front end onto this same Firestore project and the same Cloud Functions, not a separate system — the security rules described in [DATA_MODEL.md](DATA_MODEL.md) apply to it unchanged. The web client remains the complete one; see [CMP.md](CMP.md) for what the native client does and does not implement yet.
+
 ## Technology Stack
 
 *   **Frontend Framework**: [React](https://react.dev/) 19, function components + hooks. No global state library — Firestore's own `onSnapshot` listeners *are* the state store (see "State management" below).

@@ -25,6 +25,9 @@ class PickedImage(
 /** Mirrors the web client's 2MB check; `storage.rules` enforces it too. */
 const val MAX_LOGO_BYTES: Int = 2 * 1024 * 1024
 
+/** The bottle-photo cap in `storage.rules`. Larger than a logo's, on purpose. */
+const val MAX_BOTTLE_PHOTO_BYTES: Int = 5 * 1024 * 1024
+
 /**
  * Extension to MIME type for the formats a logo may be in.
  *
@@ -100,6 +103,22 @@ interface StorageRepository {
      *   anyway, but as an opaque permission error.
      */
     suspend fun uploadBarLogo(barId: String, image: PickedImage): String
+
+    /**
+     * Uploads a scanned bottle photo and returns its download URL.
+     *
+     * Any member may write here, not just Manager+ — the whole point is a
+     * barback flagging something to a manager. The URL never expires and
+     * is stored un-redacted on the request document, which is why
+     * `storage.rules` scopes READ to that bar's members rather than to any
+     * signed-in user.
+     */
+    suspend fun uploadBottlePhoto(
+        barId: String,
+        uid: String,
+        epochMillis: Long,
+        jpegBytes: ByteArray,
+    ): String
 }
 
 class FirebaseStorageRepository(private val storage: FirebaseStorage) : StorageRepository {
@@ -115,6 +134,22 @@ class FirebaseStorageRepository(private val storage: FirebaseStorage) : StorageR
             // storage rule checks `contentType.matches('image/.*')`, and an
             // upload that arrives as application/octet-stream is rejected.
             metadata = storageMetadata { contentType = image.contentType },
+        )
+        return reference.getDownloadUrl()
+    }
+
+    override suspend fun uploadBottlePhoto(
+        barId: String,
+        uid: String,
+        epochMillis: Long,
+        jpegBytes: ByteArray,
+    ): String {
+        require(jpegBytes.size <= MAX_BOTTLE_PHOTO_BYTES) { "Photo must be under 5MB." }
+
+        val reference = storage.reference(Paths.bottlePhoto(barId, uid, epochMillis))
+        reference.putData(
+            data = storageDataOf(jpegBytes),
+            metadata = storageMetadata { contentType = "image/jpeg" },
         )
         return reference.getDownloadUrl()
     }

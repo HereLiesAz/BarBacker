@@ -8,13 +8,18 @@ import com.hereliesaz.barbacker.model.BarTheme
 import com.hereliesaz.barbacker.model.BarUser
 import com.hereliesaz.barbacker.model.ButtonAction
 import com.hereliesaz.barbacker.model.ButtonConfig
+import com.hereliesaz.barbacker.model.CalendarConnectionStatus
+import com.hereliesaz.barbacker.model.CalendarEvent
 import com.hereliesaz.barbacker.model.ChatMessage
 import com.hereliesaz.barbacker.model.EightySixEntry
 import com.hereliesaz.barbacker.model.EightySixVisibility
+import com.hereliesaz.barbacker.model.ICalSubscription
 import com.hereliesaz.barbacker.model.JobTitle
 import com.hereliesaz.barbacker.model.JoinPolicy
 import com.hereliesaz.barbacker.model.MemberStatus
 import com.hereliesaz.barbacker.model.OwnershipClaim
+import com.hereliesaz.barbacker.model.POSConnectionStatus
+import com.hereliesaz.barbacker.model.POSMenuItem
 import com.hereliesaz.barbacker.model.Request
 import com.hereliesaz.barbacker.model.RequestStatus
 import com.hereliesaz.barbacker.model.SubscriptionTier
@@ -187,5 +192,73 @@ internal fun DocumentSnapshot.toOwnershipClaim(barId: String): OwnershipClaim? {
         justification = field<String>("justification"),
         status = com.hereliesaz.barbacker.model.ClaimStatus.fromWire(field<String>(Fields.STATUS)),
         createdAt = timestampMillis("createdAt"),
+    )
+}
+
+internal fun DocumentSnapshot.toCalendarEvent(): CalendarEvent? {
+    if (!exists) return null
+    return CalendarEvent(
+        id = id,
+        title = field<String>(Fields.TITLE).orEmpty(),
+        start = field<String>(Fields.START).orEmpty(),
+        end = field<String>(Fields.END).orEmpty(),
+        description = field<String>(Fields.DESCRIPTION),
+        type = field<String>(Fields.TYPE) ?: "event",
+        assignedTo = field<List<String>>(Fields.ASSIGNED_TO),
+        externalId = field<String>(Fields.EXTERNAL_ID),
+        externalProvider = field<String>(Fields.EXTERNAL_PROVIDER),
+        lastSyncedAt = timestampMillis(Fields.LAST_SYNCED_AT),
+        deletedAt = timestampMillis(Fields.DELETED_AT),
+    )
+}
+
+internal fun DocumentSnapshot.toCalendarConnection(provider: String): CalendarConnectionStatus? {
+    if (!exists) return null
+    return CalendarConnectionStatus(
+        provider = provider,
+        connected = field<Boolean>(Fields.CONNECTED) ?: false,
+        calendarId = field<String>(Fields.CALENDAR_ID),
+        error = field<String>(Fields.ERROR),
+        connectedAt = timestampMillis(Fields.CONNECTED_AT),
+    )
+}
+
+internal fun DocumentSnapshot.toICalSubscription(): ICalSubscription? {
+    if (!exists) return null
+    return ICalSubscription(
+        id = id,
+        url = field<String>(Fields.URL).orEmpty(),
+        createdBy = field<String>(Fields.CREATED_BY).orEmpty(),
+        createdAt = timestampMillis(Fields.CREATED_AT),
+        lastPolledAt = timestampMillis(Fields.LAST_POLLED_AT),
+        lastError = field<String>(Fields.LAST_ERROR),
+    )
+}
+
+internal fun DocumentSnapshot.toPosConnection(provider: String): POSConnectionStatus? {
+    if (!exists) return null
+    return POSConnectionStatus(
+        provider = provider,
+        connected = field<Boolean>(Fields.CONNECTED) ?: false,
+        merchantId = field<String>(Fields.MERCHANT_ID),
+        error = field<String>(Fields.ERROR),
+        connectedAt = timestampMillis(Fields.CONNECTED_AT),
+        lastSyncedAt = timestampMillis(Fields.LAST_SYNCED_AT),
+        lastSyncedCount = field<Int>(Fields.LAST_SYNCED_COUNT),
+    )
+}
+
+internal fun DocumentSnapshot.toPosMenuItem(): POSMenuItem? {
+    if (!exists) return null
+    return POSMenuItem(
+        id = id,
+        name = field<String>(Fields.NAME).orEmpty(),
+        // Integer cents. A price that arrived as a float from an older
+        // writer would fail to decode as Int and degrade to zero rather
+        // than killing the listener for the whole menu.
+        price = field<Int>(Fields.PRICE) ?: 0,
+        category = field<String>(Fields.CATEGORY),
+        provider = field<String>(Fields.PROVIDER).orEmpty(),
+        syncedAt = timestampMillis(Fields.SYNCED_AT),
     )
 }

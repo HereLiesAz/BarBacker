@@ -44,6 +44,9 @@ object Paths {
         "bars/$barId/calendarConnection/$provider"
     fun barICalSubscriptions(barId: String) = "bars/$barId/icalSubscriptions"
 
+    /** Holds the opaque token that appears in the outbound feed URL. */
+    fun barICalFeedConfig(barId: String) = "bars/$barId/icalFeed/config"
+
     /** Storage object path for a bottle-scanner photo. */
     fun bottlePhoto(barId: String, uid: String, epochMillis: Long) =
         "bottlePhotos/$barId/${uid}_$epochMillis.jpg"
@@ -93,4 +96,28 @@ object Fields {
     const val CREATED_BY = "createdBy"
     const val CREATED_BY_NAME = "createdByName"
     const val CREATED_AT = "createdAt"
+    const val TITLE = "title"
+    const val END = "end"
+    const val TYPE = "type"
+    const val DESCRIPTION = "description"
+    const val ASSIGNED_TO = "assignedTo"
+    const val EXTERNAL_ID = "externalId"
+    const val EXTERNAL_PROVIDER = "externalProvider"
+    const val LAST_SYNCED_AT = "lastSyncedAt"
+    const val DELETED_AT = "deletedAt"
+    const val URL = "url"
+    const val TOKEN = "token"
+    const val CONNECTED = "connected"
+    const val CALENDAR_ID = "calendarId"
+    const val MERCHANT_ID = "merchantId"
+    const val ERROR = "error"
+    const val CONNECTED_AT = "connectedAt"
+    const val LAST_POLLED_AT = "lastPolledAt"
+    const val LAST_ERROR = "lastError"
+    const val LAST_SYNCED_COUNT = "lastSyncedCount"
+    const val NAME = "name"
+    const val PRICE = "price"
+    const val CATEGORY = "category"
+    const val PROVIDER = "provider"
+    const val SYNCED_AT = "syncedAt"
 }

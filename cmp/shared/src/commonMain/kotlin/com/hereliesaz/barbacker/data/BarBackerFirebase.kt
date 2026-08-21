@@ -30,6 +30,14 @@ data class BarBackerFirebaseConfig(
     val storageBucket: String,
     val messagingSenderId: String,
     val applicationId: String,
+    /**
+     * Where the outbound iCal feed is served from, if anywhere.
+     *
+     * Not part of the Firebase project identity — it is the base of a
+     * Cloud Function's public URL, and a deployment that never enabled
+     * the feed simply has none.
+     */
+    val icalFeedBaseUrl: String? = null,
 ) {
     internal fun toFirebaseOptions() = FirebaseOptions(
         applicationId = applicationId,

@@ -118,6 +118,20 @@ val DEFAULT_BUTTONS: List<ButtonConfig> = listOf(
 )
 
 /** The synthesised free-text tile appended to the end of the main grid. */
+/**
+ * The stock BEER button's label, derived rather than repeated.
+ *
+ * The bottle scanner prefixes its alerts with this exact string so
+ * [com.hereliesaz.barbacker.logic.ButtonLabelResolver] can resolve them
+ * to a real button id. A request whose label resolves to nothing is
+ * treated as "cannot tell who this is for" and paged to the whole floor
+ * past everyone's preferences — so a hardcoded copy that drifted from
+ * the button would mass-notify a bar every time someone scanned a
+ * bottle. Reading it from the button makes drift impossible, and
+ * renaming the id fails loudly here rather than silently there.
+ */
+val BEER_BUTTON_LABEL: String = DEFAULT_BUTTONS.first { it.id == "restock_beer" }.label
+
 val CUSTOM_REQUEST_BUTTON = ButtonConfig(
     id = "custom_req_btn",
     label = "CUSTOM",
@@ -196,6 +210,9 @@ const val MAX_IGNORED_IDS: Int = 200
 
 /** How far back the dashboard's request query reaches. */
 const val REQUEST_WINDOW_MILLIS: Long = 24L * 60 * 60 * 1000
+
+/** The window the POS screen's insights button reports over. */
+const val POS_INSIGHTS_WINDOW_MILLIS: Long = 7L * 24 * 60 * 60 * 1000
 
 /** Cap on the dashboard's request query. */
 const val REQUEST_QUERY_LIMIT: Int = 100

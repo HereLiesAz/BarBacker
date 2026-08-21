@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -33,10 +34,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Store
@@ -63,6 +67,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -76,12 +81,22 @@ import com.hereliesaz.barbacker.logic.persistableOrder
 import com.hereliesaz.barbacker.model.ButtonConfig
 import com.hereliesaz.barbacker.model.Request
 import com.hereliesaz.barbacker.ui.AppUiState
+import com.hereliesaz.barbacker.ui.RemoteImage
 import com.hereliesaz.barbacker.ui.iconForName
 import com.hereliesaz.barbacker.ui.rememberGridReorderState
 import com.hereliesaz.barbacker.ui.reorderable
 import com.hereliesaz.barbacker.ui.reorderableItem
 import com.hereliesaz.barbacker.ui.theme.BarBackerColors
 import com.hereliesaz.barbacker.ui.theme.LocalBarAccent
+
+/**
+ * Grid width, in tiles.
+ *
+ * Referenced by both the layout and the keyboard reorder gesture — up and
+ * down have to move a whole row's worth of slots, and two hardcoded 2s is
+ * how the arrow keys quietly stop matching what is on screen.
+ */
+private const val GRID_COLUMNS = 2
 
 /** Actions the dashboard can trigger, grouped so the signature stays readable. */
 data class DashboardActions(
@@ -98,6 +113,9 @@ data class DashboardActions(
     val onOpenNotificationSettings: () -> Unit,
     val onOpenBarManager: () -> Unit,
     val onOpenThemeEditor: () -> Unit,
+    val onOpenCalendar: () -> Unit,
+    val onOpenBottleScanner: () -> Unit,
+    val onOpenPosSettings: () -> Unit,
     val onSwitchBar: () -> Unit,
     val onGoOffClock: () -> Unit,
     /** The ids of the current grid context, in the order a drag settled on. */
@@ -235,6 +253,16 @@ private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
                     },
                 )
                 DropdownMenuItem(
+                    text = { Text("Calendar") },
+                    leadingIcon = {
+                        Icon(Icons.Filled.CalendarMonth, contentDescription = null)
+                    },
+                    onClick = {
+                        menuOpen = false
+                        actions.onOpenCalendar()
+                    },
+                )
+                DropdownMenuItem(
                     text = { Text("Manage Bar") },
                     leadingIcon = { Icon(Icons.Filled.Store, contentDescription = null) },
                     onClick = {
@@ -242,6 +270,23 @@ private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
                         actions.onOpenBarManager()
                     },
                 )
+                // Premium, but NOT Manager+ — matching the web client. A
+                // barback scanning a bottle and sending an alert is the
+                // staff-facing half of this feature; only "Add to Menu"
+                // and "86 It" inside it need Manager+, and the dialog
+                // gates those itself.
+                if (state.isPremium) {
+                    DropdownMenuItem(
+                        text = { Text("Scan Bottle") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.PhotoCamera, contentDescription = null)
+                        },
+                        onClick = {
+                            menuOpen = false
+                            actions.onOpenBottleScanner()
+                        },
+                    )
+                }
                 // Premium branding, Manager+ only — matching the web
                 // client, where a Staff member has no write access to the
                 // bar document the theme lives on.
@@ -252,6 +297,16 @@ private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
                         onClick = {
                             menuOpen = false
                             actions.onOpenThemeEditor()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("POS Integration") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.PointOfSale, contentDescription = null)
+                        },
+                        onClick = {
+                            menuOpen = false
+                            actions.onOpenPosSettings()
                         },
                     )
                 }
@@ -318,18 +373,28 @@ private fun ButtonGrid(
 
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(GRID_COLUMNS),
         contentPadding = contentPadding,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier.then(if (canReorder) Modifier.reorderable(reorderState) else Modifier),
     ) {
-        items(rendered, key = { it.id }) { button ->
+        itemsIndexed(rendered, key = { _, button -> button.id }) { index, button ->
             ButtonTile(
                 button = button,
                 pending = pendingFor(button),
+                held = reorderState.draggingKey == button.id && reorderState.keyboardHeld,
                 onClick = { onButtonTapped(button) },
-                modifier = Modifier.reorderableItem(reorderState, button.id),
+                modifier = Modifier.reorderableItem(
+                    state = reorderState,
+                    key = button.id,
+                    index = index,
+                    // A grid is a list underneath, so up/down is a whole
+                    // row's worth of slots. Hardcoding 2 in two places is
+                    // how the arrow keys quietly stop matching the layout.
+                    columns = GRID_COLUMNS,
+                    enabled = canReorder,
+                ),
             )
         }
     }
@@ -341,6 +406,7 @@ private fun ButtonTile(
     pending: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    held: Boolean = false,
 ) {
     val accent = LocalBarAccent.current
 
@@ -361,6 +427,13 @@ private fun ButtonTile(
         colors = CardDefaults.cardColors(
             containerColor = if (pending) BarBackerColors.Error else accent.tile,
         ),
+        // The outline is the only cue a keyboard user gets that a tile is
+        // picked up — there is no finger on it to make that obvious.
+        border = if (held) {
+            BorderStroke(3.dp, BarBackerColors.Primary)
+        } else {
+            null
+        },
         modifier = modifier
             .fillMaxWidth()
             .height(120.dp)
@@ -546,6 +619,19 @@ private fun RequestRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // A scanned bottle is evidence — someone photographed an empty
+        // bottle so a manager could see it. Without this the photo is
+        // uploaded, referenced on the request, and visible nowhere.
+        request.photoUrl?.let { photoUrl ->
+            RemoteImage(
+                url = photoUrl,
+                contentDescription = "Photo attached to ${request.label}",
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+            )
+        }
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = request.label,

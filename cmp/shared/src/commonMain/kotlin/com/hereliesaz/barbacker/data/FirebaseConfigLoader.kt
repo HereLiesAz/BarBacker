@@ -23,15 +23,26 @@ internal object FirebaseConfigKeys {
     const val MESSAGING_SENDER_ID = "VITE_FIREBASE_MESSAGING_SENDER_ID"
     const val APP_ID = "VITE_FIREBASE_APP_ID"
 
+    /**
+     * Where the outbound iCal feed is actually served from.
+     *
+     * OPTIONAL, and absent from [ALL] on purpose: the feed is a Cloud
+     * Function on a different host from everything else, and a deployment
+     * that never turned it on should still run. Calendar Settings says the
+     * feed is unconfigured rather than handing out a URL that 404s.
+     */
+    const val ICAL_FEED_BASE_URL = "VITE_ICAL_FEED_BASE_URL"
+
     val ALL = listOf(
         API_KEY, AUTH_DOMAIN, PROJECT_ID, STORAGE_BUCKET, MESSAGING_SENDER_ID, APP_ID,
     )
 
-    /** Builds a config from a lookup, or null if any value is missing. */
+    /** Builds a config from a lookup, or null if any REQUIRED value is missing. */
     fun build(lookup: (String) -> String?): BarBackerFirebaseConfig? {
         val values = ALL.associateWith { lookup(it)?.takeIf(String::isNotBlank) }
         if (values.values.any { it == null }) return null
         return BarBackerFirebaseConfig(
+            icalFeedBaseUrl = lookup(ICAL_FEED_BASE_URL)?.takeIf(String::isNotBlank),
             apiKey = values.getValue(API_KEY)!!,
             authDomain = values.getValue(AUTH_DOMAIN)!!,
             projectId = values.getValue(PROJECT_ID)!!,

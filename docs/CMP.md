@@ -72,6 +72,18 @@ VITE_FIREBASE_MESSAGING_SENDER_ID
 VITE_FIREBASE_APP_ID
 ```
 
+One more is optional:
+
+```
+VITE_ICAL_FEED_BASE_URL
+```
+
+It names where the outbound iCal feed is actually served from — a Cloud
+Function, on a different host from everything else. Deliberately outside
+the required set, so a deployment that never enabled the feed still runs;
+Calendar Settings then says the link cannot be shown rather than
+constructing one that 404s.
+
 Where each platform looks for them:
 
 | Platform | Source |
@@ -196,11 +208,11 @@ without the refresh, every role-gated read stays denied for up to an hour.
 
 ## Testing
 
-`./gradlew :shared:desktopTest` runs the shared suite: 102 tests covering
+`./gradlew :shared:desktopTest` runs the shared suite: 116 tests covering
 the ported pure logic — contrast colour, brand matching, the button label
 resolver, sort order, sub-menu synthesis, tap classification, reorder
-arithmetic, picked-image identity, the request visibility filter, and
-alert eligibility.
+arithmetic, picked-image identity, OCR line filtering, event-time
+conversion, the request visibility filter, and alert eligibility.
 
 These are the pieces where a silent divergence from the PWA would be
 hardest to notice, so each behavioural subtlety is pinned by a test that
@@ -230,6 +242,12 @@ fails if it is lost:
 - The synthesised tiles are stripped from a saved order on the way to
   Firestore, not before the drag, so the indices the gesture works in
   stay aligned with what is on screen.
+- An all-day calendar event arrives as a bare date. Which midnight that
+  means has to be resolved against the SAME zone the display uses, or the
+  event lands on the wrong day by exactly the offset between them.
+- OCR emits stray single glyphs from a label's border. Each one is
+  another chance for the brand matcher to find a spurious substring hit,
+  so one-character lines never reach it.
 
 ## Status
 
@@ -258,30 +276,43 @@ Working end to end:
   on premium, and inviting staff or managers by email
 - The theme editor: brand colours, font, and a logo uploaded to Storage
 - Drag-to-reorder on the main grid and inside every sub-menu, held behind
-  a long press so a tap still sends a page
+  a long press so a tap still sends a page, and operable from a keyboard:
+  Space or Enter picks a tile up, the arrow keys move it, Escape cancels
+- The calendar: an agenda of the bar's events, Manager+ create/edit/delete,
+  and the settings screen for Google, the outbound iCal feed, and inbound
+  `.ics` subscriptions
+- POS integration: connect Square or Toast, sync the menu, and a seven-day
+  sales summary
+- The bottle scanner on Android — camera, on-device OCR, and the
+  add-to-menu / 86 / send-alert actions
+- Remote images: the bar's logo in the theme editor, and a scanned
+  bottle's photo on the request row it is attached to
 
 Not built yet — the PWA remains the complete client:
 
-- **Calendar, POS settings, and the bottle scanner.** The domain models
-  are ported; the screens are not.
 - **iOS push delivery.** The token code is shared with Android, but iOS
   needs an APNs capability and entitlement configured in an Xcode
   project that does not exist yet (see `cmp/iosApp/README.md`). Until
   then iOS falls back to the in-app alert loop.
-- **The iOS file picker is unverified.** `ImagePicker.ios.kt` is written
-  against `UIDocumentPickerViewController`, but with no macOS runner and
-  no Xcode project it has never been compiled. Treat it as a first draft
-  of that path. Android and desktop are built in CI.
+- **The iOS UIKit interop is unverified.** `ImagePicker.ios.kt`,
+  `PhotoCapture.ios.kt`, and `BottleRecognizer.ios.kt` are written
+  against `UIDocumentPickerViewController`, `UIImagePickerController`,
+  and Vision respectively, but with no macOS runner and no Xcode project
+  none has ever been compiled. Treat them as first drafts. The camera one
+  also needs an `NSCameraUsageDescription` in `Info.plist`, or iOS
+  terminates the app the moment the picker opens. Android and desktop are
+  built in CI.
+- **The bottle scanner needs a camera and OCR, so desktop has neither
+  half.** ML Kit is Android-only and Vision is Apple-only; the
+  alternatives were bundling a Tesseract native library per desktop
+  platform or calling a cloud vision API, and the second would break the
+  on-device promise the other platforms keep. The scanner reports itself
+  unsupported there rather than offering a dead button.
 - **Desktop push.** There is no FCM transport for a JVM app. The
   provider reports this explicitly rather than registering nothing and
   looking broken; the in-app alert loop is what pages a desktop user.
 - **ntfy deep linking.** The notification-settings screen shows the
   topic for manual subscription but has no `ntfy://` link.
-- **Keyboard-operable reordering.** The web client can reorder with the
-  arrow keys; here the gesture is pointer-only.
-- **Logo previews.** The theme editor shows the uploaded logo's URL, not
-  the image — rendering a remote image needs an image-loading library
-  this build does not carry.
 - **Google and Apple sign-in.** Email/password only.
 
 Deliberately absent, because the PWA has no such feature either:

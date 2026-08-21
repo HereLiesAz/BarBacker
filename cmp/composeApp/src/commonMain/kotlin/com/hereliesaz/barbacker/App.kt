@@ -17,6 +17,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -29,10 +31,16 @@ import com.hereliesaz.barbacker.data.loadFirebaseConfig
 import com.hereliesaz.barbacker.ui.ActiveDialog
 import com.hereliesaz.barbacker.ui.AppUiState
 import com.hereliesaz.barbacker.ui.AppViewModel
+import com.hereliesaz.barbacker.ui.InstallImageLoader
 import com.hereliesaz.barbacker.ui.Screen
 import com.hereliesaz.barbacker.ui.screens.ApprovalPendingScreen
 import com.hereliesaz.barbacker.ui.screens.BarManagerDialog
 import com.hereliesaz.barbacker.ui.screens.BarSelectionScreen
+import com.hereliesaz.barbacker.ui.screens.BottleScannerActions
+import com.hereliesaz.barbacker.ui.screens.BottleScannerDialog
+import com.hereliesaz.barbacker.ui.screens.CalendarDialog
+import com.hereliesaz.barbacker.ui.screens.CalendarSettingsActions
+import com.hereliesaz.barbacker.ui.screens.CalendarSettingsDialog
 import com.hereliesaz.barbacker.ui.screens.ChatPanel
 import com.hereliesaz.barbacker.ui.screens.CheckingInviteScreen
 import com.hereliesaz.barbacker.ui.screens.DashboardActions
@@ -40,6 +48,8 @@ import com.hereliesaz.barbacker.ui.screens.DashboardScreen
 import com.hereliesaz.barbacker.ui.screens.EightySixDialog
 import com.hereliesaz.barbacker.ui.screens.InputPromptDialog
 import com.hereliesaz.barbacker.ui.screens.NotificationSettingsDialog
+import com.hereliesaz.barbacker.ui.screens.PosSettingsActions
+import com.hereliesaz.barbacker.ui.screens.PosSettingsDialog
 import com.hereliesaz.barbacker.ui.screens.QuantityPromptDialog
 import com.hereliesaz.barbacker.ui.screens.RestoringScreen
 import com.hereliesaz.barbacker.ui.screens.RoleSelectionScreen
@@ -68,6 +78,7 @@ fun App(platformContext: Any? = null) {
             firebase = BarBackerFirebase.initialize(config, platformContext),
             store = createKeyValueStore(platformContext),
             platformContext = platformContext,
+            icalFeedBaseUrl = config.icalFeedBaseUrl,
         )
     }
 
@@ -86,6 +97,11 @@ private fun BarBackerApp(container: AppContainer) {
             eightySix = container.eightySix,
             ownershipClaims = container.ownershipClaims,
             storage = container.storage,
+            calendar = container.calendar,
+            pos = container.pos,
+            urls = container.urls,
+            bottleRecognizer = container.bottleRecognizer,
+            icalFeedBaseUrl = container.icalFeedBaseUrl,
             placeSearch = container.placeSearch,
             pushTokens = container.pushTokens,
             alerter = container.alerter,
@@ -94,6 +110,10 @@ private fun BarBackerApp(container: AppContainer) {
     }
     val state by viewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Once for the process, over the HTTP engine this app already
+    // configured for its place search.
+    InstallImageLoader(container.httpClient)
 
     // Failures the user needs to know about — a lost claim race, a
     // rejected write — surface here rather than only reaching the log.
@@ -168,6 +188,11 @@ private fun BarBackerApp(container: AppContainer) {
                             },
                             onOpenBarManager = { viewModel.openDialog(ActiveDialog.BarManager) },
                             onOpenThemeEditor = { viewModel.openDialog(ActiveDialog.ThemeEditor) },
+                            onOpenCalendar = { viewModel.openDialog(ActiveDialog.Calendar) },
+                            onOpenBottleScanner = {
+                                viewModel.openDialog(ActiveDialog.BottleScanner)
+                            },
+                            onOpenPosSettings = { viewModel.openDialog(ActiveDialog.PosSettings) },
                             onSwitchBar = viewModel::backToBarSelection,
                             onGoOffClock = viewModel::goOffClock,
                             onReorder = viewModel::saveButtonOrder,
@@ -268,6 +293,80 @@ private fun DashboardDialogs(state: AppUiState, viewModel: AppViewModel) {
             currentTheme = state.bar?.theme,
             onSave = viewModel::saveTheme,
             onUploadLogo = viewModel::uploadLogo,
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.Calendar -> CalendarDialog(
+            events = state.calendarEvents,
+            isManagerPlus = state.isManagerPlus,
+            onCreate = viewModel::createCalendarEvent,
+            onUpdate = viewModel::updateCalendarEvent,
+            onDelete = viewModel::deleteCalendarEvent,
+            // Every collection behind the settings screen is Manager+
+            // gated in the rules, so Staff would open three empty boxes.
+            onOpenSettings = if (state.isManagerPlus) {
+                { viewModel.openDialog(ActiveDialog.CalendarSettings) }
+            } else {
+                null
+            },
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.CalendarSettings -> {
+            // The replacement, LocalClipboard, takes a ClipEntry built
+            // from a platform-native object — a Transferable on desktop,
+            // a ClipData on Android — with no common factory for plain
+            // text. Swapping to it means an expect/actual per platform to
+            // copy one string; this deprecated API does the job on all
+            // three today.
+            @Suppress("DEPRECATION")
+            val clipboard = LocalClipboardManager.current
+            CalendarSettingsDialog(
+                googleConnection = state.googleCalendarConnection,
+                subscriptions = state.icalSubscriptions,
+                feedUrl = state.icalFeedUrl,
+                hasFeedToken = state.icalFeedToken != null,
+                feedBaseConfigured = state.icalFeedBaseUrl != null,
+                actions = CalendarSettingsActions(
+                    onConnectGoogle = viewModel::connectGoogleCalendar,
+                    onListCalendars = viewModel::listGoogleCalendars,
+                    onSelectCalendar = viewModel::selectGoogleCalendar,
+                    onDisconnectGoogle = viewModel::disconnectGoogleCalendar,
+                    onAddSubscription = viewModel::addICalSubscription,
+                    onRemoveSubscription = viewModel::removeICalSubscription,
+                    onRotateFeedToken = viewModel::rotateICalFeedToken,
+                    onCopyFeedUrl = { clipboard.setText(AnnotatedString(it)) },
+                ),
+                // Back to the calendar rather than closing outright — this
+                // screen is reached from there, and dropping the user to
+                // the dashboard would lose their place.
+                onClose = { viewModel.openDialog(ActiveDialog.Calendar) },
+            )
+        }
+
+        ActiveDialog.BottleScanner -> BottleScannerDialog(
+            isManagerPlus = state.isManagerPlus,
+            existingBrands = state.bar?.beerInventory?.keys?.toList().orEmpty(),
+            recognitionSupported = viewModel.bottleRecognitionSupported,
+            actions = BottleScannerActions(
+                onRecognize = viewModel::recognizeBottle,
+                onAddToMenu = viewModel::addBottleToMenu,
+                onEightySix = viewModel::eightySixBrand,
+                onSendAlert = viewModel::sendBottleAlert,
+            ),
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.PosSettings -> PosSettingsDialog(
+            connections = state.posConnections,
+            menu = state.posMenu,
+            actions = PosSettingsActions(
+                onConnectSquare = viewModel::connectSquare,
+                onConnectToast = viewModel::connectToast,
+                onDisconnect = viewModel::disconnectPos,
+                onSyncMenu = viewModel::syncPosMenu,
+                onGetSales = viewModel::getPosSales,
+            ),
             onClose = viewModel::closeDialog,
         )
     }

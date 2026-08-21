@@ -3,7 +3,9 @@ package com.hereliesaz.barbacker.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hereliesaz.barbacker.ASK_ME_SUFFIX
+import com.hereliesaz.barbacker.BEER_BUTTON_LABEL
 import com.hereliesaz.barbacker.DEFAULT_BEERS
+import com.hereliesaz.barbacker.DEFAULT_SPIRITS
 import com.hereliesaz.barbacker.LABEL_SEPARATOR
 import com.hereliesaz.barbacker.INVITE_CHECK_TIMEOUT_MILLIS
 import com.hereliesaz.barbacker.Alerter
@@ -11,15 +13,20 @@ import com.hereliesaz.barbacker.MAX_IGNORED_IDS
 import com.hereliesaz.barbacker.NAG_INTERVAL_MILLIS
 import com.hereliesaz.barbacker.NOTIFICATION_DEFAULTS_BY_TITLE
 import com.hereliesaz.barbacker.REQUEST_WINDOW_MILLIS
+import com.hereliesaz.barbacker.POS_INSIGHTS_WINDOW_MILLIS
 import com.hereliesaz.barbacker.REQUEST_WINDOW_REFRESH_MILLIS
 import com.hereliesaz.barbacker.currentTimeMillis
 import com.hereliesaz.barbacker.data.AccountProfile
 import com.hereliesaz.barbacker.data.AuthRepository
 import com.hereliesaz.barbacker.data.AuthState
 import com.hereliesaz.barbacker.data.BarRepository
+import com.hereliesaz.barbacker.data.BottleRecognizer
 import com.hereliesaz.barbacker.data.CHAT_PAGE_SIZE
+import com.hereliesaz.barbacker.data.CalendarEventDraft
+import com.hereliesaz.barbacker.data.CalendarRepository
 import com.hereliesaz.barbacker.data.ChatRepository
 import com.hereliesaz.barbacker.data.EightySixRepository
+import com.hereliesaz.barbacker.data.GoogleCalendar
 import com.hereliesaz.barbacker.data.InvitableRole
 import com.hereliesaz.barbacker.data.KeyValueStore
 import com.hereliesaz.barbacker.data.MembershipRepository
@@ -30,26 +37,36 @@ import com.hereliesaz.barbacker.data.PLACE_SEARCH_MIN_LENGTH
 import com.hereliesaz.barbacker.data.PlaceResult
 import com.hereliesaz.barbacker.data.PickedImage
 import com.hereliesaz.barbacker.data.PlaceSearchRepository
+import com.hereliesaz.barbacker.data.POSSales
+import com.hereliesaz.barbacker.data.PosRepository
 import com.hereliesaz.barbacker.data.PushTokenProvider
 import com.hereliesaz.barbacker.data.RequestAlreadyClaimedException
 import com.hereliesaz.barbacker.data.RequestRepository
 import com.hereliesaz.barbacker.data.StorageRepository
+import com.hereliesaz.barbacker.data.UrlOpener
 import com.hereliesaz.barbacker.logWarning
 import com.hereliesaz.barbacker.logic.ButtonTap
 import com.hereliesaz.barbacker.logic.classifyTap
+import com.hereliesaz.barbacker.logic.isoFromEpochMillis
 import com.hereliesaz.barbacker.logic.hasOutstandingAlerts
+import com.hereliesaz.barbacker.logic.matchBrand
 import com.hereliesaz.barbacker.logic.requestLabelFor
 import com.hereliesaz.barbacker.model.Bar
 import com.hereliesaz.barbacker.model.BarRole
 import com.hereliesaz.barbacker.model.BarTheme
 import com.hereliesaz.barbacker.model.BarUser
 import com.hereliesaz.barbacker.model.ButtonConfig
+import com.hereliesaz.barbacker.model.CalendarConnectionStatus
+import com.hereliesaz.barbacker.model.CalendarEvent
 import com.hereliesaz.barbacker.model.ChatMessage
 import com.hereliesaz.barbacker.model.EightySixEntry
 import com.hereliesaz.barbacker.model.EightySixVisibility
+import com.hereliesaz.barbacker.model.ICalSubscription
 import com.hereliesaz.barbacker.model.JoinPolicy
 import com.hereliesaz.barbacker.model.MemberStatus
 import com.hereliesaz.barbacker.model.OwnershipClaim
+import com.hereliesaz.barbacker.model.POSConnectionStatus
+import com.hereliesaz.barbacker.model.POSMenuItem
 import com.hereliesaz.barbacker.model.Request
 import com.hereliesaz.barbacker.model.SubscriptionTier
 import kotlinx.coroutines.coroutineScope
@@ -84,10 +101,16 @@ class AppViewModel(
     private val eightySix: EightySixRepository,
     private val ownershipClaims: OwnershipClaimRepository,
     private val storage: StorageRepository,
+    private val calendar: CalendarRepository,
+    private val pos: PosRepository,
+    private val urls: UrlOpener,
+    private val bottleRecognizer: BottleRecognizer,
     private val placeSearch: PlaceSearchRepository,
     private val pushTokens: PushTokenProvider,
     private val alerter: Alerter,
     private val store: KeyValueStore,
+    /** Where the outbound iCal feed is served from, if configured. */
+    private val icalFeedBaseUrl: String? = null,
 ) : ViewModel() {
 
     /** State the client owns outright, with no Firestore counterpart. */
@@ -206,14 +229,79 @@ class AppViewModel(
         FeatureScope(chatScope, entries, claims, account)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeatureScope())
 
+    /** The calendar's four subscriptions, resolved together. */
+    private data class CalendarScope(
+        val events: List<CalendarEvent> = emptyList(),
+        val googleConnection: CalendarConnectionStatus? = null,
+        val subscriptions: List<ICalSubscription> = emptyList(),
+        val feedToken: String? = null,
+    )
+
+    private data class PosScope(
+        val connections: Map<String, POSConnectionStatus> = emptyMap(),
+        val menu: List<POSMenuItem> = emptyList(),
+    )
+
+    private data class IntegrationScope(
+        val calendar: CalendarScope = CalendarScope(),
+        val pos: PosScope = PosScope(),
+    )
+
+    /** barId paired with Manager+, for the subscriptions the rules gate on it. */
+    private val managedBarFlow = combine(barIdFlow, isManagerPlusFlow) { barId, isManagerPlus ->
+        barId to isManagerPlus
+    }
+
+    /**
+     * Calendar and POS, kept live rather than opened on demand.
+     *
+     * Matching the web client: the calendar is glanceable data the floor
+     * uses, and the settings collections are small and only ever fetched
+     * for Manager+ — the repositories return empty for everyone else
+     * rather than subscribing to something the rules will deny.
+     */
+    @Suppress("OPT_IN_USAGE")
+    private val integrationScope: StateFlow<IntegrationScope> = combine(
+        combine(
+            barIdFlow.flatMapLatest { calendar.eventsFlow(it) },
+            managedBarFlow.flatMapLatest { (barId, isManagerPlus) ->
+                calendar.googleConnectionFlow(barId, isManagerPlus)
+            },
+            managedBarFlow.flatMapLatest { (barId, isManagerPlus) ->
+                calendar.icalSubscriptionsFlow(barId, isManagerPlus)
+            },
+            managedBarFlow.flatMapLatest { (barId, isManagerPlus) ->
+                calendar.feedTokenFlow(barId, isManagerPlus)
+            },
+        ) { events, connection, subscriptions, token ->
+            CalendarScope(events, connection, subscriptions, token)
+        },
+        combine(
+            managedBarFlow.flatMapLatest { (barId, isManagerPlus) ->
+                pos.connectionsFlow(barId, isManagerPlus)
+            },
+            managedBarFlow.flatMapLatest { (barId, isManagerPlus) ->
+                pos.menuFlow(barId, isManagerPlus)
+            },
+        ) { connections, menu -> PosScope(connections, menu) },
+    ) { calendarScope, posScope ->
+        IntegrationScope(calendarScope, posScope)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IntegrationScope())
+
+    // Paired up because `combine` tops out at five typed sources and the
+    // state assembly below already uses all five.
+    private val sideScopes = combine(featureScope, integrationScope) { features, integrations ->
+        features to integrations
+    }
+
     @Suppress("OPT_IN_USAGE")
     val state: StateFlow<AppUiState> = combine(
         auth.state,
         barIdFlow,
         barScope,
-        featureScope,
+        sideScopes,
         localState,
-    ) { authState, barId, scope, features, local ->
+    ) { authState, barId, scope, (features, integrations), local ->
         val account = features.account
         AppUiState(
             auth = authState,
@@ -248,6 +336,13 @@ class AppViewModel(
             inputPrompt = local.inputPrompt,
             quantityPrompt = local.quantityPrompt,
             pendingOrders = local.pendingOrders,
+            calendarEvents = integrations.calendar.events,
+            googleCalendarConnection = integrations.calendar.googleConnection,
+            icalSubscriptions = integrations.calendar.subscriptions,
+            icalFeedToken = integrations.calendar.feedToken,
+            icalFeedBaseUrl = icalFeedBaseUrl,
+            posConnections = integrations.pos.connections,
+            posMenu = integrations.pos.menu,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
 
@@ -873,6 +968,28 @@ class AppViewModel(
         }
     }
 
+    /**
+     * The write behind [submitRequest], awaited rather than fired off.
+     *
+     * The scanner needs to know whether the alert actually went out — it
+     * closes its dialog on success and stays open on failure — which
+     * [submitRequest]'s fire-and-forget shape cannot report. It also
+     * carries the photo URL, which the grid path never has.
+     */
+    private suspend fun submitRequestNow(barId: String, label: String, photoUrl: String?) {
+        val current = state.value
+        val user = current.currentUser ?: error("Signed out")
+        requests.submit(
+            barId = barId,
+            label = label,
+            requesterId = user.uid,
+            requesterName = current.membership?.displayName.orEmpty(),
+            requesterRole = current.membership?.role?.wire,
+            buttonId = current.resolver.idForLabel(label),
+            photoUrl = photoUrl,
+        )
+    }
+
     /** Submits whatever the sub-menu trail currently spells out, marked as a prompt. */
     fun submitPendingTrailAsAskMe() {
         val trail = localState.value.navStack
@@ -1038,6 +1155,176 @@ class AppViewModel(
         val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
         return runCatching { storage.uploadBarLogo(barId, image) }
             .onFailure { logWarning("Could not upload a logo for $barId", it) }
+    }
+
+    // --- Bottle scanner -------------------------------------------------
+
+    /** True when this platform can read a label at all. */
+    val bottleRecognitionSupported: Boolean get() = bottleRecognizer.isSupported
+
+    /**
+     * Reads [photo] and returns the closest known brand, or null.
+     *
+     * Candidates are the stock lists plus this bar's own inventory, so a
+     * bottle the bar already stocks matches even when it is in neither
+     * default list.
+     */
+    suspend fun recognizeBottle(photo: ByteArray): Result<String?> = runCatching {
+        val lines = bottleRecognizer.recognizeLines(photo)
+        val candidates = DEFAULT_SPIRITS + DEFAULT_BEERS +
+            state.value.bar?.beerInventory?.keys.orEmpty()
+        matchBrand(lines, candidates)
+    }.onFailure { logWarning("Bottle recognition failed", it) }
+
+    /**
+     * Adds a scanned bottle to the beer inventory.
+     *
+     * A brand that is already stocked takes the arrayUnion path rather
+     * than the merge-set one — the merge-set writes the whole array for
+     * that key and would wipe the types already recorded against it.
+     */
+    suspend fun addBottleToMenu(brand: String, type: String): Result<Unit> = withBar { barId ->
+        val existing = state.value.bar?.beerInventory?.get(brand)
+        when {
+            existing == null -> {
+                bars.addBrand(barId, brand)
+                if (type.isNotBlank()) bars.addType(barId, brand, type)
+            }
+
+            type.isNotBlank() && type !in existing -> bars.addType(barId, brand, type)
+        }
+    }
+
+    /**
+     * Sends the scanned bottle to the floor, photo attached.
+     *
+     * The label is prefixed with "BEER: " to match the stock button's
+     * exact label rather than an invented prefix. The resolver maps a
+     * label to a button id, and a request with no resolvable id is
+     * treated as "cannot tell who this is for" and paged to everyone —
+     * so a made-up prefix mass-notifies the whole bar past everyone's
+     * preferences.
+     */
+    suspend fun sendBottleAlert(brand: String, photo: ByteArray): Result<Unit> {
+        val user = state.value.currentUser
+            ?: return Result.failure(IllegalStateException("Signed out"))
+        return withBar { barId ->
+            val photoUrl = storage.uploadBottlePhoto(
+                barId = barId,
+                uid = user.uid,
+                epochMillis = currentTimeMillis(),
+                jpegBytes = photo,
+            )
+            submitRequestNow(
+                barId = barId,
+                label = "${BEER_BUTTON_LABEL}$LABEL_SEPARATOR$brand",
+                photoUrl = photoUrl,
+            )
+        }
+    }
+
+    /** Hides a brand's grid tile, which is what "86 It" means for stock. */
+    suspend fun eightySixBrand(brand: String): Result<Unit> =
+        withBar { barId -> bars.hideButton(barId, "brand_$brand") }
+
+    // --- Calendar -------------------------------------------------------
+
+    suspend fun createCalendarEvent(draft: CalendarEventDraft): Result<Unit> =
+        withBar { barId -> calendar.createEvent(barId, draft) }
+
+    suspend fun updateCalendarEvent(eventId: String, draft: CalendarEventDraft): Result<Unit> =
+        withBar { barId -> calendar.updateEvent(barId, eventId, draft) }
+
+    suspend fun deleteCalendarEvent(eventId: String): Result<Unit> =
+        withBar { barId -> calendar.deleteEvent(barId, eventId) }
+
+    /**
+     * Starts the Google consent flow in the platform browser.
+     *
+     * There is no redirect back into this app — the callback lands on the
+     * Cloud Function, which writes the connection document, and the
+     * listener here picks it up when the user returns. Failing to open a
+     * browser is reported rather than swallowed, because otherwise the
+     * button looks like it did nothing.
+     */
+    suspend fun connectGoogleCalendar(): Result<Unit> = withBar { barId ->
+        val url = calendar.googleAuthorizeUrl(barId)
+        if (!urls.open(url)) error("No browser available")
+    }
+
+    suspend fun listGoogleCalendars(): Result<List<GoogleCalendar>> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        return runCatching { calendar.listGoogleCalendars(barId) }
+            .onFailure { logWarning("Could not list Google calendars", it) }
+    }
+
+    suspend fun selectGoogleCalendar(calendarId: String): Result<Unit> =
+        withBar { barId -> calendar.selectGoogleCalendar(barId, calendarId) }
+
+    suspend fun disconnectGoogleCalendar(): Result<Unit> =
+        withBar { barId -> calendar.disconnectGoogle(barId) }
+
+    suspend fun addICalSubscription(url: String): Result<Unit> {
+        val uid = state.value.currentUser?.uid
+            ?: return Result.failure(IllegalStateException("Signed out"))
+        return withBar { barId -> calendar.addICalSubscription(barId, url, uid) }
+    }
+
+    suspend fun removeICalSubscription(subscriptionId: String): Result<Unit> =
+        withBar { barId -> calendar.removeICalSubscription(barId, subscriptionId) }
+
+    suspend fun rotateICalFeedToken(revoke: Boolean): Result<Unit> =
+        withBar { barId -> calendar.rotateFeedToken(barId, revoke) }
+
+    // --- POS ------------------------------------------------------------
+
+    suspend fun connectSquare(): Result<Unit> = withBar { barId ->
+        val url = pos.squareAuthorizeUrl(barId)
+        if (!urls.open(url)) error("No browser available")
+    }
+
+    suspend fun connectToast(
+        clientId: String,
+        clientSecret: String,
+        restaurantGuid: String,
+    ): Result<Unit> = withBar { barId ->
+        pos.connectToast(barId, clientId, clientSecret, restaurantGuid)
+    }
+
+    suspend fun disconnectPos(provider: String): Result<Unit> =
+        withBar { barId -> pos.disconnect(barId, provider) }
+
+    suspend fun syncPosMenu(provider: String): Result<Int> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        return runCatching { pos.syncMenu(barId, provider) }
+            .onFailure { logWarning("Could not sync the $provider menu", it) }
+    }
+
+    /** The same seven-day window the web client's insights button uses. */
+    suspend fun getPosSales(provider: String): Result<POSSales> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        val end = currentTimeMillis()
+        return runCatching {
+            pos.getSales(
+                barId = barId,
+                provider = provider,
+                start = isoFromEpochMillis(end - POS_INSIGHTS_WINDOW_MILLIS),
+                end = isoFromEpochMillis(end),
+            )
+        }.onFailure { logWarning("Could not load $provider sales", it) }
+    }
+
+    /**
+     * Runs [block] against the selected bar, or fails if there isn't one.
+     *
+     * The failure is a Result rather than a silent return so the dialog
+     * that called it shows something — every one of these actions is
+     * behind a button the user just pressed.
+     */
+    private suspend fun withBar(block: suspend (String) -> Unit): Result<Unit> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        return runCatching { block(barId) }
+            .onFailure { logWarning("Bar-scoped action failed for $barId", it) }
     }
 
     // --- Dialogs --------------------------------------------------------

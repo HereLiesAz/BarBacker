@@ -1,0 +1,19 @@
+package com.hereliesaz.barbacker.data
+
+/**
+ * Wires the repositories to a live Firebase project.
+ *
+ * Constructed once by the platform entry point and passed down, rather
+ * than reached through a global. Tests build a container of fakes instead,
+ * and a hidden singleton would make it possible to hit production
+ * Firestore from a test by forgetting one substitution.
+ */
+class AppContainer(
+    firebase: BarBackerFirebase,
+    val store: KeyValueStore,
+) {
+    val auth: AuthRepository = FirebaseAuthRepository(firebase.auth)
+    val bars: BarRepository = FirebaseBarRepository(firebase.firestore)
+    val memberships: MembershipRepository = FirebaseMembershipRepository(firebase.firestore)
+    val requests: RequestRepository = FirebaseRequestRepository(firebase.firestore)
+}

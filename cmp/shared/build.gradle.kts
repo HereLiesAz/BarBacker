@@ -19,7 +19,11 @@ kotlin {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
 
-    listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { iosTarget: KotlinNativeTarget ->
+    // No iosX64: Compose Multiplatform 1.11.x publishes no Intel-simulator
+    // variant, so the app module cannot resolve it and a shared target with
+    // no app target on top would be dead weight. Apple Silicon simulators
+    // use iosSimulatorArm64.
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { iosTarget: KotlinNativeTarget ->
         iosTarget.binaries.framework {
             baseName = "Shared"
             isStatic = true
@@ -31,6 +35,15 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             api(libs.kotlinx.datetime)
+
+            // `api` rather than `implementation`: the repository
+            // implementations surface FirebaseUser and the Firebase
+            // exception types to callers that need to distinguish a
+            // permission denial from a network failure.
+            api(libs.firebase.auth)
+            api(libs.firebase.firestore)
+            implementation(libs.firebase.storage)
+            implementation(libs.firebase.functions)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

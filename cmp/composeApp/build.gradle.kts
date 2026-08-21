@@ -21,7 +21,9 @@ kotlin {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
 
-    listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { iosTarget: KotlinNativeTarget ->
+    // See the note in shared/build.gradle.kts — Compose Multiplatform
+    // 1.11.x has no iosX64 artifacts.
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { iosTarget: KotlinNativeTarget ->
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true

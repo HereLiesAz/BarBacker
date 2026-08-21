@@ -22,7 +22,7 @@ scratch, so nothing durable can live there.
 |---|---|---|
 | Android | Builds in CI | `minSdk` 24, `compileSdk` 36 |
 | Desktop (JVM) | Builds in CI | Windows, macOS, Linux via Compose Desktop |
-| iOS | Configured, not built in CI | Needs a macOS runner with Xcode |
+| iOS | Configured, not built in CI | Project generated from `iosApp/project.yml`; needs a macOS runner with Xcode |
 | Web | Not a target | Served by the existing PWA |
 
 Web is deliberately absent. Compose Multiplatform's web target is
@@ -44,7 +44,7 @@ cmp/
   gradle/libs.versions.toml   Version catalog
   shared/                     Domain model, pure logic, Firebase data layer
   composeApp/                 Compose UI plus the per-platform entry points
-  iosApp/                     Swift shim for hosting the Compose view
+  iosApp/                     Swift shim, plus the XcodeGen project spec
 ```
 
 `shared` carries no Compose dependency, so the domain model and the
@@ -151,7 +151,9 @@ Running desktop against a real project:
   # ...and the rest
 ```
 
-iOS needs macOS with Xcode; see `cmp/iosApp/README.md`.
+iOS needs macOS with Xcode, plus XcodeGen to turn `cmp/iosApp/project.yml`
+into the project — the `.xcodeproj` is a generated build output and is
+not committed. See `cmp/iosApp/README.md`.
 
 An `ANDROID_HOME` pointing at an SDK with platform 36 is required for the
 Android target. Create `cmp/local.properties` with `sdk.dir=<path>` if the
@@ -312,8 +314,12 @@ Working end to end:
   the 86'd list, and ownership claims
 - Premium bar theming, with the tile label derived from the accent colour
   it sits on
-- Push registration on Android and iOS, plus the in-app alert loop that
-  sounds and vibrates every minute while un-muted pages are waiting
+- Push registration on Android and iOS — iOS asks for notification
+  permission and registers with APNs from the shared code rather than
+  from an app delegate, since FCM cannot mint a token before Firebase is
+  configured and Firebase is configured in the first composition — plus
+  the in-app alert loop that sounds and vibrates every minute while
+  un-muted pages are waiting
 - Bar management for Manager+: hiding grid buttons, restoring hidden ones
   on premium, and inviting staff or managers by email
 - The theme editor: brand colours, font, and a logo uploaded to Storage
@@ -339,20 +345,20 @@ Working end to end:
 
 Not built yet — the PWA remains the complete client:
 
-- **iOS push delivery.** The token code is shared with Android, but iOS
-  needs an APNs capability and entitlement configured in an Xcode
-  project that does not exist yet (see `cmp/iosApp/README.md`). Until
-  then iOS falls back to the in-app alert loop.
-- **The iOS UIKit interop is unverified.** `ImagePicker.ios.kt`,
-  `PhotoCapture.ios.kt`, and `BottleRecognizer.ios.kt` are written
-  against `UIDocumentPickerViewController`, `UIImagePickerController`,
-  and Vision respectively, but with no macOS runner and no Xcode project
-  none has ever been compiled. `SocialSignIn.ios.kt` joins them —
-  `ASWebAuthenticationSession` for Google, `ASAuthorizationController` for
-  Apple. Treat them all as first drafts. The camera one also needs an
-  `NSCameraUsageDescription` in `Info.plist`, or iOS terminates the app
-  the moment the picker opens, and Apple sign-in needs the "Sign in with
-  Apple" capability on the target. Android and desktop are built in CI.
+- **Everything iOS is unverified.** There is no macOS runner and no Mac
+  in the loop, so nothing here — not the project spec, not the Swift,
+  not the Kotlin — has ever been compiled. `ImagePicker.ios.kt`,
+  `PhotoCapture.ios.kt`, `BottleRecognizer.ios.kt`, and
+  `SocialSignIn.ios.kt` are drafts against
+  `UIDocumentPickerViewController`, `UIImagePickerController`, Vision,
+  and AuthenticationServices; `cmp/iosApp/project.yml` is a draft of the
+  Xcode project. The pieces that would otherwise be invisible failures
+  are all declared there — the APNs entitlement and background mode,
+  Sign in with Apple, `NSCameraUsageDescription` (without which iOS
+  terminates the app the moment the picker opens rather than denying
+  anything), the Gradle framework phase, and the script-sandboxing
+  setting that phase needs — but declaring them is not the same as
+  having watched them work. Android and desktop are built in CI.
 - **The bottle scanner needs a camera and OCR, so desktop has neither
   half.** ML Kit is Android-only and Vision is Apple-only; the
   alternatives were bundling a Tesseract native library per desktop

@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -25,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,8 +36,10 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,10 +70,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hereliesaz.barbacker.logic.isButtonPending
+import com.hereliesaz.barbacker.logic.isReorderable
+import com.hereliesaz.barbacker.logic.moveItem
+import com.hereliesaz.barbacker.logic.persistableOrder
 import com.hereliesaz.barbacker.model.ButtonConfig
 import com.hereliesaz.barbacker.model.Request
 import com.hereliesaz.barbacker.ui.AppUiState
 import com.hereliesaz.barbacker.ui.iconForName
+import com.hereliesaz.barbacker.ui.rememberGridReorderState
+import com.hereliesaz.barbacker.ui.reorderable
+import com.hereliesaz.barbacker.ui.reorderableItem
 import com.hereliesaz.barbacker.ui.theme.BarBackerColors
 import com.hereliesaz.barbacker.ui.theme.LocalBarAccent
 
@@ -86,8 +96,12 @@ data class DashboardActions(
     val onOpenChat: () -> Unit,
     val onOpenEightySix: () -> Unit,
     val onOpenNotificationSettings: () -> Unit,
+    val onOpenBarManager: () -> Unit,
+    val onOpenThemeEditor: () -> Unit,
     val onSwitchBar: () -> Unit,
     val onGoOffClock: () -> Unit,
+    /** The ids of the current grid context, in the order a drag settled on. */
+    val onReorder: (List<String>) -> Unit,
 )
 
 @Composable
@@ -99,7 +113,19 @@ fun DashboardScreen(state: AppUiState, actions: DashboardActions) {
             PinnedMarquee(pinned = state.pinnedMessages, onClick = actions.onOpenChat)
 
             Box(modifier = Modifier.weight(1f)) {
-                ButtonGrid(state = state, onButtonTapped = actions.onButtonTapped)
+                ButtonGrid(
+                    buttons = state.currentButtons,
+                    // Gated rather than left to fail: `customOrders` lives
+                    // on the bar document, which firestore.rules restricts
+                    // to Manager+. The web client lets anyone drag and
+                    // alerts on the rejected write; a gesture that does
+                    // nothing is better than one that appears to work and
+                    // then silently reverts.
+                    canReorder = state.isManagerPlus,
+                    pendingFor = { isButtonPending(it.label, state.visibleRequests) },
+                    onButtonTapped = actions.onButtonTapped,
+                    onReorder = actions.onReorder,
+                )
 
                 // Drawn over the grid rather than replacing it, so the
                 // breadcrumb reads as a drill-down and backing out does not
@@ -208,6 +234,27 @@ private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
                         actions.onOpenNotificationSettings()
                     },
                 )
+                DropdownMenuItem(
+                    text = { Text("Manage Bar") },
+                    leadingIcon = { Icon(Icons.Filled.Store, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        actions.onOpenBarManager()
+                    },
+                )
+                // Premium branding, Manager+ only — matching the web
+                // client, where a Staff member has no write access to the
+                // bar document the theme lives on.
+                if (state.isPremium && state.isManagerPlus) {
+                    DropdownMenuItem(
+                        text = { Text("Customize Theme") },
+                        leadingIcon = { Icon(Icons.Filled.Palette, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            actions.onOpenThemeEditor()
+                        },
+                    )
+                }
                 HorizontalDivider(color = BarBackerColors.Outline)
                 DropdownMenuItem(
                     text = { Text("Switch Bar") },
@@ -233,27 +280,68 @@ private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
     HorizontalDivider(color = BarBackerColors.Outline)
 }
 
+/**
+ * The tile grid, drag-to-reorder included.
+ *
+ * [dragOrder] holds the arrangement the finger is currently describing.
+ * While it is non-null it wins over [buttons], so each swap is visible the
+ * moment the finger crosses a tile; on commit it is handed to
+ * [onReorder] and dropped, and the view model's optimistic copy of the new
+ * order takes over from there.
+ */
 @Composable
-private fun ButtonGrid(state: AppUiState, onButtonTapped: (ButtonConfig) -> Unit) {
+private fun ButtonGrid(
+    buttons: List<ButtonConfig>,
+    canReorder: Boolean,
+    pendingFor: (ButtonConfig) -> Boolean,
+    onButtonTapped: (ButtonConfig) -> Unit,
+    onReorder: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+) {
+    val gridState = rememberLazyGridState()
+    var dragOrder by remember { mutableStateOf<List<ButtonConfig>?>(null) }
+    val rendered = dragOrder ?: buttons
+
+    val reorderState = rememberGridReorderState(
+        gridState = gridState,
+        onMove = { from, to -> dragOrder = (dragOrder ?: buttons).moveItem(from, to) },
+        onCommit = {
+            dragOrder?.let { onReorder(persistableOrder(it)) }
+            dragOrder = null
+        },
+        // Nothing is written, and dropping the local arrangement puts the
+        // grid straight back to whatever the bar document says.
+        onCancel = { dragOrder = null },
+        canReorder = { index -> rendered.getOrNull(index)?.isReorderable() == true },
+    )
+
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(2),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        contentPadding = contentPadding,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.then(if (canReorder) Modifier.reorderable(reorderState) else Modifier),
     ) {
-        items(state.currentButtons, key = { it.id }) { button ->
+        items(rendered, key = { it.id }) { button ->
             ButtonTile(
                 button = button,
-                pending = isButtonPending(button.label, state.visibleRequests),
+                pending = pendingFor(button),
                 onClick = { onButtonTapped(button) },
+                modifier = Modifier.reorderableItem(reorderState, button.id),
             )
         }
     }
 }
 
 @Composable
-private fun ButtonTile(button: ButtonConfig, pending: Boolean, onClick: () -> Unit) {
+private fun ButtonTile(
+    button: ButtonConfig,
+    pending: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val accent = LocalBarAccent.current
 
     // The pulse is the whole point of the pending state: a bartender
@@ -273,7 +361,7 @@ private fun ButtonTile(button: ButtonConfig, pending: Boolean, onClick: () -> Un
         colors = CardDefaults.cardColors(
             containerColor = if (pending) BarBackerColors.Error else accent.tile,
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(120.dp)
             .alpha(if (pending) pulse else 1f),
@@ -351,20 +439,18 @@ private fun SubMenuOverlay(state: AppUiState, actions: DashboardActions) {
 
             HorizontalDivider(color = BarBackerColors.Outline, modifier = Modifier.padding(vertical = 12.dp))
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+            // Sub-menus are reorderable too, and each keeps its own order —
+            // `customOrders` is keyed by context id, so the wells under ICE
+            // sort independently of the main grid.
+            ButtonGrid(
+                buttons = state.currentButtons,
+                canReorder = state.isManagerPlus,
+                pendingFor = { false },
+                onButtonTapped = actions.onButtonTapped,
+                onReorder = actions.onReorder,
+                contentPadding = PaddingValues(0.dp),
                 modifier = Modifier.heightIn(max = 420.dp),
-            ) {
-                items(state.currentButtons, key = { it.id }) { button ->
-                    ButtonTile(
-                        button = button,
-                        pending = false,
-                        onClick = { actions.onButtonTapped(button) },
-                    )
-                }
-            }
+            )
 
             Spacer(Modifier.height(12.dp))
             OutlinedButton(

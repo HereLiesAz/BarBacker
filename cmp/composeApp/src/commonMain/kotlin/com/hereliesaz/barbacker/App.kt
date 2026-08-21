@@ -31,6 +31,7 @@ import com.hereliesaz.barbacker.ui.AppUiState
 import com.hereliesaz.barbacker.ui.AppViewModel
 import com.hereliesaz.barbacker.ui.Screen
 import com.hereliesaz.barbacker.ui.screens.ApprovalPendingScreen
+import com.hereliesaz.barbacker.ui.screens.BarManagerDialog
 import com.hereliesaz.barbacker.ui.screens.BarSelectionScreen
 import com.hereliesaz.barbacker.ui.screens.ChatPanel
 import com.hereliesaz.barbacker.ui.screens.CheckingInviteScreen
@@ -44,6 +45,7 @@ import com.hereliesaz.barbacker.ui.screens.RestoringScreen
 import com.hereliesaz.barbacker.ui.screens.RoleSelectionScreen
 import com.hereliesaz.barbacker.ui.screens.RosterDialog
 import com.hereliesaz.barbacker.ui.screens.SignInScreen
+import com.hereliesaz.barbacker.ui.screens.ThemeEditorDialog
 import com.hereliesaz.barbacker.ui.theme.BarBackerColors
 import com.hereliesaz.barbacker.ui.theme.BarBackerTheme
 
@@ -83,6 +85,7 @@ private fun BarBackerApp(container: AppContainer) {
             chat = container.chat,
             eightySix = container.eightySix,
             ownershipClaims = container.ownershipClaims,
+            storage = container.storage,
             placeSearch = container.placeSearch,
             pushTokens = container.pushTokens,
             alerter = container.alerter,
@@ -163,8 +166,11 @@ private fun BarBackerApp(container: AppContainer) {
                             onOpenNotificationSettings = {
                                 viewModel.openDialog(ActiveDialog.NotificationSettings)
                             },
+                            onOpenBarManager = { viewModel.openDialog(ActiveDialog.BarManager) },
+                            onOpenThemeEditor = { viewModel.openDialog(ActiveDialog.ThemeEditor) },
                             onSwitchBar = viewModel::backToBarSelection,
                             onGoOffClock = viewModel::goOffClock,
+                            onReorder = viewModel::saveButtonOrder,
                         ),
                     )
                 }
@@ -243,6 +249,25 @@ private fun DashboardDialogs(state: AppUiState, viewModel: AppViewModel) {
             buttons = state.buttons,
             ntfyTopic = null,
             onSave = viewModel::saveNotificationPreferences,
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.BarManager -> BarManagerDialog(
+            barName = state.barName,
+            allButtons = state.manageableButtons,
+            hiddenButtonIds = state.hiddenButtonIds,
+            isPremium = state.isPremium,
+            isManagerPlus = state.isManagerPlus,
+            onHideButton = viewModel::hideButton,
+            onUnhideButton = viewModel::unhideButton,
+            onInvite = viewModel::sendInvite,
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.ThemeEditor -> ThemeEditorDialog(
+            currentTheme = state.bar?.theme,
+            onSave = viewModel::saveTheme,
+            onUploadLogo = viewModel::uploadLogo,
             onClose = viewModel::closeDialog,
         )
     }

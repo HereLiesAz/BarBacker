@@ -10,6 +10,8 @@ import dev.gitlive.firebase.firestore.firestore
 import dev.gitlive.firebase.functions.FirebaseFunctions
 import dev.gitlive.firebase.functions.functions
 import dev.gitlive.firebase.initialize
+import dev.gitlive.firebase.storage.FirebaseStorage
+import dev.gitlive.firebase.storage.storage
 
 /**
  * The Firebase project this build talks to.
@@ -52,6 +54,7 @@ class BarBackerFirebase private constructor(
     val auth: FirebaseAuth,
     val firestore: FirebaseFirestore,
     val functions: FirebaseFunctions,
+    val storage: FirebaseStorage,
 ) {
     companion object {
         /**
@@ -71,6 +74,7 @@ class BarBackerFirebase private constructor(
                 // client's getFunctions(app) points and where the
                 // callables are actually deployed.
                 functions = Firebase.functions(app),
+                storage = Firebase.storage(app),
             )
         }
     }

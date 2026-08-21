@@ -14,6 +14,22 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 
+/**
+ * The roles an invite is allowed to grant.
+ *
+ * A separate type from [BarRole] rather than a runtime check, because the
+ * omission here is the point: an invite that named `Owner` would have
+ * `onInviteConsumed` hand ownership to whoever opened the bar next, with
+ * no review step and no way back short of a database edit.
+ */
+enum class InvitableRole(val role: BarRole) {
+    Staff(BarRole.Staff),
+    Manager(BarRole.Manager),
+    ;
+
+    val wire: String get() = role.wire
+}
+
 /** The account-level document: which bars you belong to, and your ntfy topic. */
 data class AccountProfile(
     val joinedBarIds: List<String> = emptyList(),
@@ -66,6 +82,24 @@ interface MembershipRepository {
     suspend fun clearPushToken(barId: String, uid: String)
 
     /**
+     * Creates an invite so [email] is admitted at [role] the next time they
+     * open this bar.
+     *
+     * [role] is deliberately not a [BarRole]: an invite can grant Staff or
+     * Manager, never Owner. Ownership moves through the claim workflow,
+     * which needs a human review step — an invite is a one-line write any
+     * Manager can make, and `onInviteConsumed` grants whatever role the
+     * document names.
+     */
+    suspend fun sendInvite(
+        barId: String,
+        email: String,
+        role: InvitableRole,
+        createdBy: String,
+        createdByName: String,
+    )
+
+    /**
      * Consumes an unconsumed invite for [email], if one exists.
      *
      * Only flips the invite; the membership document is written by the
@@ -97,6 +131,16 @@ class FirebaseMembershipRepository(
     private data class PushTokenWrite(
         val token: String,
         val updated: Timestamp.ServerTimestamp,
+    )
+
+    @Serializable
+    private data class InviteCreate(
+        val email: String,
+        val role: String,
+        val createdBy: String,
+        val createdByName: String,
+        val createdAt: Timestamp.ServerTimestamp,
+        val consumed: Boolean,
     )
 
     @Serializable
@@ -236,6 +280,29 @@ class FirebaseMembershipRepository(
 
     override suspend fun clearPushToken(barId: String, uid: String) {
         firestore.document(Paths.barToken(barId, uid)).delete()
+    }
+
+    override suspend fun sendInvite(
+        barId: String,
+        email: String,
+        role: InvitableRole,
+        createdBy: String,
+        createdByName: String,
+    ) {
+        firestore.collection(Paths.barInvites(barId)).add(
+            InviteCreate(
+                // Stored lowercase, because the lookup in
+                // consumePendingInvite is an exact equality match — an
+                // invite typed as "Sam@Example.com" would otherwise sit
+                // there unconsumable forever, looking sent.
+                email = email.trim().lowercase(),
+                role = role.wire,
+                createdBy = createdBy,
+                createdByName = createdByName,
+                createdAt = Timestamp.ServerTimestamp,
+                consumed = false,
+            ),
+        )
     }
 
     override suspend fun consumePendingInvite(barId: String, email: String, uid: String): Boolean {

@@ -119,6 +119,19 @@ data class AppUiState(
 
     /** An open quantity stepper, if any. */
     val quantityPrompt: QuantityPrompt? = null,
+
+    /**
+     * Orders a drag has committed but the bar document has not confirmed,
+     * keyed by grid context id.
+     *
+     * Without this the grid snaps back to the old arrangement between the
+     * finger lifting and the write's snapshot arriving — brief, but exactly
+     * the moment a manager is watching to see whether the drag took. The
+     * view model drops each entry once the server agrees, and on a rejected
+     * write, so a failed reorder does not leave the grid showing an order
+     * nobody saved.
+     */
+    val pendingOrders: Map<String, List<String>> = emptyMap(),
 ) {
     val currentUser get() = (auth as? AuthState.SignedIn)?.user
 
@@ -178,11 +191,37 @@ data class AppUiState(
     /** The approvals badge is hidden from Staff, for whom it opens nothing actionable. */
     val showApprovalsBadge: Boolean get() = isManagerPlus && pendingMembers.isNotEmpty()
 
-    private val hiddenButtonIds: Set<String>
+    val hiddenButtonIds: Set<String>
         get() = bar?.hiddenButtonIds?.toSet().orEmpty()
 
     /** The grid context currently on screen: a parent button id, or "main". */
     val currentContextId: String get() = navStack.lastOrNull()?.id ?: MAIN_CONTEXT_ID
+
+    /** Saved orders, with any locally committed drag taking precedence. */
+    private val effectiveOrders: Map<String, List<String>>
+        get() = bar?.customOrders.orEmpty() + pendingOrders
+
+    /**
+     * What the manage screen lists: every configured button, hidden or
+     * not, plus a stand-in for each hidden `brand_` tile.
+     *
+     * Brand tiles are synthesised from `beerInventory` at render time and
+     * never appear in the stored `buttons` array — so 86'ing one (which
+     * hides `brand_<name>`) would otherwise leave it absent from both
+     * halves of this screen, with no path back even on premium.
+     */
+    val manageableButtons: List<ButtonConfig> by lazy {
+        val sorted = sortButtons(
+            buttons = buttons,
+            contextId = MAIN_CONTEXT_ID,
+            customOrders = effectiveOrders,
+            buttonUsage = bar?.buttonUsage.orEmpty(),
+        )
+        val hiddenBrands = hiddenButtonIds
+            .filter { it.startsWith("brand_") }
+            .map { ButtonConfig(id = it, label = it.removePrefix("brand_")) }
+        sorted + hiddenBrands
+    }
 
     /**
      * The tiles to render, hidden ones removed and the rest ordered.
@@ -205,7 +244,7 @@ data class AppUiState(
         val sorted = sortButtons(
             buttons = source.filterNot { it.id in hiddenButtonIds },
             contextId = currentContextId,
-            customOrders = bar?.customOrders.orEmpty(),
+            customOrders = effectiveOrders,
             buttonUsage = bar?.buttonUsage.orEmpty(),
         )
         if (parent == null) sorted + CUSTOM_REQUEST_BUTTON else sorted
@@ -304,4 +343,6 @@ enum class ActiveDialog {
     EightySix,
     Roster,
     NotificationSettings,
+    BarManager,
+    ThemeEditor,
 }

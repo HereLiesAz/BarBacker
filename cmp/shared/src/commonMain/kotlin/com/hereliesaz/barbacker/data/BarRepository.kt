@@ -183,6 +183,13 @@ class FirebaseBarRepository(private val firestore: FirebaseFirestore) : BarRepos
 
     override suspend fun saveTheme(barId: String, theme: BarTheme) {
         firestore.document(Paths.bar(barId)).updateFields {
+            // The whole `theme` map is replaced, so an absent logoUrl
+            // genuinely removes the logo — which is what "Remove" in the
+            // editor has to mean. Without this the key would be written as
+            // an explicit null, and the two clients would disagree about
+            // whether a bar has a logo depending on which one cleared it.
+            encodeDefaults = false
+
             Fields.THEME to ThemeWrite(
                 primaryColor = theme.primaryColor,
                 accentColor = theme.accentColor,

@@ -25,6 +25,7 @@ class AppContainer(
     val eightySix: EightySixRepository = FirebaseEightySixRepository(firebase.firestore)
     val ownershipClaims: OwnershipClaimRepository =
         FirebaseOwnershipClaimRepository(firebase.firestore, firebase.functions)
+    val storage: StorageRepository = FirebaseStorageRepository(firebase.storage)
 
     /**
      * One client for the whole process. Ktor clients own a connection pool

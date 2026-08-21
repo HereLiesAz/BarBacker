@@ -42,7 +42,11 @@ kotlin {
             // permission denial from a network failure.
             api(libs.firebase.auth)
             api(libs.firebase.firestore)
-            implementation(libs.firebase.storage)
+            // `api` for the same reason as auth and firestore:
+            // BarBackerFirebase exposes the FirebaseStorage instance, and
+            // callers need to catch FirebaseStorageException to tell a
+            // rejected upload apart from a dropped connection.
+            api(libs.firebase.storage)
             implementation(libs.firebase.functions)
             implementation(libs.firebase.messaging)
 

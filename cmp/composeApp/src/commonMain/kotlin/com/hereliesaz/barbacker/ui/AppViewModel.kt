@@ -20,6 +20,7 @@ import com.hereliesaz.barbacker.data.BarRepository
 import com.hereliesaz.barbacker.data.CHAT_PAGE_SIZE
 import com.hereliesaz.barbacker.data.ChatRepository
 import com.hereliesaz.barbacker.data.EightySixRepository
+import com.hereliesaz.barbacker.data.InvitableRole
 import com.hereliesaz.barbacker.data.KeyValueStore
 import com.hereliesaz.barbacker.data.MembershipRepository
 import com.hereliesaz.barbacker.data.NewBar
@@ -27,10 +28,12 @@ import com.hereliesaz.barbacker.data.OwnershipClaimRepository
 import com.hereliesaz.barbacker.data.PLACE_SEARCH_DEBOUNCE_MILLIS
 import com.hereliesaz.barbacker.data.PLACE_SEARCH_MIN_LENGTH
 import com.hereliesaz.barbacker.data.PlaceResult
+import com.hereliesaz.barbacker.data.PickedImage
 import com.hereliesaz.barbacker.data.PlaceSearchRepository
 import com.hereliesaz.barbacker.data.PushTokenProvider
 import com.hereliesaz.barbacker.data.RequestAlreadyClaimedException
 import com.hereliesaz.barbacker.data.RequestRepository
+import com.hereliesaz.barbacker.data.StorageRepository
 import com.hereliesaz.barbacker.logWarning
 import com.hereliesaz.barbacker.logic.ButtonTap
 import com.hereliesaz.barbacker.logic.classifyTap
@@ -38,6 +41,7 @@ import com.hereliesaz.barbacker.logic.hasOutstandingAlerts
 import com.hereliesaz.barbacker.logic.requestLabelFor
 import com.hereliesaz.barbacker.model.Bar
 import com.hereliesaz.barbacker.model.BarRole
+import com.hereliesaz.barbacker.model.BarTheme
 import com.hereliesaz.barbacker.model.BarUser
 import com.hereliesaz.barbacker.model.ButtonConfig
 import com.hereliesaz.barbacker.model.ChatMessage
@@ -79,6 +83,7 @@ class AppViewModel(
     private val chat: ChatRepository,
     private val eightySix: EightySixRepository,
     private val ownershipClaims: OwnershipClaimRepository,
+    private val storage: StorageRepository,
     private val placeSearch: PlaceSearchRepository,
     private val pushTokens: PushTokenProvider,
     private val alerter: Alerter,
@@ -106,6 +111,7 @@ class AppViewModel(
         val searchFailed: Boolean = false,
         val inputPrompt: InputPrompt? = null,
         val quantityPrompt: QuantityPrompt? = null,
+        val pendingOrders: Map<String, List<String>> = emptyMap(),
     )
 
     /** The four bar-scoped subscriptions, resolved together. */
@@ -241,6 +247,7 @@ class AppViewModel(
             searchFailed = local.searchFailed,
             inputPrompt = local.inputPrompt,
             quantityPrompt = local.quantityPrompt,
+            pendingOrders = local.pendingOrders,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
 
@@ -253,6 +260,36 @@ class AppViewModel(
         watchSearchQuery()
         watchForPushRegistration()
         startNagLoop()
+        watchBarForSettledOrders()
+    }
+
+    /**
+     * Retires an optimistic order once the bar document carries it.
+     *
+     * Without this, a locally committed order shadows the document
+     * forever — so a second manager reordering the same grid from another
+     * device would appear to have no effect here, permanently.
+     */
+    private fun watchBarForSettledOrders() {
+        viewModelScope.launch {
+            barScope
+                .map { it.bar?.customOrders }
+                .distinctUntilChanged()
+                .collect { saved ->
+                    if (saved == null) return@collect
+                    localState.update { local ->
+                        if (local.pendingOrders.isEmpty()) return@update local
+                        val settled = local.pendingOrders.filterNot { (context, order) ->
+                            saved[context] == order
+                        }
+                        if (settled.size == local.pendingOrders.size) {
+                            local
+                        } else {
+                            local.copy(pendingOrders = settled)
+                        }
+                    }
+                }
+        }
     }
 
     /**
@@ -920,6 +957,89 @@ class AppViewModel(
         }
     }
 
+    // --- Bar management -------------------------------------------------
+
+    /**
+     * Persists the order a drag settled on, for the grid context that was
+     * on screen when it started.
+     *
+     * The new order is applied locally first so the tiles stay where the
+     * finger left them, and rolled back if the write is rejected — which
+     * is the whole failure mode worth handling here, since `customOrders`
+     * lives on the bar document and only Manager+ may write it.
+     */
+    fun saveButtonOrder(order: List<String>) {
+        val barId = barIdFlow.value ?: return
+        val contextId = state.value.currentContextId
+        if (order.isEmpty()) return
+
+        localState.update { it.copy(pendingOrders = it.pendingOrders + (contextId to order)) }
+        viewModelScope.launch {
+            runCatching { bars.saveCustomOrder(barId, contextId, order) }.onFailure {
+                logWarning("Could not save the button order", it)
+                localState.update { local ->
+                    local.copy(pendingOrders = local.pendingOrders - contextId)
+                }
+                showMessage("Failed to save the new order. Only managers can reorder buttons.")
+            }
+        }
+    }
+
+    fun hideButton(buttonId: String) {
+        val barId = barIdFlow.value ?: return
+        viewModelScope.launch {
+            runCatching { bars.hideButton(barId, buttonId) }.onFailure {
+                logWarning("Could not hide $buttonId", it)
+                showMessage("Failed to remove the button. Please try again.")
+            }
+        }
+    }
+
+    fun unhideButton(buttonId: String) {
+        val barId = barIdFlow.value ?: return
+        viewModelScope.launch {
+            runCatching { bars.unhideButton(barId, buttonId) }.onFailure {
+                logWarning("Could not restore $buttonId", it)
+                showMessage("Failed to restore the button. Please try again.")
+            }
+        }
+    }
+
+    /**
+     * Invites someone by email.
+     *
+     * Only writes the invite. The membership document is created by the
+     * `onInviteConsumed` Cloud Function, because an invite can grant
+     * Manager and a client is not trusted to hand out that role.
+     */
+    suspend fun sendInvite(email: String, role: InvitableRole): Result<Unit> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        val user = state.value.currentUser
+            ?: return Result.failure(IllegalStateException("Signed out"))
+        return runCatching {
+            memberships.sendInvite(
+                barId = barId,
+                email = email,
+                role = role,
+                createdBy = user.uid,
+                createdByName = state.value.membership?.displayName.orEmpty(),
+            )
+        }.onFailure { logWarning("Could not send an invite to $barId", it) }
+    }
+
+    suspend fun saveTheme(theme: BarTheme): Result<Unit> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        return runCatching { bars.saveTheme(barId, theme) }
+            .onFailure { logWarning("Could not save the theme", it) }
+    }
+
+    /** Uploads a logo and returns its download URL; does not save the theme. */
+    suspend fun uploadLogo(image: PickedImage): Result<String> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        return runCatching { storage.uploadBarLogo(barId, image) }
+            .onFailure { logWarning("Could not upload a logo for $barId", it) }
+    }
+
     // --- Dialogs --------------------------------------------------------
 
     fun openDialog(dialog: ActiveDialog) {
@@ -1196,11 +1316,27 @@ class AppViewModel(
     private fun persistBarId(barId: String) {
         store.putString(KeyValueStore.KEY_BAR_ID, barId)
         barIdFlow.value = barId
+        forgetPendingOrders()
     }
 
     private fun clearBarSelection() {
         store.putString(KeyValueStore.KEY_BAR_ID, null)
         barIdFlow.value = null
+        forgetPendingOrders()
+    }
+
+    /**
+     * Drops optimistic grid orders on every bar change.
+     *
+     * They are keyed by grid context — "main", "ice" — not by bar, so a
+     * pending "main" left over from the last bar would shadow the new
+     * one's saved order on a shared tablet, and go on shadowing it because
+     * the server value it is waiting to match belongs to a different bar.
+     */
+    private fun forgetPendingOrders() {
+        localState.update {
+            if (it.pendingOrders.isEmpty()) it else it.copy(pendingOrders = emptyMap())
+        }
     }
 
     private fun readIgnoredIds(): Set<String> =

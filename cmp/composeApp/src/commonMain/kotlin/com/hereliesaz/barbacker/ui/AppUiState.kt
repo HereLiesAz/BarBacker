@@ -382,4 +382,5 @@ enum class ActiveDialog {
     Calendar,
     CalendarSettings,
     PosSettings,
+    BottleScanner,
 }

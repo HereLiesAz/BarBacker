@@ -35,6 +35,8 @@ import com.hereliesaz.barbacker.ui.Screen
 import com.hereliesaz.barbacker.ui.screens.ApprovalPendingScreen
 import com.hereliesaz.barbacker.ui.screens.BarManagerDialog
 import com.hereliesaz.barbacker.ui.screens.BarSelectionScreen
+import com.hereliesaz.barbacker.ui.screens.BottleScannerActions
+import com.hereliesaz.barbacker.ui.screens.BottleScannerDialog
 import com.hereliesaz.barbacker.ui.screens.CalendarDialog
 import com.hereliesaz.barbacker.ui.screens.CalendarSettingsActions
 import com.hereliesaz.barbacker.ui.screens.CalendarSettingsDialog
@@ -97,6 +99,7 @@ private fun BarBackerApp(container: AppContainer) {
             calendar = container.calendar,
             pos = container.pos,
             urls = container.urls,
+            bottleRecognizer = container.bottleRecognizer,
             icalFeedBaseUrl = container.icalFeedBaseUrl,
             placeSearch = container.placeSearch,
             pushTokens = container.pushTokens,
@@ -181,6 +184,9 @@ private fun BarBackerApp(container: AppContainer) {
                             onOpenBarManager = { viewModel.openDialog(ActiveDialog.BarManager) },
                             onOpenThemeEditor = { viewModel.openDialog(ActiveDialog.ThemeEditor) },
                             onOpenCalendar = { viewModel.openDialog(ActiveDialog.Calendar) },
+                            onOpenBottleScanner = {
+                                viewModel.openDialog(ActiveDialog.BottleScanner)
+                            },
                             onOpenPosSettings = { viewModel.openDialog(ActiveDialog.PosSettings) },
                             onSwitchBar = viewModel::backToBarSelection,
                             onGoOffClock = viewModel::goOffClock,
@@ -332,6 +338,19 @@ private fun DashboardDialogs(state: AppUiState, viewModel: AppViewModel) {
                 onClose = { viewModel.openDialog(ActiveDialog.Calendar) },
             )
         }
+
+        ActiveDialog.BottleScanner -> BottleScannerDialog(
+            isManagerPlus = state.isManagerPlus,
+            existingBrands = state.bar?.beerInventory?.keys?.toList().orEmpty(),
+            recognitionSupported = viewModel.bottleRecognitionSupported,
+            actions = BottleScannerActions(
+                onRecognize = viewModel::recognizeBottle,
+                onAddToMenu = viewModel::addBottleToMenu,
+                onEightySix = viewModel::eightySixBrand,
+                onSendAlert = viewModel::sendBottleAlert,
+            ),
+            onClose = viewModel::closeDialog,
+        )
 
         ActiveDialog.PosSettings -> PosSettingsDialog(
             connections = state.posConnections,

@@ -61,6 +61,7 @@ kotlin {
 
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.mlkit.text.recognition)
         }
 
         val desktopMain by getting

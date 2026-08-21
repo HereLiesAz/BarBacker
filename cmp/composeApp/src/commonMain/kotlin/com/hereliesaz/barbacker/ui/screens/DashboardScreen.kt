@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
@@ -101,6 +102,7 @@ data class DashboardActions(
     val onOpenBarManager: () -> Unit,
     val onOpenThemeEditor: () -> Unit,
     val onOpenCalendar: () -> Unit,
+    val onOpenBottleScanner: () -> Unit,
     val onOpenPosSettings: () -> Unit,
     val onSwitchBar: () -> Unit,
     val onGoOffClock: () -> Unit,
@@ -256,6 +258,23 @@ private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
                         actions.onOpenBarManager()
                     },
                 )
+                // Premium, but NOT Manager+ — matching the web client. A
+                // barback scanning a bottle and sending an alert is the
+                // staff-facing half of this feature; only "Add to Menu"
+                // and "86 It" inside it need Manager+, and the dialog
+                // gates those itself.
+                if (state.isPremium) {
+                    DropdownMenuItem(
+                        text = { Text("Scan Bottle") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.PhotoCamera, contentDescription = null)
+                        },
+                        onClick = {
+                            menuOpen = false
+                            actions.onOpenBottleScanner()
+                        },
+                    )
+                }
                 // Premium branding, Manager+ only — matching the web
                 // client, where a Staff member has no write access to the
                 // bar document the theme lives on.

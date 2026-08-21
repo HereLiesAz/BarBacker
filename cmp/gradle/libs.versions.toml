@@ -35,6 +35,12 @@ androidxCore = "1.13.1"
 # existing PWA rather than becoming a Compose/Wasm target.
 gitliveFirebase = "2.6.0"
 
+# ML Kit's bundled on-device Latin text recognizer, for the bottle
+# scanner. The BUNDLED model, not the Play-Services-downloaded one: a
+# bar's back-of-house Wi-Fi is exactly where a first-use model download
+# fails. Android-only; iOS uses Vision and desktop has no OCR at all.
+mlkitTextRecognition = "16.0.1"
+
 # HTTP, for the OpenStreetMap place lookup. Engines differ per platform:
 # OkHttp on Android, CIO on desktop, Darwin on iOS.
 ktor = "3.5.2"
@@ -57,6 +63,8 @@ firebase-firestore = { module = "dev.gitlive:firebase-firestore", version.ref = 
 firebase-storage = { module = "dev.gitlive:firebase-storage", version.ref = "gitliveFirebase" }
 firebase-functions = { module = "dev.gitlive:firebase-functions", version.ref = "gitliveFirebase" }
 firebase-messaging = { module = "dev.gitlive:firebase-messaging", version.ref = "gitliveFirebase" }
+
+mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitTextRecognition" }
 
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }

@@ -32,6 +32,7 @@ class AppContainer(
         FirebaseCalendarRepository(firebase.firestore, firebase.functions)
     val pos: PosRepository = FirebasePosRepository(firebase.firestore, firebase.functions)
     val urls: UrlOpener = createUrlOpener(platformContext)
+    val bottleRecognizer: BottleRecognizer = createBottleRecognizer(platformContext)
 
     /**
      * One client for the whole process. Ktor clients own a connection pool

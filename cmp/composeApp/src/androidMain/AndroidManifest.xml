@@ -36,5 +36,20 @@
                       android:pathPrefix="/BarBacker" />
             </intent-filter>
         </activity>
+
+        <!-- Hands the camera app a writable Uri for one scan at a time.
+             ACTION_IMAGE_CAPTURE writes full resolution to a Uri we
+             supply; the alternative, TakePicturePreview, returns a
+             thumbnail, and OCR on a thumbnail reads a bottle label as
+             noise. The authority must match PhotoCapture.android.kt. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

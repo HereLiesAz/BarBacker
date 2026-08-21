@@ -3,7 +3,9 @@ package com.hereliesaz.barbacker.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hereliesaz.barbacker.ASK_ME_SUFFIX
+import com.hereliesaz.barbacker.BEER_BUTTON_LABEL
 import com.hereliesaz.barbacker.DEFAULT_BEERS
+import com.hereliesaz.barbacker.DEFAULT_SPIRITS
 import com.hereliesaz.barbacker.LABEL_SEPARATOR
 import com.hereliesaz.barbacker.INVITE_CHECK_TIMEOUT_MILLIS
 import com.hereliesaz.barbacker.Alerter
@@ -18,6 +20,7 @@ import com.hereliesaz.barbacker.data.AccountProfile
 import com.hereliesaz.barbacker.data.AuthRepository
 import com.hereliesaz.barbacker.data.AuthState
 import com.hereliesaz.barbacker.data.BarRepository
+import com.hereliesaz.barbacker.data.BottleRecognizer
 import com.hereliesaz.barbacker.data.CHAT_PAGE_SIZE
 import com.hereliesaz.barbacker.data.CalendarEventDraft
 import com.hereliesaz.barbacker.data.CalendarRepository
@@ -46,6 +49,7 @@ import com.hereliesaz.barbacker.logic.ButtonTap
 import com.hereliesaz.barbacker.logic.classifyTap
 import com.hereliesaz.barbacker.logic.isoFromEpochMillis
 import com.hereliesaz.barbacker.logic.hasOutstandingAlerts
+import com.hereliesaz.barbacker.logic.matchBrand
 import com.hereliesaz.barbacker.logic.requestLabelFor
 import com.hereliesaz.barbacker.model.Bar
 import com.hereliesaz.barbacker.model.BarRole
@@ -100,6 +104,7 @@ class AppViewModel(
     private val calendar: CalendarRepository,
     private val pos: PosRepository,
     private val urls: UrlOpener,
+    private val bottleRecognizer: BottleRecognizer,
     private val placeSearch: PlaceSearchRepository,
     private val pushTokens: PushTokenProvider,
     private val alerter: Alerter,
@@ -963,6 +968,28 @@ class AppViewModel(
         }
     }
 
+    /**
+     * The write behind [submitRequest], awaited rather than fired off.
+     *
+     * The scanner needs to know whether the alert actually went out — it
+     * closes its dialog on success and stays open on failure — which
+     * [submitRequest]'s fire-and-forget shape cannot report. It also
+     * carries the photo URL, which the grid path never has.
+     */
+    private suspend fun submitRequestNow(barId: String, label: String, photoUrl: String?) {
+        val current = state.value
+        val user = current.currentUser ?: error("Signed out")
+        requests.submit(
+            barId = barId,
+            label = label,
+            requesterId = user.uid,
+            requesterName = current.membership?.displayName.orEmpty(),
+            requesterRole = current.membership?.role?.wire,
+            buttonId = current.resolver.idForLabel(label),
+            photoUrl = photoUrl,
+        )
+    }
+
     /** Submits whatever the sub-menu trail currently spells out, marked as a prompt. */
     fun submitPendingTrailAsAskMe() {
         val trail = localState.value.navStack
@@ -1129,6 +1156,76 @@ class AppViewModel(
         return runCatching { storage.uploadBarLogo(barId, image) }
             .onFailure { logWarning("Could not upload a logo for $barId", it) }
     }
+
+    // --- Bottle scanner -------------------------------------------------
+
+    /** True when this platform can read a label at all. */
+    val bottleRecognitionSupported: Boolean get() = bottleRecognizer.isSupported
+
+    /**
+     * Reads [photo] and returns the closest known brand, or null.
+     *
+     * Candidates are the stock lists plus this bar's own inventory, so a
+     * bottle the bar already stocks matches even when it is in neither
+     * default list.
+     */
+    suspend fun recognizeBottle(photo: ByteArray): Result<String?> = runCatching {
+        val lines = bottleRecognizer.recognizeLines(photo)
+        val candidates = DEFAULT_SPIRITS + DEFAULT_BEERS +
+            state.value.bar?.beerInventory?.keys.orEmpty()
+        matchBrand(lines, candidates)
+    }.onFailure { logWarning("Bottle recognition failed", it) }
+
+    /**
+     * Adds a scanned bottle to the beer inventory.
+     *
+     * A brand that is already stocked takes the arrayUnion path rather
+     * than the merge-set one — the merge-set writes the whole array for
+     * that key and would wipe the types already recorded against it.
+     */
+    suspend fun addBottleToMenu(brand: String, type: String): Result<Unit> = withBar { barId ->
+        val existing = state.value.bar?.beerInventory?.get(brand)
+        when {
+            existing == null -> {
+                bars.addBrand(barId, brand)
+                if (type.isNotBlank()) bars.addType(barId, brand, type)
+            }
+
+            type.isNotBlank() && type !in existing -> bars.addType(barId, brand, type)
+        }
+    }
+
+    /**
+     * Sends the scanned bottle to the floor, photo attached.
+     *
+     * The label is prefixed with "BEER: " to match the stock button's
+     * exact label rather than an invented prefix. The resolver maps a
+     * label to a button id, and a request with no resolvable id is
+     * treated as "cannot tell who this is for" and paged to everyone —
+     * so a made-up prefix mass-notifies the whole bar past everyone's
+     * preferences.
+     */
+    suspend fun sendBottleAlert(brand: String, photo: ByteArray): Result<Unit> {
+        val user = state.value.currentUser
+            ?: return Result.failure(IllegalStateException("Signed out"))
+        return withBar { barId ->
+            val photoUrl = storage.uploadBottlePhoto(
+                barId = barId,
+                uid = user.uid,
+                epochMillis = currentTimeMillis(),
+                jpegBytes = photo,
+            )
+            submitRequestNow(
+                barId = barId,
+                label = "${BEER_BUTTON_LABEL}$LABEL_SEPARATOR$brand",
+                photoUrl = photoUrl,
+            )
+        }
+    }
+
+    /** Hides a brand's grid tile, which is what "86 It" means for stock. */
+    suspend fun eightySixBrand(brand: String): Result<Unit> =
+        withBar { barId -> bars.hideButton(barId, "brand_$brand") }
 
     // --- Calendar -------------------------------------------------------
 

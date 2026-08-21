@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The single directory the camera app is granted write access to.
+
+    Scoped to one subdirectory of the cache rather than the whole of it:
+    a FileProvider grant is per-path, and there is no reason for another
+    app to be able to name any cached file it likes.
+-->
+<paths>
+    <cache-path name="bottle-scans" path="bottle-scans/" />
+</paths>

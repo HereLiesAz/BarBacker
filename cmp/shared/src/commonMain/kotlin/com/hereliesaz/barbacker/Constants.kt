@@ -118,6 +118,20 @@ val DEFAULT_BUTTONS: List<ButtonConfig> = listOf(
 )
 
 /** The synthesised free-text tile appended to the end of the main grid. */
+/**
+ * The stock BEER button's label, derived rather than repeated.
+ *
+ * The bottle scanner prefixes its alerts with this exact string so
+ * [com.hereliesaz.barbacker.logic.ButtonLabelResolver] can resolve them
+ * to a real button id. A request whose label resolves to nothing is
+ * treated as "cannot tell who this is for" and paged to the whole floor
+ * past everyone's preferences — so a hardcoded copy that drifted from
+ * the button would mass-notify a bar every time someone scanned a
+ * bottle. Reading it from the button makes drift impossible, and
+ * renaming the id fails loudly here rather than silently there.
+ */
+val BEER_BUTTON_LABEL: String = DEFAULT_BUTTONS.first { it.id == "restock_beer" }.label
+
 val CUSTOM_REQUEST_BUTTON = ButtonConfig(
     id = "custom_req_btn",
     label = "CUSTOM",

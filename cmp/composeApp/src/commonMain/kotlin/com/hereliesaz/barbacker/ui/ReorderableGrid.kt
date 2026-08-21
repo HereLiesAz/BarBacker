@@ -17,9 +17,16 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -133,11 +140,70 @@ class GridReorderState internal constructor(internal val gridState: LazyGridStat
         draggingKey = null
         draggingIndex = -1
         moved = false
+        keyboardHeld = false
+    }
+
+    // --- Keyboard reordering --------------------------------------------
+
+    /**
+     * True while a tile has been picked up with the keyboard rather than a
+     * finger.
+     *
+     * Kept separate from [draggingKey] being non-null because the two
+     * behave differently in one respect that matters: a pointer drag ends
+     * when the finger lifts, while a keyboard pickup persists across key
+     * presses until it is explicitly dropped. [translationFor] also has to
+     * stay at zero for a keyboard drag — there is no pointer to follow, and
+     * the tile is genuinely moving between slots rather than floating.
+     */
+    var keyboardHeld: Boolean by mutableStateOf(false)
+        private set
+
+    /**
+     * Picks up or drops the tile at [index].
+     *
+     * The same key toggles both, which is the convention every desktop
+     * list-reordering affordance uses and what the web client's
+     * KeyboardSensor implements.
+     */
+    internal fun toggleKeyboardHold(index: Int, key: Any) {
+        if (keyboardHeld) {
+            onDragEnd()
+            return
+        }
+        if (!canReorder(index)) return
+        draggingKey = key
+        draggingIndex = index
+        moved = false
+        keyboardHeld = true
+    }
+
+    /** Moves a keyboard-held tile by [delta] slots. Returns false if it could not. */
+    internal fun moveKeyboard(delta: Int): Boolean {
+        if (!keyboardHeld) return false
+        val target = draggingIndex + delta
+        // Bounded here rather than left to [canReorder]: that predicate is
+        // caller-supplied, and a tile skidding off either end of the grid
+        // is not something to leave to a callback's good manners.
+        if (target !in 0 until gridState.layoutInfo.totalItemsCount) return false
+        if (!canReorder(target)) return false
+        onMove(draggingIndex, target)
+        draggingIndex = target
+        moved = true
+        return true
+    }
+
+    internal fun cancelKeyboardHold() {
+        if (!keyboardHeld) return
+        onDragCancel()
     }
 
     /** Draw-phase offset for the tile with [key]; zero for every other tile. */
     internal fun translationFor(key: Any): Offset {
         if (key != draggingKey) return Offset.Zero
+        // A keyboard-held tile really does occupy each slot it moves
+        // through; only a pointer drag floats above the grid.
+        if (keyboardHeld) return Offset.Zero
         // Read fresh from the layout rather than cached at pickup: the grid
         // can auto-scroll mid-drag, which moves the tile's slot while the
         // finger stays put.
@@ -272,16 +338,75 @@ fun Modifier.reorderable(state: GridReorderState): Modifier =
         }
     }
 
-/** Attaches the lift-and-follow rendering. Apply to each item, keyed as the grid keys it. */
-fun Modifier.reorderableItem(state: GridReorderState, key: Any): Modifier =
-    this.zIndex(if (state.draggingKey == key) 1f else 0f)
+/**
+ * Attaches the lift-and-follow rendering, and the keyboard path.
+ *
+ * Apply to each item, keyed as the grid keys it. [index] and [columns] are
+ * what let the arrow keys mean anything: a grid is a list underneath, so
+ * left/right is ±1 and up/down is ±[columns].
+ *
+ * Without this the grid has no keyboard-operable reordering at all —
+ * exactly the gap the web client's `SortableButton` had to be fixed for.
+ * A pointer is not the only way people use a tablet wedged behind a bar.
+ */
+fun Modifier.reorderableItem(
+    state: GridReorderState,
+    key: Any,
+    index: Int,
+    columns: Int,
+    enabled: Boolean = true,
+): Modifier {
+    val held = state.draggingKey == key && state.keyboardHeld
+    return this
+        .zIndex(if (state.draggingKey == key) 1f else 0f)
         .graphicsLayer {
             val offset = state.translationFor(key)
             translationX = offset.x
             translationY = offset.y
             if (state.draggingKey == key) {
-                scaleX = 1.05f
-                scaleY = 1.05f
+                // A keyboard-held tile is only lifted, not scaled: it is
+                // sitting in a real slot, and scaling it would overlap the
+                // neighbours it is about to swap with.
+                if (!state.keyboardHeld) {
+                    scaleX = 1.05f
+                    scaleY = 1.05f
+                }
                 alpha = 0.9f
             }
         }
+        .semantics {
+            stateDescription = if (held) "Held for reordering" else ""
+        }
+        .then(
+            if (!enabled) {
+                Modifier
+            } else {
+                Modifier.onKeyEvent { event ->
+                    // KeyUp only. A held-down arrow otherwise repeats at the
+                    // platform's key-repeat rate and skids the tile across
+                    // the grid faster than anyone can track.
+                    if (event.type != KeyEventType.KeyUp) return@onKeyEvent false
+                    when (event.key) {
+                        Key.Spacebar, Key.Enter -> {
+                            state.toggleKeyboardHold(index, key)
+                            true
+                        }
+
+                        Key.Escape -> {
+                            val wasHeld = state.keyboardHeld
+                            state.cancelKeyboardHold()
+                            // Consumed only when it did something, so Escape
+                            // still closes an enclosing dialog otherwise.
+                            wasHeld
+                        }
+
+                        Key.DirectionLeft -> state.moveKeyboard(-1)
+                        Key.DirectionRight -> state.moveKeyboard(1)
+                        Key.DirectionUp -> state.moveKeyboard(-columns)
+                        Key.DirectionDown -> state.moveKeyboard(columns)
+                        else -> false
+                    }
+                }
+            },
+        )
+}

@@ -276,7 +276,8 @@ Working end to end:
   on premium, and inviting staff or managers by email
 - The theme editor: brand colours, font, and a logo uploaded to Storage
 - Drag-to-reorder on the main grid and inside every sub-menu, held behind
-  a long press so a tap still sends a page
+  a long press so a tap still sends a page, and operable from a keyboard:
+  Space or Enter picks a tile up, the arrow keys move it, Escape cancels
 - The calendar: an agenda of the bar's events, Manager+ create/edit/delete,
   and the settings screen for Google, the outbound iCal feed, and inbound
   `.ics` subscriptions
@@ -284,6 +285,8 @@ Working end to end:
   sales summary
 - The bottle scanner on Android — camera, on-device OCR, and the
   add-to-menu / 86 / send-alert actions
+- Remote images: the bar's logo in the theme editor, and a scanned
+  bottle's photo on the request row it is attached to
 
 Not built yet — the PWA remains the complete client:
 
@@ -310,11 +313,6 @@ Not built yet — the PWA remains the complete client:
   looking broken; the in-app alert loop is what pages a desktop user.
 - **ntfy deep linking.** The notification-settings screen shows the
   topic for manual subscription but has no `ntfy://` link.
-- **Keyboard-operable reordering.** The web client can reorder with the
-  arrow keys; here the gesture is pointer-only.
-- **Logo previews.** The theme editor shows the uploaded logo's URL, not
-  the image — rendering a remote image needs an image-loading library
-  this build does not carry.
 - **Google and Apple sign-in.** Email/password only.
 
 Deliberately absent, because the PWA has no such feature either:

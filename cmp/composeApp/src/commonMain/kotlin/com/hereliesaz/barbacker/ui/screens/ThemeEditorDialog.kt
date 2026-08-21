@@ -34,7 +34,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.hereliesaz.barbacker.data.PickedImage
 import com.hereliesaz.barbacker.logic.contrastColorFor
 import com.hereliesaz.barbacker.model.BarTheme
+import com.hereliesaz.barbacker.ui.RemoteImage
 import com.hereliesaz.barbacker.ui.rememberImagePicker
 import com.hereliesaz.barbacker.ui.theme.BarBackerColors
 import com.hereliesaz.barbacker.ui.theme.parseHexColor
@@ -192,7 +195,7 @@ fun ThemeEditorDialog(
             ThemePreview(
                 primaryColor = primaryColor,
                 accentColor = accentColor,
-                hasLogo = logoUrl != null,
+                logoUrl = logoUrl,
             )
 
             error?.let {
@@ -350,16 +353,22 @@ private fun LogoRow(
             }
         }
 
-        // The URL rather than the image: rendering a remote image needs an
-        // image-loading library this build does not carry, and showing a
-        // broken frame would be worse than showing the address of the file
-        // that was actually uploaded.
-        Text(
-            text = logoUrl ?: "No logo set.",
-            style = MaterialTheme.typography.bodySmall,
-            color = BarBackerColors.OnSurfaceVariant,
-            maxLines = 2,
-        )
+        if (logoUrl == null) {
+            Text(
+                text = "No logo set.",
+                style = MaterialTheme.typography.bodySmall,
+                color = BarBackerColors.OnSurfaceVariant,
+            )
+        } else {
+            RemoteImage(
+                url = logoUrl,
+                contentDescription = "Bar logo",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+            )
+        }
         Text(
             text = "PNG, JPG, WebP, or SVG. Max 2MB.",
             fontSize = 10.sp,
@@ -369,7 +378,7 @@ private fun LogoRow(
 }
 
 @Composable
-private fun ThemePreview(primaryColor: String, accentColor: String, hasLogo: Boolean) {
+private fun ThemePreview(primaryColor: String, accentColor: String, logoUrl: String?) {
     val tile = parseHexColor(accentColor) ?: BarBackerColors.SecondaryContainer
     // Derived exactly as BarBackerTheme derives it, so what is previewed
     // here is what the floor will see rather than an approximation.
@@ -399,8 +408,12 @@ private fun ThemePreview(primaryColor: String, accentColor: String, hasLogo: Boo
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (hasLogo) {
-                Box(modifier = Modifier.size(24.dp).background(tileLabel, CircleShape))
+            logoUrl?.let {
+                RemoteImage(
+                    url = it,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp).clip(CircleShape),
+                )
             }
             Text("ICE", color = tileLabel, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }

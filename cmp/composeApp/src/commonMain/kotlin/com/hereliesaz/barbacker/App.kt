@@ -31,6 +31,7 @@ import com.hereliesaz.barbacker.data.loadFirebaseConfig
 import com.hereliesaz.barbacker.ui.ActiveDialog
 import com.hereliesaz.barbacker.ui.AppUiState
 import com.hereliesaz.barbacker.ui.AppViewModel
+import com.hereliesaz.barbacker.ui.InstallImageLoader
 import com.hereliesaz.barbacker.ui.Screen
 import com.hereliesaz.barbacker.ui.screens.ApprovalPendingScreen
 import com.hereliesaz.barbacker.ui.screens.BarManagerDialog
@@ -109,6 +110,10 @@ private fun BarBackerApp(container: AppContainer) {
     }
     val state by viewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Once for the process, over the HTTP engine this app already
+    // configured for its place search.
+    InstallImageLoader(container.httpClient)
 
     // Failures the user needs to know about — a lost claim race, a
     // rejected write — surface here rather than only reaching the log.

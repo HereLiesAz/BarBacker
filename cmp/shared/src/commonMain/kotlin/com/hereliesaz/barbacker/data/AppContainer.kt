@@ -38,7 +38,15 @@ class AppContainer(
      * One client for the whole process. Ktor clients own a connection pool
      * and a dispatcher, so creating one per search would leak both.
      */
-    private val httpClient = createHttpClient()
+    /**
+     * Shared by the place search and the image loader.
+     *
+     * Exposed rather than private so Coil fetches over the engine already
+     * configured for this platform, instead of resolving a second one of
+     * its own — two HTTP stacks in one process is two connection pools and
+     * two sets of timeouts to keep straight.
+     */
+    val httpClient = createHttpClient()
 
     val placeSearch: PlaceSearchRepository =
         DefaultPlaceSearchRepository(firebase.firestore, httpClient)

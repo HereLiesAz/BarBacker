@@ -113,6 +113,12 @@ data class AppUiState(
 
     /** True only when BOTH search sources failed; a partial result is still shown. */
     val searchFailed: Boolean = false,
+
+    /** An open free-text prompt, if any. */
+    val inputPrompt: InputPrompt? = null,
+
+    /** An open quantity stepper, if any. */
+    val quantityPrompt: QuantityPrompt? = null,
 ) {
     val currentUser get() = (auth as? AuthState.SignedIn)?.user
 
@@ -237,6 +243,59 @@ data class AppUiState(
         const val MAIN_CONTEXT_ID = "main"
     }
 }
+
+/**
+ * What a free-text prompt is collecting.
+ *
+ * These back the synthesised "+ ADD …" tiles and the CUSTOM tile. Those
+ * are grid buttons with no children, so without an explicit prompt they
+ * fall through to the submit path and page the floor with their own label
+ * — "ICE: + ADD WELL" — instead of asking for input.
+ */
+enum class InputKind {
+    /** A new beer brand for the bar's inventory. */
+    Brand,
+
+    /** A new type (Bottle, Draft, …) under an existing brand. */
+    Type,
+
+    /** A new well/station name. */
+    Well,
+
+    /** Free text sent as a one-off request. */
+    CustomRequest,
+}
+
+data class InputPrompt(
+    val kind: InputKind,
+    val initialValue: String = "",
+    /** The brand a new type belongs to. Only set for [InputKind.Type]. */
+    val parentBrand: String? = null,
+    /** Offered as tap-to-fill; the field stays free-text either way. */
+    val suggestions: List<String> = emptyList(),
+) {
+    val title: String
+        get() = when (kind) {
+            InputKind.Brand -> "Add Brand"
+            InputKind.Type -> "Add Type"
+            InputKind.Well -> "Add Well"
+            InputKind.CustomRequest -> "Custom Request"
+        }
+
+    val label: String
+        get() = when (kind) {
+            InputKind.Brand -> "Brand name"
+            InputKind.Type -> "Type (Bottle, Draft, …)"
+            InputKind.Well -> "Well name"
+            InputKind.CustomRequest -> "What do you need?"
+        }
+}
+
+/** The numeric stepper behind a beer type's "Other" quantity option. */
+data class QuantityPrompt(
+    /** The breadcrumb the chosen number is appended to. */
+    val contextLabel: String,
+)
 
 /** The overlays reachable from the dashboard. */
 enum class ActiveDialog {

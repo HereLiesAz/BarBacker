@@ -175,10 +175,10 @@ without the refresh, every role-gated read stays denied for up to an hour.
 
 ## Testing
 
-`./gradlew :shared:desktopTest` runs the shared suite: 75 tests covering
+`./gradlew :shared:desktopTest` runs the shared suite: 86 tests covering
 the ported pure logic — contrast colour, brand matching, the button label
-resolver, sort order, sub-menu synthesis, the request visibility filter,
-and alert eligibility.
+resolver, sort order, sub-menu synthesis, tap classification, the request
+visibility filter, and alert eligibility.
 
 These are the pieces where a silent divergence from the PWA would be
 hardest to notice, so each behavioural subtlety is pinned by a test that
@@ -194,6 +194,10 @@ fails if it is lost:
 - An explicitly empty preference list is not overwritten by job-title
   defaults.
 - Brand sub-menus key off the label, not the `brand_`-prefixed id.
+- The synthesised "+ ADD …" and CUSTOM tiles have no children, so any
+  path that reaches the children check treats them as leaves and pages
+  the floor asking for "ICE: + ADD WELL". Tap classification runs first,
+  and a test pins each case.
 - Muted requests stay *visible* but stop being *alert-worthy* — two
   genuinely different questions, and conflating them would either
   silently drop pages or keep making noise about ones deliberately set
@@ -209,6 +213,8 @@ Working end to end:
 - The join flow, including invite consumption and approval-pending
 - The dashboard: request grid, sub-menu drill-down with synthesised
   children, sending pages, and claim / cancel / mute
+- Adding wells, beer brands, and types from the grid's "+ ADD …" tiles,
+  plus free-text custom requests and the quantity stepper
 - Chat, with pinning, deletion, paged scrollback, the dashboard marquee,
   and an unread badge
 - The 86'd list, including premium private entries

@@ -1,6 +1,11 @@
 package com.hereliesaz.barbacker.logic
 
+import com.hereliesaz.barbacker.ADD_BRAND_BUTTON
+import com.hereliesaz.barbacker.ADD_TYPE_BUTTON
+import com.hereliesaz.barbacker.ADD_WELL_BUTTON
+import com.hereliesaz.barbacker.CUSTOM_REQUEST_BUTTON
 import com.hereliesaz.barbacker.DEFAULT_BUTTONS
+import com.hereliesaz.barbacker.QUANTITY_BUTTONS
 import com.hereliesaz.barbacker.model.ButtonAction
 import com.hereliesaz.barbacker.model.ButtonConfig
 import kotlin.test.Test
@@ -237,6 +242,83 @@ class DynamicChildrenTest {
     @Test
     fun a_leaf_returns_nothing() {
         assertTrue(dynamicChildrenOf(ButtonConfig("lime", "LIMES"), emptyList(), emptyMap()).isEmpty())
+    }
+}
+
+class ClassifyTapTest {
+
+    private val inventory = mapOf("Corona" to listOf("Bottle"))
+    private val wells = listOf("Well #1")
+
+    private fun classify(button: ButtonConfig) = classifyTap(button, wells, inventory)
+
+    @Test
+    fun a_parent_tile_descends() {
+        val garnish = DEFAULT_BUTTONS.first { it.id == "fruit" }
+        assertEquals(ButtonTap.Descend, classify(garnish))
+    }
+
+    @Test
+    fun a_leaf_submits() {
+        assertEquals(ButtonTap.Submit, classify(ButtonConfig("lime", "LIMES")))
+    }
+
+    @Test
+    fun add_well_prompts_rather_than_paging_the_floor() {
+        // The bug this guards: "+ ADD WELL" has no children, so without an
+        // explicit branch it falls through to Submit and pages everyone
+        // asking for "ICE: + ADD WELL".
+        assertEquals(ButtonTap.PromptForWell, classify(ADD_WELL_BUTTON))
+    }
+
+    @Test
+    fun add_brand_prompts() {
+        assertEquals(ButtonTap.PromptForBrand, classify(ADD_BRAND_BUTTON))
+    }
+
+    @Test
+    fun add_type_prompts() {
+        assertEquals(ButtonTap.PromptForType, classify(ADD_TYPE_BUTTON))
+    }
+
+    @Test
+    fun the_other_quantity_option_prompts() {
+        val other = QUANTITY_BUTTONS.first { it.action == ButtonAction.CustomQuantity }
+        assertEquals(ButtonTap.PromptForQuantity, classify(other))
+    }
+
+    @Test
+    fun a_fixed_quantity_submits() {
+        val twelve = QUANTITY_BUTTONS.first { it.id == "qty_12" }
+        assertEquals(ButtonTap.Submit, classify(twelve))
+    }
+
+    @Test
+    fun the_custom_tile_prompts() {
+        assertEquals(ButtonTap.PromptForCustomRequest, classify(CUSTOM_REQUEST_BUTTON))
+    }
+
+    @Test
+    fun a_brand_tile_descends_into_its_types() {
+        assertEquals(ButtonTap.Descend, classify(ButtonConfig("brand_Corona", "Corona")))
+    }
+
+    @Test
+    fun a_brand_with_no_types_still_descends_to_reach_its_add_tile() {
+        // The synthesised "+ ADD TYPE" entry is always present, so an empty
+        // brand must still open rather than paging for the brand alone.
+        val empty = classifyTap(
+            ButtonConfig("brand_Modelo", "Modelo"),
+            wells,
+            mapOf("Modelo" to emptyList()),
+        )
+        assertEquals(ButtonTap.Descend, empty)
+    }
+
+    @Test
+    fun ice_descends_even_with_no_wells_configured() {
+        val iceButton = DEFAULT_BUTTONS.first { it.id == "ice" }
+        assertEquals(ButtonTap.Descend, classifyTap(iceButton, emptyList(), emptyMap()))
     }
 }
 

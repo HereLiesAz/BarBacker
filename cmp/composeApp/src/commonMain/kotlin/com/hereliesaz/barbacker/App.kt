@@ -37,7 +37,9 @@ import com.hereliesaz.barbacker.ui.screens.CheckingInviteScreen
 import com.hereliesaz.barbacker.ui.screens.DashboardActions
 import com.hereliesaz.barbacker.ui.screens.DashboardScreen
 import com.hereliesaz.barbacker.ui.screens.EightySixDialog
+import com.hereliesaz.barbacker.ui.screens.InputPromptDialog
 import com.hereliesaz.barbacker.ui.screens.NotificationSettingsDialog
+import com.hereliesaz.barbacker.ui.screens.QuantityPromptDialog
 import com.hereliesaz.barbacker.ui.screens.RestoringScreen
 import com.hereliesaz.barbacker.ui.screens.RoleSelectionScreen
 import com.hereliesaz.barbacker.ui.screens.RosterDialog
@@ -171,6 +173,23 @@ private fun BarBackerApp(container: AppContainer) {
                 // above whichever screen is showing. In practice only the
                 // dashboard opens them.
                 DashboardDialogs(state = state, viewModel = viewModel)
+
+                // Prompts sit above the dialogs: a brand prompt can be
+                // opened from inside a sub-menu, not only from the grid.
+                state.inputPrompt?.let { prompt ->
+                    InputPromptDialog(
+                        prompt = prompt,
+                        onSubmit = viewModel::submitPrompt,
+                        onDismiss = viewModel::dismissPrompt,
+                    )
+                }
+                state.quantityPrompt?.let { prompt ->
+                    QuantityPromptDialog(
+                        prompt = prompt,
+                        onSubmit = viewModel::submitQuantity,
+                        onDismiss = viewModel::dismissPrompt,
+                    )
+                }
             }
         }
     }

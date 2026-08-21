@@ -200,7 +200,8 @@ fails if it is lost:
 Working end to end:
 
 - Email sign-in and registration, with session restore
-- Bar selection from your joined bars, and creating a new bar
+- Bar selection: your joined bars, a debounced search across both this
+  app's bars and OpenStreetMap, and a create form
 - The join flow, including invite consumption and approval-pending
 - The dashboard: request grid, sub-menu drill-down with synthesised
   children, sending pages, and claim / cancel / mute
@@ -216,9 +217,6 @@ Working end to end:
 
 Not built yet — the PWA remains the complete client:
 
-- **OpenStreetMap bar search.** Needs an HTTP client this module does not
-  carry yet. Joining a bar you are not already a member of currently
-  happens through an invite link.
 - **Calendar, POS settings, and the bottle scanner.** The domain models
   are ported; the screens are not.
 - **Push notifications.** No FCM registration, so the nag loop and

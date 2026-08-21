@@ -20,6 +20,10 @@ import com.hereliesaz.barbacker.data.KeyValueStore
 import com.hereliesaz.barbacker.data.MembershipRepository
 import com.hereliesaz.barbacker.data.NewBar
 import com.hereliesaz.barbacker.data.OwnershipClaimRepository
+import com.hereliesaz.barbacker.data.PLACE_SEARCH_DEBOUNCE_MILLIS
+import com.hereliesaz.barbacker.data.PLACE_SEARCH_MIN_LENGTH
+import com.hereliesaz.barbacker.data.PlaceResult
+import com.hereliesaz.barbacker.data.PlaceSearchRepository
 import com.hereliesaz.barbacker.data.RequestAlreadyClaimedException
 import com.hereliesaz.barbacker.data.RequestRepository
 import com.hereliesaz.barbacker.logWarning
@@ -37,7 +41,10 @@ import com.hereliesaz.barbacker.model.MemberStatus
 import com.hereliesaz.barbacker.model.OwnershipClaim
 import com.hereliesaz.barbacker.model.Request
 import com.hereliesaz.barbacker.model.SubscriptionTier
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +72,7 @@ class AppViewModel(
     private val chat: ChatRepository,
     private val eightySix: EightySixRepository,
     private val ownershipClaims: OwnershipClaimRepository,
+    private val placeSearch: PlaceSearchRepository,
     private val store: KeyValueStore,
 ) : ViewModel() {
 
@@ -84,6 +92,9 @@ class AppViewModel(
         val chatHasMore: Boolean = true,
         val chatLoadingMore: Boolean = false,
         val chatLastReadAt: Long = 0L,
+        val searchResults: List<PlaceResult> = emptyList(),
+        val isSearching: Boolean = false,
+        val searchFailed: Boolean = false,
     )
 
     /** The four bar-scoped subscriptions, resolved together. */
@@ -95,6 +106,7 @@ class AppViewModel(
     )
 
     private val barIdFlow = MutableStateFlow(store.getString(KeyValueStore.KEY_BAR_ID))
+    private val searchQuery = MutableStateFlow("")
     private val localState = MutableStateFlow(LocalState(ignoredIds = readIgnoredIds()))
 
     /**
@@ -213,6 +225,9 @@ class AppViewModel(
             chatLastReadAt = local.chatLastReadAt,
             eightySixEntries = features.eightySix,
             pendingOwnershipClaims = features.claims,
+            searchResults = local.searchResults,
+            isSearching = local.isSearching,
+            searchFailed = local.searchFailed,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
 
@@ -222,6 +237,81 @@ class AppViewModel(
         watchForPendingInvite()
         watchForAutoClockIn()
         watchBarIdForChatReset()
+        watchSearchQuery()
+    }
+
+    /**
+     * Debounces the place search and runs one lookup at a time.
+     *
+     * `collectLatest` is what makes this correct: it CANCELS the in-flight
+     * search when a newer query arrives, so a slow response from three
+     * keystrokes ago can never overwrite the current results. The web
+     * client achieves the same thing by hand with an "am I still the most
+     * recent run" token; structured concurrency gives it for free.
+     */
+    @Suppress("OPT_IN_USAGE")
+    private fun watchSearchQuery() {
+        viewModelScope.launch {
+            searchQuery
+                .debounce(PLACE_SEARCH_DEBOUNCE_MILLIS)
+                .collectLatest { query -> runPlaceSearch(query.trim()) }
+        }
+    }
+
+    private suspend fun runPlaceSearch(query: String) {
+        if (query.length < PLACE_SEARCH_MIN_LENGTH) {
+            localState.update {
+                it.copy(searchResults = emptyList(), isSearching = false, searchFailed = false)
+            }
+            return
+        }
+
+        localState.update {
+            it.copy(searchResults = emptyList(), isSearching = true, searchFailed = false)
+        }
+
+        // Both halves accumulate here and are republished as each lands, so
+        // whichever source answers first paints immediately instead of
+        // waiting on the slower one. Safe without synchronisation because
+        // viewModelScope is confined to the main dispatcher.
+        var existing = emptyList<PlaceResult>()
+        var osm = emptyList<PlaceResult>()
+        var existingFailed = false
+        var osmFailed = false
+
+        fun publish() {
+            // Bars already in the system sort first: joining one is always
+            // better than creating a duplicate from an OSM entry.
+            localState.update { it.copy(searchResults = existing + osm) }
+        }
+
+        coroutineScope {
+            launch {
+                placeSearch.searchExistingBars(query)
+                    .onSuccess { existing = it; publish() }
+                    .onFailure { existingFailed = true }
+            }
+            launch {
+                placeSearch.searchOpenStreetMap(query)
+                    .onSuccess { osm = it; publish() }
+                    .onFailure { osmFailed = true }
+            }
+        }
+
+        localState.update {
+            it.copy(
+                isSearching = false,
+                // Only a total failure is reported. If one source answered,
+                // the results are incomplete but still useful — and stale
+                // results from the previous query must not stay tappable.
+                searchFailed = existingFailed && osmFailed,
+                searchResults = if (existingFailed && osmFailed) emptyList() else it.searchResults,
+            )
+        }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        searchQuery.value = query
     }
 
     /**
@@ -295,6 +385,33 @@ class AppViewModel(
     fun selectBar(barId: String) {
         localState.update { it.copy(justCreatedBar = false) }
         persistBarId(barId)
+    }
+
+    /**
+     * Enters a bar found by search.
+     *
+     * A bar already in the system is joined directly. An OpenStreetMap
+     * result is created first — but through [BarRepository.createIfAbsent],
+     * so two people searching the same venue at once end up in one bar
+     * rather than two, and only the genuine creator is treated as Owner.
+     */
+    fun selectPlace(place: PlaceResult) {
+        if (place.isExistingBar) {
+            selectBar(place.barId)
+            return
+        }
+        createAndSelectBar(
+            NewBar(
+                id = place.barId,
+                name = place.name,
+                // Nominatim's display_name is a full comma-separated
+                // address; the individual components are not broken out
+                // here, so it goes in whole rather than being guessed at.
+                address = place.displayName,
+                osmId = place.barId.substringAfterLast('_'),
+                osmType = place.barId.removePrefix("osm_").substringBeforeLast('_'),
+            ),
+        )
     }
 
     fun createAndSelectBar(newBar: NewBar) {

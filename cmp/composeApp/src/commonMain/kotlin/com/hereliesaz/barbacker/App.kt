@@ -80,6 +80,7 @@ private fun BarBackerApp(container: AppContainer) {
             chat = container.chat,
             eightySix = container.eightySix,
             ownershipClaims = container.ownershipClaims,
+            placeSearch = container.placeSearch,
             store = container.store,
         )
     }
@@ -117,6 +118,11 @@ private fun BarBackerApp(container: AppContainer) {
                         email = state.currentUser?.email,
                         joinedBarIds = state.joinedBarIds,
                         barNames = state.barNames,
+                        searchResults = state.searchResults,
+                        isSearching = state.isSearching,
+                        searchFailed = state.searchFailed,
+                        onSearchQueryChanged = viewModel::onSearchQueryChanged,
+                        onSelectPlace = viewModel::selectPlace,
                         onSelectBar = viewModel::selectBar,
                         onCreateBar = viewModel::createAndSelectBar,
                         onSignOut = viewModel::signOut,

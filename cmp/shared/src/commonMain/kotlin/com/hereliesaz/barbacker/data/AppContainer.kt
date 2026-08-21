@@ -20,4 +20,13 @@ class AppContainer(
     val eightySix: EightySixRepository = FirebaseEightySixRepository(firebase.firestore)
     val ownershipClaims: OwnershipClaimRepository =
         FirebaseOwnershipClaimRepository(firebase.firestore, firebase.functions)
+
+    /**
+     * One client for the whole process. Ktor clients own a connection pool
+     * and a dispatcher, so creating one per search would leak both.
+     */
+    private val httpClient = createHttpClient()
+
+    val placeSearch: PlaceSearchRepository =
+        DefaultPlaceSearchRepository(firebase.firestore, httpClient)
 }

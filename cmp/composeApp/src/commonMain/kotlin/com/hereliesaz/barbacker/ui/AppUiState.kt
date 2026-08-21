@@ -3,6 +3,7 @@ package com.hereliesaz.barbacker.ui
 import com.hereliesaz.barbacker.CUSTOM_REQUEST_BUTTON
 import com.hereliesaz.barbacker.NOTIFICATION_DEFAULTS_BY_TITLE
 import com.hereliesaz.barbacker.data.AuthState
+import com.hereliesaz.barbacker.data.PlaceResult
 import com.hereliesaz.barbacker.logic.ButtonLabelResolver
 import com.hereliesaz.barbacker.logic.dynamicChildrenOf
 import com.hereliesaz.barbacker.logic.effectiveNotificationPreferences
@@ -105,6 +106,13 @@ data class AppUiState(
 
     val eightySixEntries: List<EightySixEntry> = emptyList(),
     val pendingOwnershipClaims: List<OwnershipClaim> = emptyList(),
+
+    /** Place-search results, bars already in the system sorted first. */
+    val searchResults: List<PlaceResult> = emptyList(),
+    val isSearching: Boolean = false,
+
+    /** True only when BOTH search sources failed; a partial result is still shown. */
+    val searchFailed: Boolean = false,
 ) {
     val currentUser get() = (auth as? AuthState.SignedIn)?.user
 

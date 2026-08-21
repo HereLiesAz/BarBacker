@@ -1,5 +1,30 @@
 # Deployment Guide
 
+## CI Overview
+
+Every workflow lives in `.github/workflows/`; details of the notable
+ones are in their own sections below. Quick reference:
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `rules-tests.yml` | push/PR to `main` | Firestore + Storage security-rules test suite (Firebase emulator) and Cloud Functions build+tests — this is the PR-side build/test signal for the whole repo. |
+| `build-mobile.yml` | push to `main`, `workflow_dispatch` | Builds and publishes the Android release APK (see "Android Deployment" below). Not run on PRs. |
+| `deploy.yml` | push to `main` | Builds and publishes the web app to GitHub Pages. |
+| `codeql.yml` | push/PR to `main`, weekly schedule | Static analysis (CodeQL) — `javascript-typescript` and `actions` (the workflow files themselves). Advanced setup, not GitHub's managed Default setup, specifically so triggers/concurrency are editable here. `java-kotlin`/`swift` are deliberately excluded: both are Capacitor's generated wrapper boilerplate with no real app logic, and CodeQL's `autobuild` can't build either without first running `npx cap sync`, which this workflow doesn't do. |
+| `nag.yml` | every 5 minutes | Runs `scripts/nag-bot.js` — re-notifies anyone who hasn't dismissed a matching pending request. |
+| `deduplicate.yml` | daily | Runs `scripts/deduplicate.js`. |
+| `enrich-bars.yml` | every 6 hours | Runs `scripts/enrich-bars.js`. |
+| `clear-cache.yml` | `workflow_dispatch` | Manual cache-clearing utility. |
+| `jules-issue-handler.yml` / `jules-branch-handler.yml` | issue opened / comment created | Hands work to the Jules autonomous coding agent. Gated to owner/member/collaborator-authored issues and comments (`author_association`) so an attacker-authored issue/comment can't trigger it. |
+
+`build-mobile.yml` and `codeql.yml` both apply a `concurrency` group
+(keyed on `head_ref || ref`, `cancel-in-progress: true`) so a rapid
+second push supersedes an in-flight run for the same ref instead of
+both running to completion — worth knowing if you're watching the
+Actions tab and see more runs than expected. `rules-tests.yml` has no
+such group as of this writing; a burst of pushes will run each to
+completion independently.
+
 ## Web Deployment (GitHub Pages)
 
 The web application is hosted on GitHub Pages, deployed automatically
@@ -122,15 +147,26 @@ The Android application is a Capacitor wrapper around the web app.
 *   Keystore file (for signing)
 
 ### Build Process (CI/CD)
-The `.github/workflows/build-mobile.yml` workflow runs on every push
-to any branch (for build/test signal on every commit) and on
-`workflow_dispatch` — there is no tag-based trigger at all. It
-computes its own version (`major.minor.patch.build`, from
-`version.properties` + commit count) and publishes that as a
-prerelease under a floating `latest-debug-v<major>.<minor>` tag it
-creates/force-moves itself, but ONLY when the push is to `main` and
-the build succeeded — every other branch just builds and tests
-without touching the public release.
+The `.github/workflows/build-mobile.yml` workflow runs on push to
+`main` and on `workflow_dispatch` only — there is no tag-based
+trigger, and (as of this writing) no PR-side run either: PR-side
+build/test coverage comes from `rules-tests.yml` instead (see "CI
+Overview" below), and this workflow's job is specifically the release
+pipeline, which only ever fires on `main` anyway. It computes its own
+version (`major.minor.patch.build`, from `version.properties` +
+commit count) and publishes that as a prerelease under a floating
+`latest-debug-v<major>.<minor>` tag it creates/force-moves itself.
+The concurrency group is keyed on `head_ref || ref` and cancels an
+in-progress run for the same ref, so a rapid second push to `main`
+supersedes rather than races the first.
+
+A step immediately before keystore generation reports (by name only,
+never value) whether each of the four `KEYSTORE_*` secrets below is
+actually set — useful for diagnosing "secret is definitely set but
+the build says it's missing" without guessing (usually a name
+mismatch or the secret having been added at the wrong scope —
+Environment secrets vs. Repository secrets — see that step's own
+comment in the workflow file).
 
 1.  **Environment Setup**: Installs Node, Java 21.
 2.  **Web Build**: Runs `npm run build`.

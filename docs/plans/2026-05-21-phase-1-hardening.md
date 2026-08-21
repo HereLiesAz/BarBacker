@@ -1,5 +1,14 @@
 # Phase 1 — Hardening Implementation Plan
 
+> **Status: shipped.** Kept for historical context; see
+> [`future-features.md`](future-features.md) for current status and
+> [`../DATA_MODEL.md`](../DATA_MODEL.md) for the as-implemented data
+> model. The ownership-claim flow that shipped
+> (`functions/src/ownershipClaims.ts`: `fileOwnershipClaim` /
+> `reviewOwnershipClaim`) is simpler than the five-step waterfall
+> sketched below — Manager+/Owner review only, no automated
+> OSM-contact/email-domain/dispute-window steps.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Land the role model, signup gating, user-management UI, hardened Firestore rules, custom-claims stamping, 86'd rules enforcement, and the full optional ownership-claim waterfall — the foundation every later phase depends on.

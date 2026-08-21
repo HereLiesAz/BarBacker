@@ -16,6 +16,8 @@ class AppContainer(
     val store: KeyValueStore,
     /** The Android `Context`; null elsewhere. */
     platformContext: Any? = null,
+    /** Where the outbound iCal feed is served from, if configured. */
+    val icalFeedBaseUrl: String? = null,
 ) {
     val auth: AuthRepository = FirebaseAuthRepository(firebase.auth)
     val bars: BarRepository = FirebaseBarRepository(firebase.firestore)
@@ -26,6 +28,10 @@ class AppContainer(
     val ownershipClaims: OwnershipClaimRepository =
         FirebaseOwnershipClaimRepository(firebase.firestore, firebase.functions)
     val storage: StorageRepository = FirebaseStorageRepository(firebase.storage)
+    val calendar: CalendarRepository =
+        FirebaseCalendarRepository(firebase.firestore, firebase.functions)
+    val pos: PosRepository = FirebasePosRepository(firebase.firestore, firebase.functions)
+    val urls: UrlOpener = createUrlOpener(platformContext)
 
     /**
      * One client for the whole process. Ktor clients own a connection pool

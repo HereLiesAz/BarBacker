@@ -197,6 +197,9 @@ const val MAX_IGNORED_IDS: Int = 200
 /** How far back the dashboard's request query reaches. */
 const val REQUEST_WINDOW_MILLIS: Long = 24L * 60 * 60 * 1000
 
+/** The window the POS screen's insights button reports over. */
+const val POS_INSIGHTS_WINDOW_MILLIS: Long = 7L * 24 * 60 * 60 * 1000
+
 /** Cap on the dashboard's request query. */
 const val REQUEST_QUERY_LIMIT: Int = 100
 

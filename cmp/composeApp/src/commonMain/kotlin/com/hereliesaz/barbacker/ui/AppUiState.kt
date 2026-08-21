@@ -4,6 +4,7 @@ import com.hereliesaz.barbacker.CUSTOM_REQUEST_BUTTON
 import com.hereliesaz.barbacker.NOTIFICATION_DEFAULTS_BY_TITLE
 import com.hereliesaz.barbacker.data.AuthState
 import com.hereliesaz.barbacker.data.PlaceResult
+import com.hereliesaz.barbacker.data.icalFeedUrl
 import com.hereliesaz.barbacker.logic.ButtonLabelResolver
 import com.hereliesaz.barbacker.logic.dynamicChildrenOf
 import com.hereliesaz.barbacker.logic.effectiveNotificationPreferences
@@ -14,10 +15,15 @@ import com.hereliesaz.barbacker.logic.visibleRequests
 import com.hereliesaz.barbacker.model.Bar
 import com.hereliesaz.barbacker.model.BarUser
 import com.hereliesaz.barbacker.model.ButtonConfig
+import com.hereliesaz.barbacker.model.CalendarConnectionStatus
+import com.hereliesaz.barbacker.model.CalendarEvent
 import com.hereliesaz.barbacker.model.ChatMessage
 import com.hereliesaz.barbacker.model.EightySixEntry
+import com.hereliesaz.barbacker.model.ICalSubscription
 import com.hereliesaz.barbacker.model.MemberStatus
 import com.hereliesaz.barbacker.model.OwnershipClaim
+import com.hereliesaz.barbacker.model.POSConnectionStatus
+import com.hereliesaz.barbacker.model.POSMenuItem
 import com.hereliesaz.barbacker.model.Request
 import com.hereliesaz.barbacker.model.SubscriptionTier
 
@@ -132,6 +138,23 @@ data class AppUiState(
      * nobody saved.
      */
     val pendingOrders: Map<String, List<String>> = emptyMap(),
+
+    // --- Integrations. ---
+
+    /** The bar's calendar, soonest first. Visible to every member. */
+    val calendarEvents: List<CalendarEvent> = emptyList(),
+
+    /** Manager+ only; null for everyone else, and while none is connected. */
+    val googleCalendarConnection: CalendarConnectionStatus? = null,
+    val icalSubscriptions: List<ICalSubscription> = emptyList(),
+    val icalFeedToken: String? = null,
+
+    /** Where the outbound feed is served from, if this build was told. */
+    val icalFeedBaseUrl: String? = null,
+
+    /** Keyed by provider id. Manager+ only. */
+    val posConnections: Map<String, POSConnectionStatus> = emptyMap(),
+    val posMenu: List<POSMenuItem> = emptyList(),
 ) {
     val currentUser get() = (auth as? AuthState.SignedIn)?.user
 
@@ -270,6 +293,17 @@ data class AppUiState(
      */
     val canSeePrivateEightySix: Boolean get() = isPremium && isManagerPlus
 
+    /**
+     * The subscribable feed URL, or null when it cannot be built.
+     *
+     * Null covers two different situations that both have to be handled:
+     * no token minted yet, and a token that exists but a build that was
+     * never told where the feed is served from. The settings screen tells
+     * them apart with [icalFeedToken].
+     */
+    val icalFeedUrl: String?
+        get() = icalFeedUrl(icalFeedBaseUrl, barId.orEmpty(), icalFeedToken)
+
     val clockedInMembers: List<BarUser> by lazy {
         roster.filter { it.status == MemberStatus.Active }
     }
@@ -345,4 +379,7 @@ enum class ActiveDialog {
     NotificationSettings,
     BarManager,
     ThemeEditor,
+    Calendar,
+    CalendarSettings,
+    PosSettings,
 }

@@ -53,6 +53,9 @@ object BarBackerColors {
     /** The pending-approvals badge. */
     val Warning = Color(0xFFEAB308)
 
+    /** "Connected" states on the integration screens. */
+    val Success = Color(0xFF22C55E)
+
     /** Pinned-message marquee text. */
     val Pinned = Color(0xFFEAB308)
 }

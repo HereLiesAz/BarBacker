@@ -33,10 +33,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Store
@@ -98,6 +100,8 @@ data class DashboardActions(
     val onOpenNotificationSettings: () -> Unit,
     val onOpenBarManager: () -> Unit,
     val onOpenThemeEditor: () -> Unit,
+    val onOpenCalendar: () -> Unit,
+    val onOpenPosSettings: () -> Unit,
     val onSwitchBar: () -> Unit,
     val onGoOffClock: () -> Unit,
     /** The ids of the current grid context, in the order a drag settled on. */
@@ -235,6 +239,16 @@ private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
                     },
                 )
                 DropdownMenuItem(
+                    text = { Text("Calendar") },
+                    leadingIcon = {
+                        Icon(Icons.Filled.CalendarMonth, contentDescription = null)
+                    },
+                    onClick = {
+                        menuOpen = false
+                        actions.onOpenCalendar()
+                    },
+                )
+                DropdownMenuItem(
                     text = { Text("Manage Bar") },
                     leadingIcon = { Icon(Icons.Filled.Store, contentDescription = null) },
                     onClick = {
@@ -252,6 +266,16 @@ private fun DashboardTopBar(state: AppUiState, actions: DashboardActions) {
                         onClick = {
                             menuOpen = false
                             actions.onOpenThemeEditor()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("POS Integration") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.PointOfSale, contentDescription = null)
+                        },
+                        onClick = {
+                            menuOpen = false
+                            actions.onOpenPosSettings()
                         },
                     )
                 }

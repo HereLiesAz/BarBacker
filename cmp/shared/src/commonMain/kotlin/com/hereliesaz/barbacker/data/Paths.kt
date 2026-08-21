@@ -48,8 +48,17 @@ object Paths {
     fun bottlePhoto(barId: String, uid: String, epochMillis: Long) =
         "bottlePhotos/$barId/${uid}_$epochMillis.jpg"
 
-    /** Storage object path for a premium bar's logo. */
-    fun barLogo(barId: String, fileName: String) = "barLogos/$barId/$fileName"
+    /**
+     * Storage object path for a premium bar's logo.
+     *
+     * `bars/`, not `barLogos/`, and the file name must start with `logo.`
+     * — `storage.rules` matches `/bars/{barId}/{fileName}` and then
+     * re-narrows `fileName` with `matches('logo\\..+')`. Anything outside
+     * that shape has no matching rule at all, and Storage denies by
+     * default, so a near-miss here fails as a flat permission error with
+     * nothing pointing at the path.
+     */
+    fun barLogo(barId: String, extension: String) = "bars/$barId/logo.$extension"
 }
 
 /** Firestore field names, so a typo fails at one site rather than silently. */
@@ -81,4 +90,7 @@ object Fields {
     const val CLAIMED_AT = "claimedAt"
     const val LAST_SEEN = "lastSeen"
     const val THEME = "theme"
+    const val CREATED_BY = "createdBy"
+    const val CREATED_BY_NAME = "createdByName"
+    const val CREATED_AT = "createdAt"
 }

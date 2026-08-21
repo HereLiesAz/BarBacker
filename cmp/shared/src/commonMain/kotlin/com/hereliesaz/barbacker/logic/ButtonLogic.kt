@@ -3,9 +3,11 @@ package com.hereliesaz.barbacker.logic
 import com.hereliesaz.barbacker.ADD_BRAND_BUTTON
 import com.hereliesaz.barbacker.ADD_TYPE_BUTTON
 import com.hereliesaz.barbacker.ADD_WELL_BUTTON
+import com.hereliesaz.barbacker.CUSTOM_REQUEST_BUTTON
 import com.hereliesaz.barbacker.DEFAULT_BUTTONS
 import com.hereliesaz.barbacker.LABEL_SEPARATOR
 import com.hereliesaz.barbacker.QUANTITY_BUTTONS
+import com.hereliesaz.barbacker.model.ButtonAction
 import com.hereliesaz.barbacker.model.ButtonConfig
 
 /**
@@ -134,6 +136,58 @@ fun dynamicChildrenOf(
     button.id.startsWith("type_") -> QUANTITY_BUTTONS
 
     else -> button.children
+}
+
+/**
+ * What tapping a grid tile should actually do.
+ *
+ * Worth naming rather than deciding inline, because the default — submit a
+ * page labelled after the tile — is WRONG for five of these and wrong in a
+ * way that looks like it works: tapping "+ ADD WELL" without this
+ * classification pages the whole floor asking for "ICE: + ADD WELL".
+ */
+sealed interface ButtonTap {
+    /** Open the sub-menu this tile leads to. */
+    data object Descend : ButtonTap
+
+    /** Send a page for the trail ending at this tile. */
+    data object Submit : ButtonTap
+
+    /** Ask for a new beer brand. */
+    data object PromptForBrand : ButtonTap
+
+    /** Ask for a new type under the brand currently open. */
+    data object PromptForType : ButtonTap
+
+    /** Ask for a new well name. */
+    data object PromptForWell : ButtonTap
+
+    /** Ask how many, for the beer type currently open. */
+    data object PromptForQuantity : ButtonTap
+
+    /** Ask for free text to send as a one-off. */
+    data object PromptForCustomRequest : ButtonTap
+}
+
+/**
+ * Decides what a tap on [button] means.
+ *
+ * The synthesised tiles are checked BEFORE the children lookup: they all
+ * have no children, so anything reaching the children check would fall
+ * through to [ButtonTap.Submit].
+ */
+fun classifyTap(
+    button: ButtonConfig,
+    wells: List<String>,
+    beerInventory: Map<String, List<String>>,
+): ButtonTap = when {
+    button.id == ADD_WELL_BUTTON.id -> ButtonTap.PromptForWell
+    button.action == ButtonAction.AddBrand -> ButtonTap.PromptForBrand
+    button.action == ButtonAction.AddType -> ButtonTap.PromptForType
+    button.action == ButtonAction.CustomQuantity -> ButtonTap.PromptForQuantity
+    button.id == CUSTOM_REQUEST_BUTTON.id -> ButtonTap.PromptForCustomRequest
+    dynamicChildrenOf(button, wells, beerInventory).isNotEmpty() -> ButtonTap.Descend
+    else -> ButtonTap.Submit
 }
 
 /**

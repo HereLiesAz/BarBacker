@@ -3,8 +3,12 @@ package com.hereliesaz.barbacker.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hereliesaz.barbacker.ASK_ME_SUFFIX
+import com.hereliesaz.barbacker.DEFAULT_BEERS
+import com.hereliesaz.barbacker.LABEL_SEPARATOR
 import com.hereliesaz.barbacker.INVITE_CHECK_TIMEOUT_MILLIS
+import com.hereliesaz.barbacker.Alerter
 import com.hereliesaz.barbacker.MAX_IGNORED_IDS
+import com.hereliesaz.barbacker.NAG_INTERVAL_MILLIS
 import com.hereliesaz.barbacker.NOTIFICATION_DEFAULTS_BY_TITLE
 import com.hereliesaz.barbacker.REQUEST_WINDOW_MILLIS
 import com.hereliesaz.barbacker.REQUEST_WINDOW_REFRESH_MILLIS
@@ -16,6 +20,7 @@ import com.hereliesaz.barbacker.data.BarRepository
 import com.hereliesaz.barbacker.data.CHAT_PAGE_SIZE
 import com.hereliesaz.barbacker.data.ChatRepository
 import com.hereliesaz.barbacker.data.EightySixRepository
+import com.hereliesaz.barbacker.data.InvitableRole
 import com.hereliesaz.barbacker.data.KeyValueStore
 import com.hereliesaz.barbacker.data.MembershipRepository
 import com.hereliesaz.barbacker.data.NewBar
@@ -23,14 +28,20 @@ import com.hereliesaz.barbacker.data.OwnershipClaimRepository
 import com.hereliesaz.barbacker.data.PLACE_SEARCH_DEBOUNCE_MILLIS
 import com.hereliesaz.barbacker.data.PLACE_SEARCH_MIN_LENGTH
 import com.hereliesaz.barbacker.data.PlaceResult
+import com.hereliesaz.barbacker.data.PickedImage
 import com.hereliesaz.barbacker.data.PlaceSearchRepository
+import com.hereliesaz.barbacker.data.PushTokenProvider
 import com.hereliesaz.barbacker.data.RequestAlreadyClaimedException
 import com.hereliesaz.barbacker.data.RequestRepository
+import com.hereliesaz.barbacker.data.StorageRepository
 import com.hereliesaz.barbacker.logWarning
-import com.hereliesaz.barbacker.logic.dynamicChildrenOf
+import com.hereliesaz.barbacker.logic.ButtonTap
+import com.hereliesaz.barbacker.logic.classifyTap
+import com.hereliesaz.barbacker.logic.hasOutstandingAlerts
 import com.hereliesaz.barbacker.logic.requestLabelFor
 import com.hereliesaz.barbacker.model.Bar
 import com.hereliesaz.barbacker.model.BarRole
+import com.hereliesaz.barbacker.model.BarTheme
 import com.hereliesaz.barbacker.model.BarUser
 import com.hereliesaz.barbacker.model.ButtonConfig
 import com.hereliesaz.barbacker.model.ChatMessage
@@ -72,7 +83,10 @@ class AppViewModel(
     private val chat: ChatRepository,
     private val eightySix: EightySixRepository,
     private val ownershipClaims: OwnershipClaimRepository,
+    private val storage: StorageRepository,
     private val placeSearch: PlaceSearchRepository,
+    private val pushTokens: PushTokenProvider,
+    private val alerter: Alerter,
     private val store: KeyValueStore,
 ) : ViewModel() {
 
@@ -95,6 +109,9 @@ class AppViewModel(
         val searchResults: List<PlaceResult> = emptyList(),
         val isSearching: Boolean = false,
         val searchFailed: Boolean = false,
+        val inputPrompt: InputPrompt? = null,
+        val quantityPrompt: QuantityPrompt? = null,
+        val pendingOrders: Map<String, List<String>> = emptyMap(),
     )
 
     /** The four bar-scoped subscriptions, resolved together. */
@@ -228,6 +245,9 @@ class AppViewModel(
             searchResults = local.searchResults,
             isSearching = local.isSearching,
             searchFailed = local.searchFailed,
+            inputPrompt = local.inputPrompt,
+            quantityPrompt = local.quantityPrompt,
+            pendingOrders = local.pendingOrders,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
 
@@ -238,6 +258,89 @@ class AppViewModel(
         watchForAutoClockIn()
         watchBarIdForChatReset()
         watchSearchQuery()
+        watchForPushRegistration()
+        startNagLoop()
+        watchBarForSettledOrders()
+    }
+
+    /**
+     * Retires an optimistic order once the bar document carries it.
+     *
+     * Without this, a locally committed order shadows the document
+     * forever — so a second manager reordering the same grid from another
+     * device would appear to have no effect here, permanently.
+     */
+    private fun watchBarForSettledOrders() {
+        viewModelScope.launch {
+            barScope
+                .map { it.bar?.customOrders }
+                .distinctUntilChanged()
+                .collect { saved ->
+                    if (saved == null) return@collect
+                    localState.update { local ->
+                        if (local.pendingOrders.isEmpty()) return@update local
+                        val settled = local.pendingOrders.filterNot { (context, order) ->
+                            saved[context] == order
+                        }
+                        if (settled.size == local.pendingOrders.size) {
+                            local
+                        } else {
+                            local.copy(pendingOrders = settled)
+                        }
+                    }
+                }
+        }
+    }
+
+    /**
+     * Registers this device's push token once the member is active in a bar.
+     *
+     * Gated on ACTIVE rather than merely present: a pending member must not
+     * be paged for a bar that has not admitted them yet, and the rules
+     * would reject the write anyway.
+     *
+     * The matching de-registration lives in [goOffClock] and
+     * [MembershipRepository.leave] — deleting the token document is what
+     * actually stops the pages, and leaving it behind means the nag cron
+     * keeps waking a phone whose shift ended.
+     */
+    private fun watchForPushRegistration() {
+        viewModelScope.launch {
+            if (!pushTokens.isSupported) return@launch
+            combine(barIdFlow, uidFlow, barScope.map { it.membership?.status }) {
+                    barId, uid, status ->
+                Triple(barId, uid, status)
+            }.distinctUntilChanged().collect { (barId, uid, status) ->
+                if (barId == null || uid == null || status != MemberStatus.Active) {
+                    return@collect
+                }
+                val token = pushTokens.currentToken() ?: return@collect
+                runCatching { memberships.registerPushToken(barId, uid, token) }
+                    .onFailure { logWarning("Could not register the push token", it) }
+            }
+        }
+    }
+
+    /**
+     * Sounds an alert while un-muted pages are outstanding.
+     *
+     * This is the in-app half of paging, and it is what actually works on
+     * the tablet sitting open behind the bar — the case push handles worst.
+     * Muted requests are excluded, which is the whole point of muting; the
+     * loop would otherwise keep sounding for a page someone deliberately
+     * set aside.
+     */
+    private fun startNagLoop() {
+        viewModelScope.launch {
+            while (true) {
+                delay(NAG_INTERVAL_MILLIS)
+                val current = state.value
+                if (current.screen != Screen.Dashboard) continue
+                if (hasOutstandingAlerts(current.visibleRequests, current.ignoredIds)) {
+                    alerter.alert()
+                }
+            }
+        }
     }
 
     /**
@@ -547,18 +650,191 @@ class AppViewModel(
      */
     fun onButtonTapped(button: ButtonConfig) {
         val current = state.value
-        val children = dynamicChildrenOf(
-            button = button,
-            wells = current.bar?.wells.orEmpty(),
-            beerInventory = current.bar?.beerInventory.orEmpty(),
-        )
-        if (children.isNotEmpty()) {
-            localState.update { it.copy(navStack = it.navStack + button) }
-        } else {
-            submitRequest(requestLabelFor(current.navStack + button))
-            clearNavStack()
+        val inventory = current.bar?.beerInventory.orEmpty()
+        val wells = current.bar?.wells.orEmpty()
+
+        // Routed through the shared classifier so the "+ ADD …" and
+        // CUSTOM tiles cannot silently fall through to the submit path —
+        // see ClassifyTapTest.
+        when (classifyTap(button, wells, inventory)) {
+            ButtonTap.PromptForWell -> {
+                localState.update {
+                    it.copy(
+                        inputPrompt = InputPrompt(
+                            kind = InputKind.Well,
+                            // Pre-filled with the next number, since wells
+                            // are almost always numbered in order.
+                            initialValue = "Well #${wells.size + 1}",
+                        ),
+                    )
+                }
+                return
+            }
+
+            ButtonTap.PromptForBrand -> {
+                localState.update {
+                    it.copy(
+                        inputPrompt = InputPrompt(
+                            kind = InputKind.Brand,
+                            suggestions = (DEFAULT_BEERS + inventory.keys).distinct(),
+                        ),
+                    )
+                }
+                return
+            }
+
+            ButtonTap.PromptForType -> {
+                // The brand is whatever menu we descended through to get
+                // here; its LABEL is the inventory key.
+                val brand = current.navStack.lastOrNull()?.label ?: return
+                localState.update {
+                    it.copy(
+                        inputPrompt = InputPrompt(
+                            kind = InputKind.Type,
+                            parentBrand = brand,
+                            suggestions = inventory.values.flatten().distinct(),
+                        ),
+                    )
+                }
+                return
+            }
+
+            ButtonTap.PromptForQuantity -> {
+                localState.update {
+                    it.copy(
+                        quantityPrompt = QuantityPrompt(
+                            contextLabel = requestLabelFor(current.navStack),
+                        ),
+                    )
+                }
+                return
+            }
+
+            ButtonTap.PromptForCustomRequest -> {
+                localState.update { it.copy(inputPrompt = InputPrompt(InputKind.CustomRequest)) }
+                return
+            }
+
+            ButtonTap.Descend -> {
+                localState.update { it.copy(navStack = it.navStack + button) }
+                return
+            }
+
+            ButtonTap.Submit -> {
+                submitRequest(requestLabelFor(current.navStack + button))
+                clearNavStack()
+                return
+            }
         }
     }
+
+    fun dismissPrompt() =
+        localState.update { it.copy(inputPrompt = null, quantityPrompt = null) }
+
+    /**
+     * Applies whatever the open prompt was collecting.
+     *
+     * Inventory writes land BEFORE the local navigation moves, and a
+     * failure returns early. Navigating first would drop the user into a
+     * brand or type menu that does not exist on the server — every request
+     * sent from it would reference something no one else can see.
+     */
+    fun submitPrompt(value: String) {
+        val prompt = localState.value.inputPrompt ?: return
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return
+
+        val barId = barIdFlow.value ?: return
+        val inventory = state.value.bar?.beerInventory.orEmpty()
+        val wells = state.value.bar?.wells.orEmpty()
+
+        when (prompt.kind) {
+            InputKind.Brand -> {
+                // Already stocked: just walk into it rather than failing a
+                // duplicate write and stranding the user.
+                if (inventory.containsKey(trimmed)) {
+                    dismissPrompt()
+                    descendInto(ButtonConfig(id = "brand_$trimmed", label = trimmed))
+                    return
+                }
+                viewModelScope.launch {
+                    runCatching { bars.addBrand(barId, trimmed) }
+                        .onSuccess {
+                            dismissPrompt()
+                            descendInto(ButtonConfig(id = "brand_$trimmed", label = trimmed))
+                        }
+                        .onFailure {
+                            logWarning("Could not add brand", it)
+                            showMessage("Failed to add brand. Only managers can edit the beer inventory.")
+                        }
+                }
+            }
+
+            InputKind.Type -> {
+                val brand = prompt.parentBrand ?: return
+                if (inventory[brand]?.contains(trimmed) == true) {
+                    dismissPrompt()
+                    descendInto(
+                        ButtonConfig(id = "type_${brand}_$trimmed", label = trimmed),
+                    )
+                    return
+                }
+                viewModelScope.launch {
+                    runCatching { bars.addType(barId, brand, trimmed) }
+                        .onSuccess {
+                            dismissPrompt()
+                            descendInto(
+                                ButtonConfig(id = "type_${brand}_$trimmed", label = trimmed),
+                            )
+                        }
+                        .onFailure {
+                            logWarning("Could not add type", it)
+                            showMessage("Failed to add type. Only managers can edit the beer inventory.")
+                        }
+                }
+            }
+
+            InputKind.Well -> {
+                if (wells.contains(trimmed)) {
+                    dismissPrompt()
+                    submitRequest("ICE$LABEL_SEPARATOR$trimmed")
+                    clearNavStack()
+                    return
+                }
+                viewModelScope.launch {
+                    runCatching { bars.addWell(barId, trimmed) }
+                        .onSuccess {
+                            dismissPrompt()
+                            // Adding a well is only ever done because ice is
+                            // wanted there now, so the page goes out with it.
+                            submitRequest("ICE$LABEL_SEPARATOR$trimmed")
+                            clearNavStack()
+                        }
+                        .onFailure {
+                            logWarning("Could not add well", it)
+                            showMessage("Failed to add well. Only managers can edit wells.")
+                        }
+                }
+            }
+
+            InputKind.CustomRequest -> {
+                dismissPrompt()
+                submitRequest(trimmed)
+                clearNavStack()
+            }
+        }
+    }
+
+    /** Sends the chosen quantity appended to the trail that opened the stepper. */
+    fun submitQuantity(quantity: Int) {
+        val prompt = localState.value.quantityPrompt ?: return
+        dismissPrompt()
+        submitRequest("${prompt.contextLabel}$LABEL_SEPARATOR$quantity")
+        clearNavStack()
+    }
+
+    private fun descendInto(button: ButtonConfig) =
+        localState.update { it.copy(navStack = it.navStack + button) }
 
     fun navigateBack() = localState.update { it.copy(navStack = it.navStack.dropLast(1)) }
 
@@ -679,6 +955,89 @@ class AppViewModel(
                 showMessage("Failed to reject. Please try again.")
             }
         }
+    }
+
+    // --- Bar management -------------------------------------------------
+
+    /**
+     * Persists the order a drag settled on, for the grid context that was
+     * on screen when it started.
+     *
+     * The new order is applied locally first so the tiles stay where the
+     * finger left them, and rolled back if the write is rejected — which
+     * is the whole failure mode worth handling here, since `customOrders`
+     * lives on the bar document and only Manager+ may write it.
+     */
+    fun saveButtonOrder(order: List<String>) {
+        val barId = barIdFlow.value ?: return
+        val contextId = state.value.currentContextId
+        if (order.isEmpty()) return
+
+        localState.update { it.copy(pendingOrders = it.pendingOrders + (contextId to order)) }
+        viewModelScope.launch {
+            runCatching { bars.saveCustomOrder(barId, contextId, order) }.onFailure {
+                logWarning("Could not save the button order", it)
+                localState.update { local ->
+                    local.copy(pendingOrders = local.pendingOrders - contextId)
+                }
+                showMessage("Failed to save the new order. Only managers can reorder buttons.")
+            }
+        }
+    }
+
+    fun hideButton(buttonId: String) {
+        val barId = barIdFlow.value ?: return
+        viewModelScope.launch {
+            runCatching { bars.hideButton(barId, buttonId) }.onFailure {
+                logWarning("Could not hide $buttonId", it)
+                showMessage("Failed to remove the button. Please try again.")
+            }
+        }
+    }
+
+    fun unhideButton(buttonId: String) {
+        val barId = barIdFlow.value ?: return
+        viewModelScope.launch {
+            runCatching { bars.unhideButton(barId, buttonId) }.onFailure {
+                logWarning("Could not restore $buttonId", it)
+                showMessage("Failed to restore the button. Please try again.")
+            }
+        }
+    }
+
+    /**
+     * Invites someone by email.
+     *
+     * Only writes the invite. The membership document is created by the
+     * `onInviteConsumed` Cloud Function, because an invite can grant
+     * Manager and a client is not trusted to hand out that role.
+     */
+    suspend fun sendInvite(email: String, role: InvitableRole): Result<Unit> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        val user = state.value.currentUser
+            ?: return Result.failure(IllegalStateException("Signed out"))
+        return runCatching {
+            memberships.sendInvite(
+                barId = barId,
+                email = email,
+                role = role,
+                createdBy = user.uid,
+                createdByName = state.value.membership?.displayName.orEmpty(),
+            )
+        }.onFailure { logWarning("Could not send an invite to $barId", it) }
+    }
+
+    suspend fun saveTheme(theme: BarTheme): Result<Unit> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        return runCatching { bars.saveTheme(barId, theme) }
+            .onFailure { logWarning("Could not save the theme", it) }
+    }
+
+    /** Uploads a logo and returns its download URL; does not save the theme. */
+    suspend fun uploadLogo(image: PickedImage): Result<String> {
+        val barId = barIdFlow.value ?: return Result.failure(IllegalStateException("No bar"))
+        return runCatching { storage.uploadBarLogo(barId, image) }
+            .onFailure { logWarning("Could not upload a logo for $barId", it) }
     }
 
     // --- Dialogs --------------------------------------------------------
@@ -957,11 +1316,27 @@ class AppViewModel(
     private fun persistBarId(barId: String) {
         store.putString(KeyValueStore.KEY_BAR_ID, barId)
         barIdFlow.value = barId
+        forgetPendingOrders()
     }
 
     private fun clearBarSelection() {
         store.putString(KeyValueStore.KEY_BAR_ID, null)
         barIdFlow.value = null
+        forgetPendingOrders()
+    }
+
+    /**
+     * Drops optimistic grid orders on every bar change.
+     *
+     * They are keyed by grid context — "main", "ice" — not by bar, so a
+     * pending "main" left over from the last bar would shadow the new
+     * one's saved order on a shared tablet, and go on shadowing it because
+     * the server value it is waiting to match belongs to a different bar.
+     */
+    private fun forgetPendingOrders() {
+        localState.update {
+            if (it.pendingOrders.isEmpty()) it else it.copy(pendingOrders = emptyMap())
+        }
     }
 
     private fun readIgnoredIds(): Set<String> =

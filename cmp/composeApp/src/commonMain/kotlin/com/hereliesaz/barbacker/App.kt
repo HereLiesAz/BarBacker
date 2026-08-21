@@ -31,17 +31,21 @@ import com.hereliesaz.barbacker.ui.AppUiState
 import com.hereliesaz.barbacker.ui.AppViewModel
 import com.hereliesaz.barbacker.ui.Screen
 import com.hereliesaz.barbacker.ui.screens.ApprovalPendingScreen
+import com.hereliesaz.barbacker.ui.screens.BarManagerDialog
 import com.hereliesaz.barbacker.ui.screens.BarSelectionScreen
 import com.hereliesaz.barbacker.ui.screens.ChatPanel
 import com.hereliesaz.barbacker.ui.screens.CheckingInviteScreen
 import com.hereliesaz.barbacker.ui.screens.DashboardActions
 import com.hereliesaz.barbacker.ui.screens.DashboardScreen
 import com.hereliesaz.barbacker.ui.screens.EightySixDialog
+import com.hereliesaz.barbacker.ui.screens.InputPromptDialog
 import com.hereliesaz.barbacker.ui.screens.NotificationSettingsDialog
+import com.hereliesaz.barbacker.ui.screens.QuantityPromptDialog
 import com.hereliesaz.barbacker.ui.screens.RestoringScreen
 import com.hereliesaz.barbacker.ui.screens.RoleSelectionScreen
 import com.hereliesaz.barbacker.ui.screens.RosterDialog
 import com.hereliesaz.barbacker.ui.screens.SignInScreen
+import com.hereliesaz.barbacker.ui.screens.ThemeEditorDialog
 import com.hereliesaz.barbacker.ui.theme.BarBackerColors
 import com.hereliesaz.barbacker.ui.theme.BarBackerTheme
 
@@ -63,6 +67,7 @@ fun App(platformContext: Any? = null) {
         AppContainer(
             firebase = BarBackerFirebase.initialize(config, platformContext),
             store = createKeyValueStore(platformContext),
+            platformContext = platformContext,
         )
     }
 
@@ -80,7 +85,10 @@ private fun BarBackerApp(container: AppContainer) {
             chat = container.chat,
             eightySix = container.eightySix,
             ownershipClaims = container.ownershipClaims,
+            storage = container.storage,
             placeSearch = container.placeSearch,
+            pushTokens = container.pushTokens,
+            alerter = container.alerter,
             store = container.store,
         )
     }
@@ -158,8 +166,11 @@ private fun BarBackerApp(container: AppContainer) {
                             onOpenNotificationSettings = {
                                 viewModel.openDialog(ActiveDialog.NotificationSettings)
                             },
+                            onOpenBarManager = { viewModel.openDialog(ActiveDialog.BarManager) },
+                            onOpenThemeEditor = { viewModel.openDialog(ActiveDialog.ThemeEditor) },
                             onSwitchBar = viewModel::backToBarSelection,
                             onGoOffClock = viewModel::goOffClock,
+                            onReorder = viewModel::saveButtonOrder,
                         ),
                     )
                 }
@@ -168,6 +179,23 @@ private fun BarBackerApp(container: AppContainer) {
                 // above whichever screen is showing. In practice only the
                 // dashboard opens them.
                 DashboardDialogs(state = state, viewModel = viewModel)
+
+                // Prompts sit above the dialogs: a brand prompt can be
+                // opened from inside a sub-menu, not only from the grid.
+                state.inputPrompt?.let { prompt ->
+                    InputPromptDialog(
+                        prompt = prompt,
+                        onSubmit = viewModel::submitPrompt,
+                        onDismiss = viewModel::dismissPrompt,
+                    )
+                }
+                state.quantityPrompt?.let { prompt ->
+                    QuantityPromptDialog(
+                        prompt = prompt,
+                        onSubmit = viewModel::submitQuantity,
+                        onDismiss = viewModel::dismissPrompt,
+                    )
+                }
             }
         }
     }
@@ -221,6 +249,25 @@ private fun DashboardDialogs(state: AppUiState, viewModel: AppViewModel) {
             buttons = state.buttons,
             ntfyTopic = null,
             onSave = viewModel::saveNotificationPreferences,
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.BarManager -> BarManagerDialog(
+            barName = state.barName,
+            allButtons = state.manageableButtons,
+            hiddenButtonIds = state.hiddenButtonIds,
+            isPremium = state.isPremium,
+            isManagerPlus = state.isManagerPlus,
+            onHideButton = viewModel::hideButton,
+            onUnhideButton = viewModel::unhideButton,
+            onInvite = viewModel::sendInvite,
+            onClose = viewModel::closeDialog,
+        )
+
+        ActiveDialog.ThemeEditor -> ThemeEditorDialog(
+            currentTheme = state.bar?.theme,
+            onSave = viewModel::saveTheme,
+            onUploadLogo = viewModel::uploadLogo,
             onClose = viewModel::closeDialog,
         )
     }

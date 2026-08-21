@@ -156,6 +156,27 @@ a dotted `"beerInventory.$brand"` string. Firestore splits dotted paths on
 `.`, so a brand like "St. Pauli Girl" would land in a nested
 `{ St: { " Pauli Girl": ... } }`.
 
+A logo goes to `bars/{barId}/logo.<ext>` in Storage, which is not a free
+choice either: `storage.rules` matches `/bars/{barId}/{fileName}` and then
+narrows `fileName` with `matches('logo\\..+')`. Anything outside that shape
+has no matching rule, and Storage denies by default — so a near-miss fails
+as a flat permission error with nothing pointing at the path.
+
+### Theming
+
+Which brand colour lands where is fixed by the PWA, because the same
+`theme` map is read by both clients and the two sit on the same bar:
+
+| Field | Role |
+|---|---|
+| `accentColor` | The request-tile background. Its label is whichever of black/white is readable on it — never the other brand colour. |
+| `primaryColor` | The M3 `primary` role: headings, filled buttons. |
+
+`fontFamily` stores a CSS font stack, so a font chosen in either client
+round-trips through the other. What this client renders from it is
+narrower — no font resources are bundled, so a serif stack becomes the
+platform serif and everything else the platform default.
+
 ### Roles
 
 `BarRole` (the privilege tier) and `JobTitle` (the job function) are
@@ -175,10 +196,11 @@ without the refresh, every role-gated read stays denied for up to an hour.
 
 ## Testing
 
-`./gradlew :shared:desktopTest` runs the shared suite: 70 tests covering
+`./gradlew :shared:desktopTest` runs the shared suite: 102 tests covering
 the ported pure logic — contrast colour, brand matching, the button label
-resolver, sort order, sub-menu synthesis, and the request visibility
-filter.
+resolver, sort order, sub-menu synthesis, tap classification, reorder
+arithmetic, picked-image identity, the request visibility filter, and
+alert eligibility.
 
 These are the pieces where a silent divergence from the PWA would be
 hardest to notice, so each behavioural subtlety is pinned by a test that
@@ -194,6 +216,20 @@ fails if it is lost:
 - An explicitly empty preference list is not overwritten by job-title
   defaults.
 - Brand sub-menus key off the label, not the `brand_`-prefixed id.
+- The synthesised "+ ADD …" and CUSTOM tiles have no children, so any
+  path that reaches the children check treats them as leaves and pages
+  the floor asking for "ICE: + ADD WELL". Tap classification runs first,
+  and a test pins each case.
+- Muted requests stay *visible* but stop being *alert-worthy* — two
+  genuinely different questions, and conflating them would either
+  silently drop pages or keep making noise about ones deliberately set
+  aside.
+- A reorder dragged down lands *after* the tiles it passed; dragged up it
+  lands *before* the target. Getting that backwards puts the button one
+  slot off, which reads as a flaky gesture rather than a bug.
+- The synthesised tiles are stripped from a saved order on the way to
+  Firestore, not before the drag, so the indices the gesture works in
+  stay aligned with what is on screen.
 
 ## Status
 
@@ -205,6 +241,8 @@ Working end to end:
 - The join flow, including invite consumption and approval-pending
 - The dashboard: request grid, sub-menu drill-down with synthesised
   children, sending pages, and claim / cancel / mute
+- Adding wells, beer brands, and types from the grid's "+ ADD …" tiles,
+  plus free-text custom requests and the quantity stepper
 - Chat, with pinning, deletion, paged scrollback, the dashboard marquee,
   and an unread badge
 - The 86'd list, including premium private entries
@@ -212,20 +250,44 @@ Working end to end:
 - Per-member notification preferences
 - Realtime updates for bar config, membership, roster, requests, chat,
   the 86'd list, and ownership claims
-- Premium bar theming, with a readability check on the branded label
-  colour
+- Premium bar theming, with the tile label derived from the accent colour
+  it sits on
+- Push registration on Android and iOS, plus the in-app alert loop that
+  sounds and vibrates every minute while un-muted pages are waiting
+- Bar management for Manager+: hiding grid buttons, restoring hidden ones
+  on premium, and inviting staff or managers by email
+- The theme editor: brand colours, font, and a logo uploaded to Storage
+- Drag-to-reorder on the main grid and inside every sub-menu, held behind
+  a long press so a tap still sends a page
 
 Not built yet — the PWA remains the complete client:
 
 - **Calendar, POS settings, and the bottle scanner.** The domain models
   are ported; the screens are not.
-- **Push notifications.** No FCM registration, so the nag loop and
-  server-side fanout do not reach this client. The notification-settings
-  screen shows the ntfy topic for manual subscription but has no
-  `ntfy://` deep link.
-- **Drag-to-reorder.** The grid honours a saved order; it cannot write one.
-- **Bar management.** No invite form, button hiding, or inventory editing.
+- **iOS push delivery.** The token code is shared with Android, but iOS
+  needs an APNs capability and entitlement configured in an Xcode
+  project that does not exist yet (see `cmp/iosApp/README.md`). Until
+  then iOS falls back to the in-app alert loop.
+- **The iOS file picker is unverified.** `ImagePicker.ios.kt` is written
+  against `UIDocumentPickerViewController`, but with no macOS runner and
+  no Xcode project it has never been compiled. Treat it as a first draft
+  of that path. Android and desktop are built in CI.
+- **Desktop push.** There is no FCM transport for a JVM app. The
+  provider reports this explicitly rather than registering nothing and
+  looking broken; the in-app alert loop is what pages a desktop user.
+- **ntfy deep linking.** The notification-settings screen shows the
+  topic for manual subscription but has no `ntfy://` link.
+- **Keyboard-operable reordering.** The web client can reorder with the
+  arrow keys; here the gesture is pointer-only.
+- **Logo previews.** The theme editor shows the uploaded logo's URL, not
+  the image — rendering a remote image needs an image-loading library
+  this build does not carry.
 - **Google and Apple sign-in.** Email/password only.
+
+Deliberately absent, because the PWA has no such feature either:
+inventory *removal*. Wells, brands, and types are added from the grid's
+"+ ADD …" tiles in both clients, and a brand is taken off the floor by
+hiding its tile rather than by deleting it.
 
 One caveat worth stating plainly: the Firestore read and write paths
 compile and are structured to match the rules, but have not been exercised

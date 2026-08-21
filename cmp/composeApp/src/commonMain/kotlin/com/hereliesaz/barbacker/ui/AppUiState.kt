@@ -113,6 +113,25 @@ data class AppUiState(
 
     /** True only when BOTH search sources failed; a partial result is still shown. */
     val searchFailed: Boolean = false,
+
+    /** An open free-text prompt, if any. */
+    val inputPrompt: InputPrompt? = null,
+
+    /** An open quantity stepper, if any. */
+    val quantityPrompt: QuantityPrompt? = null,
+
+    /**
+     * Orders a drag has committed but the bar document has not confirmed,
+     * keyed by grid context id.
+     *
+     * Without this the grid snaps back to the old arrangement between the
+     * finger lifting and the write's snapshot arriving — brief, but exactly
+     * the moment a manager is watching to see whether the drag took. The
+     * view model drops each entry once the server agrees, and on a rejected
+     * write, so a failed reorder does not leave the grid showing an order
+     * nobody saved.
+     */
+    val pendingOrders: Map<String, List<String>> = emptyMap(),
 ) {
     val currentUser get() = (auth as? AuthState.SignedIn)?.user
 
@@ -172,11 +191,37 @@ data class AppUiState(
     /** The approvals badge is hidden from Staff, for whom it opens nothing actionable. */
     val showApprovalsBadge: Boolean get() = isManagerPlus && pendingMembers.isNotEmpty()
 
-    private val hiddenButtonIds: Set<String>
+    val hiddenButtonIds: Set<String>
         get() = bar?.hiddenButtonIds?.toSet().orEmpty()
 
     /** The grid context currently on screen: a parent button id, or "main". */
     val currentContextId: String get() = navStack.lastOrNull()?.id ?: MAIN_CONTEXT_ID
+
+    /** Saved orders, with any locally committed drag taking precedence. */
+    private val effectiveOrders: Map<String, List<String>>
+        get() = bar?.customOrders.orEmpty() + pendingOrders
+
+    /**
+     * What the manage screen lists: every configured button, hidden or
+     * not, plus a stand-in for each hidden `brand_` tile.
+     *
+     * Brand tiles are synthesised from `beerInventory` at render time and
+     * never appear in the stored `buttons` array — so 86'ing one (which
+     * hides `brand_<name>`) would otherwise leave it absent from both
+     * halves of this screen, with no path back even on premium.
+     */
+    val manageableButtons: List<ButtonConfig> by lazy {
+        val sorted = sortButtons(
+            buttons = buttons,
+            contextId = MAIN_CONTEXT_ID,
+            customOrders = effectiveOrders,
+            buttonUsage = bar?.buttonUsage.orEmpty(),
+        )
+        val hiddenBrands = hiddenButtonIds
+            .filter { it.startsWith("brand_") }
+            .map { ButtonConfig(id = it, label = it.removePrefix("brand_")) }
+        sorted + hiddenBrands
+    }
 
     /**
      * The tiles to render, hidden ones removed and the rest ordered.
@@ -199,7 +244,7 @@ data class AppUiState(
         val sorted = sortButtons(
             buttons = source.filterNot { it.id in hiddenButtonIds },
             contextId = currentContextId,
-            customOrders = bar?.customOrders.orEmpty(),
+            customOrders = effectiveOrders,
             buttonUsage = bar?.buttonUsage.orEmpty(),
         )
         if (parent == null) sorted + CUSTOM_REQUEST_BUTTON else sorted
@@ -238,6 +283,59 @@ data class AppUiState(
     }
 }
 
+/**
+ * What a free-text prompt is collecting.
+ *
+ * These back the synthesised "+ ADD …" tiles and the CUSTOM tile. Those
+ * are grid buttons with no children, so without an explicit prompt they
+ * fall through to the submit path and page the floor with their own label
+ * — "ICE: + ADD WELL" — instead of asking for input.
+ */
+enum class InputKind {
+    /** A new beer brand for the bar's inventory. */
+    Brand,
+
+    /** A new type (Bottle, Draft, …) under an existing brand. */
+    Type,
+
+    /** A new well/station name. */
+    Well,
+
+    /** Free text sent as a one-off request. */
+    CustomRequest,
+}
+
+data class InputPrompt(
+    val kind: InputKind,
+    val initialValue: String = "",
+    /** The brand a new type belongs to. Only set for [InputKind.Type]. */
+    val parentBrand: String? = null,
+    /** Offered as tap-to-fill; the field stays free-text either way. */
+    val suggestions: List<String> = emptyList(),
+) {
+    val title: String
+        get() = when (kind) {
+            InputKind.Brand -> "Add Brand"
+            InputKind.Type -> "Add Type"
+            InputKind.Well -> "Add Well"
+            InputKind.CustomRequest -> "Custom Request"
+        }
+
+    val label: String
+        get() = when (kind) {
+            InputKind.Brand -> "Brand name"
+            InputKind.Type -> "Type (Bottle, Draft, …)"
+            InputKind.Well -> "Well name"
+            InputKind.CustomRequest -> "What do you need?"
+        }
+}
+
+/** The numeric stepper behind a beer type's "Other" quantity option. */
+data class QuantityPrompt(
+    /** The breadcrumb the chosen number is appended to. */
+    val contextLabel: String,
+)
+
 /** The overlays reachable from the dashboard. */
 enum class ActiveDialog {
     None,
@@ -245,4 +343,6 @@ enum class ActiveDialog {
     EightySix,
     Roster,
     NotificationSettings,
+    BarManager,
+    ThemeEditor,
 }

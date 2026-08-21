@@ -1,5 +1,8 @@
 package com.hereliesaz.barbacker.data
 
+import com.hereliesaz.barbacker.Alerter
+import com.hereliesaz.barbacker.createAlerter
+
 /**
  * Wires the repositories to a live Firebase project.
  *
@@ -11,6 +14,8 @@ package com.hereliesaz.barbacker.data
 class AppContainer(
     firebase: BarBackerFirebase,
     val store: KeyValueStore,
+    /** The Android `Context`; null elsewhere. */
+    platformContext: Any? = null,
 ) {
     val auth: AuthRepository = FirebaseAuthRepository(firebase.auth)
     val bars: BarRepository = FirebaseBarRepository(firebase.firestore)
@@ -20,6 +25,7 @@ class AppContainer(
     val eightySix: EightySixRepository = FirebaseEightySixRepository(firebase.firestore)
     val ownershipClaims: OwnershipClaimRepository =
         FirebaseOwnershipClaimRepository(firebase.firestore, firebase.functions)
+    val storage: StorageRepository = FirebaseStorageRepository(firebase.storage)
 
     /**
      * One client for the whole process. Ktor clients own a connection pool
@@ -29,4 +35,7 @@ class AppContainer(
 
     val placeSearch: PlaceSearchRepository =
         DefaultPlaceSearchRepository(firebase.firestore, httpClient)
+
+    val pushTokens: PushTokenProvider = createPushTokenProvider(platformContext)
+    val alerter: Alerter = createAlerter(platformContext)
 }

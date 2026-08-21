@@ -3,15 +3,16 @@ package com.hereliesaz.barbacker.ui.theme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.hereliesaz.barbacker.logic.contrastColorFor
 import com.hereliesaz.barbacker.model.BarTheme
-import kotlin.math.pow
 
 /**
  * The stock palette, ported from the Material 3 dark tokens in
@@ -83,10 +84,9 @@ private val BarBackerColorScheme = darkColorScheme(
  * Colours a premium bar can override.
  *
  * Exposed as a composition local rather than folded into the
- * [MaterialTheme] scheme because these are not semantic M3 roles — they
- * are two specific surfaces (the grid tile and its label) that a venue
- * brands, and mapping them onto `primary`/`secondary` would repaint
- * unrelated controls.
+ * [MaterialTheme] scheme because the label colour is not a semantic M3
+ * role — it is a derived value, computed from the tile it sits on, and
+ * there is nowhere in a `ColorScheme` that means that.
  */
 data class BarAccent(
     val tile: Color,
@@ -109,6 +109,15 @@ val LocalBarAccent = staticCompositionLocalOf { BarAccent.Default }
  * deliberate: a bar that lapses out of premium must revert to stock
  * colours rather than keep displaying branding it no longer pays for, and
  * its saved theme stays on the document so re-subscribing restores it.
+ *
+ * Which colour lands where is not a free choice — the same theme document
+ * is read by the PWA, and the two clients sit on the same bar. Matching
+ * `useBarTheme.ts` exactly:
+ *  - `accentColor` is the grid tile background (`secondaryContainer`), and
+ *    the label on it is whichever of black/white is readable. Never the
+ *    other brand colour: a red brand on a red tile is invisible.
+ *  - `primaryColor` is the M3 `primary` role — headings, filled buttons —
+ *    with its own contrast colour as `onPrimary`.
  */
 @Composable
 fun BarBackerTheme(
@@ -116,28 +125,82 @@ fun BarBackerTheme(
     isPremium: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val accent = if (isPremium && barTheme != null) {
-        val tile = parseHexColor(barTheme.primaryColor) ?: BarBackerColors.SecondaryContainer
-        // The label colour is not the bar's accent taken at face value —
-        // it is whichever of black/white is actually readable on the tile.
-        // Honouring an arbitrary accent here is how you end up with a
-        // dark-red label on a dark-red tile.
-        val label = parseHexColor(barTheme.accentColor)
-            ?.takeIf { hasSufficientContrast(it, tile) }
-            ?: Color(parseHex(contrastColorFor(barTheme.primaryColor)))
-        BarAccent(tile = tile, label = label)
-    } else {
-        BarAccent.Default
-    }
+    val themed = barTheme.takeIf { isPremium }
+
+    val accent = themed?.let {
+        val tile = parseHexColor(it.accentColor) ?: return@let null
+        BarAccent(tile = tile, label = Color(parseHex(contrastColorFor(it.accentColor))))
+    } ?: BarAccent.Default
+
+    val colorScheme = themed?.let {
+        val primary = parseHexColor(it.primaryColor)
+        BarBackerColorScheme.copy(
+            primary = primary ?: BarBackerColorScheme.primary,
+            onPrimary = if (primary != null) {
+                Color(parseHex(contrastColorFor(it.primaryColor)))
+            } else {
+                BarBackerColorScheme.onPrimary
+            },
+            secondaryContainer = accent.tile,
+            onSecondaryContainer = accent.label,
+        )
+    } ?: BarBackerColorScheme
 
     CompositionLocalProvider(LocalBarAccent provides accent) {
         MaterialTheme(
-            colorScheme = BarBackerColorScheme,
+            colorScheme = colorScheme,
             shapes = BarBackerShapes,
+            typography = typographyFor(themed?.fontFamily),
             content = content,
         )
     }
 }
+
+/**
+ * Maps a stored CSS font stack onto the closest generic family.
+ *
+ * The web client stores an actual CSS `font-family` string, so the value
+ * has to round-trip untouched or a manager who set a font in one client
+ * would see it silently rewritten by the other. What this cannot do is
+ * render Inter or Playfair Display faithfully — neither is bundled — so a
+ * serif stack becomes the platform serif and everything else the platform
+ * default. Dropping a real font resource in here is the only change
+ * needed to make it exact.
+ */
+private fun familyFor(fontFamily: String?): FontFamily = when {
+    fontFamily == null -> FontFamily.Default
+    fontFamily.contains("serif", ignoreCase = true) &&
+        !fontFamily.contains("sans-serif", ignoreCase = true) -> FontFamily.Serif
+    fontFamily.contains("monospace", ignoreCase = true) -> FontFamily.Monospace
+    else -> FontFamily.Default
+}
+
+@Composable
+private fun typographyFor(fontFamily: String?): Typography {
+    val family = familyFor(fontFamily)
+    if (family == FontFamily.Default) return DefaultTypography
+    return with(DefaultTypography) {
+        Typography(
+            displayLarge = displayLarge.copy(fontFamily = family),
+            displayMedium = displayMedium.copy(fontFamily = family),
+            displaySmall = displaySmall.copy(fontFamily = family),
+            headlineLarge = headlineLarge.copy(fontFamily = family),
+            headlineMedium = headlineMedium.copy(fontFamily = family),
+            headlineSmall = headlineSmall.copy(fontFamily = family),
+            titleLarge = titleLarge.copy(fontFamily = family),
+            titleMedium = titleMedium.copy(fontFamily = family),
+            titleSmall = titleSmall.copy(fontFamily = family),
+            bodyLarge = bodyLarge.copy(fontFamily = family),
+            bodyMedium = bodyMedium.copy(fontFamily = family),
+            bodySmall = bodySmall.copy(fontFamily = family),
+            labelLarge = labelLarge.copy(fontFamily = family),
+            labelMedium = labelMedium.copy(fontFamily = family),
+            labelSmall = labelSmall.copy(fontFamily = family),
+        )
+    }
+}
+
+private val DefaultTypography = Typography()
 
 /** Parses `#RGB`, `#RRGGBB`, or the same without the hash. Null if unparseable. */
 internal fun parseHexColor(hex: String): Color? {
@@ -148,26 +211,12 @@ internal fun parseHexColor(hex: String): Color? {
     return Color(0xFF000000L or value)
 }
 
+/**
+ * Parses a value already known to be a valid hex colour.
+ *
+ * Only ever fed the output of [contrastColorFor], which returns `#FFFFFF`
+ * or `#000000` — the zero fallback is unreachable in practice and exists
+ * so a future caller cannot make this throw.
+ */
 private fun parseHex(hex: String): Long =
     0xFF000000L or (hex.removePrefix("#").toLongOrNull(16) ?: 0L)
-
-/**
- * WCAG contrast ratio of at least 4.5:1, the threshold for body text.
- * Used to reject a branded label colour that would be unreadable on the
- * branded tile rather than rendering it anyway.
- */
-internal fun hasSufficientContrast(foreground: Color, background: Color): Boolean {
-    val lf = relativeLuminance(foreground)
-    val lb = relativeLuminance(background)
-    val lighter = maxOf(lf, lb)
-    val darker = minOf(lf, lb)
-    return (lighter + 0.05) / (darker + 0.05) >= 4.5
-}
-
-private fun relativeLuminance(color: Color): Double {
-    fun channel(c: Float): Double {
-        val v = c.toDouble()
-        return if (v <= 0.03928) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
-    }
-    return 0.2126 * channel(color.red) + 0.7152 * channel(color.green) + 0.0722 * channel(color.blue)
-}

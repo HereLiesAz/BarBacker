@@ -81,6 +81,7 @@ VITE_GOOGLE_SERVER_CLIENT_ID
 VITE_GOOGLE_DESKTOP_CLIENT_ID
 VITE_GOOGLE_DESKTOP_CLIENT_SECRET
 VITE_GOOGLE_IOS_CLIENT_ID
+VITE_APPLE_SIGN_IN
 ```
 
 `VITE_ICAL_FEED_BASE_URL` names where the outbound iCal feed is actually
@@ -98,6 +99,18 @@ which one each platform needs is not interchangeable:
 | `IOS_CLIENT_ID` | iOS | Its reversed form is the redirect scheme, and must also appear under `CFBundleURLTypes` in `Info.plist`. |
 
 With none of them set, the sign-in screen shows email and password only.
+
+`VITE_APPLE_SIGN_IN` is a flag, not a credential — `true`, `1`, `yes`, or
+`on`; anything else, including absent, is off. It says whether the Apple
+sign-in Cloud Functions (`appleAuthBegin`, `appleAuthCallback`,
+`appleAuthClaim`) are deployed for this project, which is the one thing
+the client cannot work out for itself and has to answer before drawing a
+button. It therefore has to be set to match the deployment: on where the
+functions are absent gives a button that opens a browser to nothing; off
+where they are present just hides a feature. iOS ignores it — its Apple
+sign-in is the native sheet and needs no server at all. The server side
+takes `APPLE_SERVICE_ID` and `APPLE_OAUTH_CALLBACK_BASE_URL`; see
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
 Where each platform looks for them:
 
@@ -268,6 +281,15 @@ fails if it is lost:
   getting one wrong yields a challenge that fails only for some digests,
   which looks like an intermittent sign-in bug rather than an encoder
   one.
+- Apple's web flow is usually described as needing a client secret that
+  is a JWT signed with a .p8 private key. That is true of the *token
+  exchange*, and the exchange is skipped: asking for
+  `response_type=code id_token` returns the identity token in the
+  callback itself, and the identity token is the only thing Firebase
+  wants. What the flow does still need is a public HTTPS redirect, since
+  Apple will not redirect to a custom scheme or to loopback — which is
+  why it goes through Cloud Functions rather than finishing on the
+  device the way Google's does.
 
 ## Status
 
@@ -309,6 +331,9 @@ Working end to end:
   bottle's photo on the request row it is attached to
 - Google sign-in on Android (Credential Manager) and desktop (a loopback
   redirect with PKCE), alongside email and password
+- Apple sign-in: the native sheet on iOS, and on Android and desktop a
+  browser round trip through three Cloud Functions, shown only where
+  those are deployed
 - The ntfy deep link: the notification screen mints an account topic on
   first open and hands it straight to the ntfy app
 
@@ -337,13 +362,6 @@ Not built yet — the PWA remains the complete client:
 - **Desktop push.** There is no FCM transport for a JVM app. The
   provider reports this explicitly rather than registering nothing and
   looking broken; the in-app alert loop is what pages a desktop user.
-- **Apple sign-in away from iOS.** Apple's web flow needs a client
-  secret that is a JWT signed with a private key — a real confidential
-  credential, which an app shipped to devices has nowhere safe to keep.
-  Doing it properly needs a Cloud Function to run the exchange, and that
-  does not exist. The button is hidden on Android and desktop rather than
-  offered and broken.
-
 Deliberately absent, because the PWA has no such feature either:
 inventory *removal*. Wells, brands, and types are added from the grid's
 "+ ADD …" tiles in both clients, and a brand is taken off the floor by

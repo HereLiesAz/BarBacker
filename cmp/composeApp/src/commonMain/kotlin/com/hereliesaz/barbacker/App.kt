@@ -80,6 +80,7 @@ fun App(platformContext: Any? = null) {
             platformContext = platformContext,
             icalFeedBaseUrl = config.icalFeedBaseUrl,
             googleOAuth = config.googleOAuth,
+            appleWebSignIn = config.appleWebSignIn,
         )
     }
 

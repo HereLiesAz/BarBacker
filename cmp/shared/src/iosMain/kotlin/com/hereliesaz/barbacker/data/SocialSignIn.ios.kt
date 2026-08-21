@@ -2,13 +2,13 @@ package com.hereliesaz.barbacker.data
 
 import com.hereliesaz.barbacker.base64UrlEncode
 import com.hereliesaz.barbacker.secureRandomHex
+import com.hereliesaz.barbacker.sha256
+import com.hereliesaz.barbacker.sha256Hex
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.submitForm
 import io.ktor.http.Parameters
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -20,15 +20,14 @@ import platform.AuthenticationServices.ASAuthorizationControllerDelegateProtocol
 import platform.AuthenticationServices.ASAuthorizationScopeEmail
 import platform.AuthenticationServices.ASAuthorizationScopeFullName
 import platform.AuthenticationServices.ASWebAuthenticationSession
-import platform.CoreCrypto.CC_SHA256
-import platform.CoreCrypto.CC_SHA256_DIGEST_LENGTH
+import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSString
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLComponents
 import platform.Foundation.NSURLQueryItem
 import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.dataUsingEncoding
+import platform.Foundation.create
 import platform.darwin.NSObject
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -163,7 +162,7 @@ private class IosSocialSignIn(
         val identityToken = suspendCancellableCoroutine { continuation ->
             val request = ASAuthorizationAppleIDProvider().createRequest().apply {
                 requestedScopes = listOf(ASAuthorizationScopeEmail, ASAuthorizationScopeFullName)
-                nonce = rawNonce.sha256Hex()
+                nonce = sha256Hex(rawNonce)
             }
             val delegate = AppleSignInDelegate(
                 onToken = { continuation.resume(it) },
@@ -252,28 +251,11 @@ private class AppleSignInDelegate(
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun platform.Foundation.NSData.utf8String(): String? =
-    platform.Foundation.NSString.create(data = this, encoding = NSUTF8StringEncoding) as String?
-
-@OptIn(ExperimentalForeignApi::class)
-private fun String.sha256(): ByteArray {
-    val data = (this as NSString).dataUsingEncoding(NSUTF8StringEncoding)
-        ?: return ByteArray(0)
-    val digest = ByteArray(CC_SHA256_DIGEST_LENGTH)
-    digest.usePinned { pinned ->
-        CC_SHA256(data.bytes, data.length.toUInt(), pinned.addressOf(0).reinterpret())
-    }
-    return digest
-}
-
-private fun String.sha256Hex(): String =
-    sha256().joinToString("") { byte ->
-        (byte.toInt() and 0xFF).toString(16).padStart(2, '0')
-    }
+private fun NSData.utf8String(): String? =
+    NSString.create(data = this, encoding = NSUTF8StringEncoding) as String?
 
 /** Base64url with no padding, as PKCE requires. */
-private fun String.sha256Base64Url(): String =
-    sha256().base64UrlEncode()
+private fun String.sha256Base64Url(): String = sha256(this).base64UrlEncode()
 
 /** Percent-encodes everything outside the unreserved set. */
 private fun String.percentEncoded(): String = buildString {

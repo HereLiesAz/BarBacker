@@ -51,10 +51,11 @@ interface SocialSignIn {
     /**
      * Whether [provider] can actually be used on this platform and build.
      *
-     * False is an ordinary answer, not a defect: Apple's flow needs a
-     * confidential client secret away from Android and iOS, and Google's
-     * needs an OAuth client id this build may not have been given. The
-     * sign-in screen hides a button rather than offering one that fails.
+     * False is an ordinary answer, not a defect: Google's flow needs an
+     * OAuth client id this build may not have been given, and Apple's,
+     * away from iOS, needs Cloud Functions this project may not have
+     * deployed. The sign-in screen hides a button rather than offering
+     * one that fails.
      */
     fun isSupported(provider: SocialProvider): Boolean
 

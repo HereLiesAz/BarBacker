@@ -1,6 +1,8 @@
 package com.hereliesaz.barbacker.data
 
+import com.hereliesaz.barbacker.base64UrlEncode
 import com.hereliesaz.barbacker.logWarning
+import com.hereliesaz.barbacker.sha256
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +18,6 @@ import io.ktor.http.Parameters
 import java.net.InetSocketAddress
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -45,9 +46,11 @@ private const val CONSENT_TIMEOUT_MILLIS = 5L * 60 * 1000
  * constant. Google allows any port on a loopback redirect precisely so
  * installed apps do not have to squat on one.
  *
- * Apple is not offered. Its flow requires a client secret that is a JWT
- * signed with a private key — a real confidential credential, which a
- * program shipped to users has nowhere safe to keep.
+ * Apple is absent from this class rather than unavailable on desktop.
+ * Its flow runs through the browser and is identical on every platform
+ * without a native sheet, so it lives in common code — see
+ * [AppleWebSignIn], which [CombinedSocialSignIn] layers on top of this
+ * one when the server half is deployed. Nothing here needs to know.
  */
 private class DesktopSocialSignIn(
     private val config: GoogleOAuthConfig,
@@ -65,8 +68,11 @@ private class DesktopSocialSignIn(
         provider == SocialProvider.Google && config.desktopClientId != null
 
     override suspend fun authenticate(provider: SocialProvider): SocialCredential {
+        // Only reachable if something called this for a provider
+        // isSupported already said no to; Apple is handled by the
+        // fallback this class is composed with, not here.
         if (provider != SocialProvider.Google) {
-            throw SocialSignInException("Apple sign-in is not available on desktop.")
+            throw SocialSignInException("${provider.label} sign-in is not available here.")
         }
         val clientId = config.desktopClientId
             ?: throw SocialSignInException("Google sign-in is not configured in this build.")
@@ -227,10 +233,7 @@ private fun randomUrlSafe(byteCount: Int): String =
     Base64.getUrlEncoder().withoutPadding()
         .encodeToString(ByteArray(byteCount).also(random::nextBytes))
 
-private fun String.sha256UrlSafe(): String =
-    Base64.getUrlEncoder().withoutPadding().encodeToString(
-        MessageDigest.getInstance("SHA-256").digest(toByteArray(StandardCharsets.US_ASCII)),
-    )
+private fun String.sha256UrlSafe(): String = sha256(this).base64UrlEncode()
 
 /** Splits a raw query string. Values are percent-decoded; keys are not expected to need it. */
 private fun String.parseQuery(): Map<String, String> =

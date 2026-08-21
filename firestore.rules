@@ -393,6 +393,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // In-flight Apple sign-ins — see functions/src/appleAuth.ts. Denied
+    // harder than the two above, in the sense that it matters more: a
+    // completed session briefly holds Apple's identity token, and there
+    // is no signed-in identity to scope a read to anyway, since the
+    // whole point is that nobody is signed in yet. The client collects
+    // it through appleAuthClaim, which checks a secret it never sent
+    // anywhere but here.
+    match /appleAuthSessions/{sessionId} {
+      allow read, write: if false;
+    }
+
     // Requests — top-level collection, scoped by barId field.
     match /requests/{requestId} {
       allow read: if isAuthed() && hasRole(resource.data.barId);

@@ -52,9 +52,37 @@ internal object FirebaseConfigKeys {
     const val GOOGLE_DESKTOP_CLIENT_SECRET = "VITE_GOOGLE_DESKTOP_CLIENT_SECRET"
     const val GOOGLE_IOS_CLIENT_ID = "VITE_GOOGLE_IOS_CLIENT_ID"
 
+    /**
+     * Whether the Apple sign-in Cloud Functions are deployed, OPTIONAL.
+     *
+     * A flag rather than a client id because the client needs nothing
+     * from Apple: `appleAuthBegin` builds the authorize URL server-side,
+     * where the Service ID lives. All this answers is whether there is a
+     * server half to talk to — which `isSupported` has to answer without
+     * a round trip, since it decides whether to draw the button at all.
+     *
+     * It therefore has to be set to match the deployment. Setting it
+     * where the functions are absent yields a button that opens a browser
+     * to nothing; leaving it unset where they are present just hides a
+     * feature.
+     */
+    const val APPLE_SIGN_IN = "VITE_APPLE_SIGN_IN"
+
     val ALL = listOf(
         API_KEY, AUTH_DOMAIN, PROJECT_ID, STORAGE_BUCKET, MESSAGING_SENDER_ID, APP_ID,
     )
+
+    /**
+     * Reads a boolean flag out of a string-valued config source.
+     *
+     * All three platforms hand these over as strings — an `Info.plist`
+     * entry, a Gradle `buildConfigField`, a JVM system property — and a
+     * plain `== "true"` would quietly treat the `1` someone typed in a
+     * `.env` as off. Anything unrecognised is off, since a flag nobody
+     * set should not turn a feature on.
+     */
+    internal fun isTruthy(value: String?): Boolean =
+        value?.trim()?.lowercase() in setOf("1", "true", "yes", "on")
 
     /** Builds a config from a lookup, or null if any REQUIRED value is missing. */
     fun build(lookup: (String) -> String?): BarBackerFirebaseConfig? {
@@ -63,6 +91,7 @@ internal object FirebaseConfigKeys {
         val serverClientId = lookup(GOOGLE_SERVER_CLIENT_ID)?.takeIf(String::isNotBlank)
         return BarBackerFirebaseConfig(
             icalFeedBaseUrl = lookup(ICAL_FEED_BASE_URL)?.takeIf(String::isNotBlank),
+            appleWebSignIn = isTruthy(lookup(APPLE_SIGN_IN)),
             googleOAuth = serverClientId?.let {
                 GoogleOAuthConfig(
                     serverClientId = it,

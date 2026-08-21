@@ -21,11 +21,11 @@ import io.ktor.client.HttpClient
  * the full account picker, which is what someone tapping "Sign in with
  * Google" expects.
  *
- * Apple is not offered here. Apple's web flow requires a client secret
- * that is a JWT signed with a private key — a genuine confidential
- * credential, which an app shipped to devices has no safe place to keep.
- * Doing it properly would mean a Cloud Function to run the exchange, and
- * that does not exist.
+ * Apple is absent from this class rather than unavailable on Android.
+ * Its flow runs through the browser and is identical on every platform
+ * without a native sheet, so it lives in common code — see
+ * [AppleWebSignIn], which [CombinedSocialSignIn] layers on top of this
+ * one when the server half is deployed. Nothing here needs to know.
  */
 private class AndroidSocialSignIn(
     private val context: Context?,
@@ -36,8 +36,11 @@ private class AndroidSocialSignIn(
         provider == SocialProvider.Google && context != null
 
     override suspend fun authenticate(provider: SocialProvider): SocialCredential {
+        // Only reachable if something called this for a provider
+        // isSupported already said no to; Apple is handled by the
+        // fallback this class is composed with, not here.
         if (provider != SocialProvider.Google) {
-            throw SocialSignInException("Apple sign-in is not available on Android.")
+            throw SocialSignInException("${provider.label} sign-in is not available here.")
         }
         val host = context ?: throw SocialSignInException("Could not open the account picker.")
 

@@ -11,6 +11,8 @@ The `scripts/` directory contains plain Node.js scripts used for build automatio
 *   **Purpose**: Generates the `google-services.json` file required by the Android build.
 *   **Why**: We do not commit `google-services.json` to git for security.
 *   **How**: It reads individual fields from environment variables (e.g., `VITE_FIREBASE_PROJECT_ID`) and constructs the JSON file at `android/app/google-services.json`.
+*   **`FIREBASE_ANDROID_APP_ID`, not `VITE_FIREBASE_APP_ID`**: `mobilesdk_app_id` must be the Firebase app ID of the *Android* app (`1:<project number>:android:<hash>`). `VITE_FIREBASE_APP_ID` is the *web* app — a different app in the same project (`...:web:...`) — and using it is invisible everywhere except at the FCM backend, which rejects token requests for an app ID not bound to the requesting package. The script validates the platform segment and that the project number matches `VITE_FIREBASE_MESSAGING_SENDER_ID`, and refuses to write the file otherwise. `FIREBASE_ANDROID_API_KEY` optionally overrides `VITE_FIREBASE_API_KEY` for the same reason (browser keys are often HTTP-referrer restricted).
+*   **Fails loudly**: every missing/invalid variable is reported at once and the script exits 1 without writing anything. A partial or absent `google-services.json` produces an APK with no Firebase configuration, which crashes natively (`Default FirebaseApp is not initialized in this process`) the first time push notifications are registered — `android/app/build.gradle` enforces the same rule from the Gradle side. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## `enrich-bars.js`
 *   **Purpose**: Backfills/normalizes `bars` documents (e.g. filling in missing fields from an OpenStreetMap lookup).

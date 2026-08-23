@@ -142,6 +142,8 @@ staying in sync.
 | Secret | Used by | Purpose |
 |---|---|---|
 | `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_VAPID_KEY` | `deploy.yml`, `build-mobile.yml` | Same Firebase Web SDK config used client-side (see `src/firebase.ts`) — injected as build-time env vars for both the web deploy and the Android web-asset build. |
+| `FIREBASE_ANDROID_APP_ID` | `build-mobile.yml` | **Required.** The Firebase app ID of the *Android* app (`1:<project number>:android:<hash>`) — Firebase console → Project settings → Your apps → the app registered for `com.HereLiesAz.BarBacker` → "App ID". This is a **different app in the same project** than the web one `VITE_FIREBASE_APP_ID` holds (`...:web:...`), and the two are not interchangeable: `scripts/generate-google-services.js` writes it into `google-services.json` as `mobilesdk_app_id`, and the FCM backend rejects a token request whose app ID isn't bound to the requesting package. Every APK built before this secret existed shipped the web ID, which initializes Firebase fine and then fails every push registration. The generator refuses to write a file with a non-Android ID, so a missing/wrong value fails the build rather than shipping a push-dead APK. |
+| `FIREBASE_ANDROID_API_KEY` | `build-mobile.yml` | Optional. Falls back to `VITE_FIREBASE_API_KEY`. Set it when the browser key is restricted to HTTP referrers — such a key is rejected from the Android client. Firebase auto-creates an unrestricted "Android key" alongside the browser key. |
 | `VITE_ICAL_FEED_BASE_URL` | `deploy.yml`, `build-mobile.yml` | See "Client-side env vars for the calendar feed" above. Not actually sensitive; kept as a secret only for consistency with the `VITE_FIREBASE_*` vars next to it. |
 | `KEYSTORE_PRIVATE`, `KEYSTORE_CHAIN`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` | `build-mobile.yml` | Android app-signing identity — a private key + certificate chain (PEM), reassembled into a JKS keystore at build time, plus the store/key passwords and alias. `KEY_PASSWORD` must equal `KEYSTORE_PASSWORD` — the keystore-generation step never sets a distinct key password, so the two secrets have to hold the same value despite being named separately. |
 | `FIREBASE_SERVICE_ACCOUNT` | `nag.yml`, `deduplicate.yml`, `enrich-bars.yml` | A full service-account JSON key (Admin SDK credential) for the scheduled maintenance scripts (`scripts/nag-bot.js`, `scripts/deduplicate.js`, `scripts/enrich-bars.js`) — a different credential mechanism than `set-admin-claim.js`'s `GOOGLE_APPLICATION_CREDENTIALS` (see docs/SCRIPTS.md). |
@@ -189,6 +191,19 @@ comment in the workflow file).
     Copies the web assets (`dist/`) into the Android project (`android/app/src/main/assets/public`).
 4.  **Resource Generation**:
     *   `scripts/generate-google-services.js` creates `google-services.json` from secrets.
+    *   Both this script and `android/app/build.gradle` **fail the build**
+        rather than continuing without a usable `google-services.json`.
+        An APK built without one has no Firebase configuration compiled
+        in, so `FirebaseInitProvider` never creates the default
+        `FirebaseApp` and the first `PushNotifications.register()` call
+        throws `IllegalStateException: Default FirebaseApp is not
+        initialized in this process com.HereLiesAz.BarBacker`. Capacitor
+        rethrows that on a handler thread, so it is an uncaught native
+        crash the JavaScript side cannot catch — the app just dies. For a
+        local build with no Firebase secrets to hand, pass
+        `-PallowMissingGoogleServices`; the app then detects the missing
+        config at runtime (see `FirebaseConfigPlugin`) and skips push
+        registration instead of crashing.
 5.  **Gradle Build**:
     ```bash
     cd android && ./gradlew assembleDebug

@@ -1,7 +1,80 @@
 import { useEffect, useRef, useState } from 'react';
 import { PushNotifications } from '@capacitor/push-notifications';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { onForegroundMessage, requestNotificationPermission } from '../firebase';
+
+// Android-only native helper (android/app/src/main/java/com/HereLiesAz/
+// BarBacker/FirebaseConfigPlugin.kt). Reports whether this APK has
+// Firebase configuration compiled into it — see guardedRegister below
+// for why that has to be asked before registering.
+interface FirebaseConfigStatus {
+  configured: boolean;
+  appId: string;
+}
+
+interface FirebaseConfigPlugin {
+  getStatus(): Promise<FirebaseConfigStatus>;
+}
+
+const FirebaseConfig = registerPlugin<FirebaseConfigPlugin>('FirebaseConfig');
+
+// Registers for push, but only once the native side confirms it will not
+// blow up.
+//
+// PushNotifications.register() calls FirebaseMessaging.getInstance() in
+// Java. When the APK was built without a google-services.json there is
+// no default FirebaseApp, and that call throws IllegalStateException
+// ("Default FirebaseApp is not initialized in this process
+// com.HereLiesAz.BarBacker"). Capacitor's Bridge rethrows it as a
+// RuntimeException on a handler thread, which means it is an UNCAUGHT
+// NATIVE CRASH: awaiting register() in a try/catch does not help, the
+// promise never rejects, the process dies. Not calling register() is the
+// only defense. android/app/build.gradle now fails the build rather than
+// producing such an APK, but installed copies of older builds still
+// exist and this keeps them usable (minus push) instead of unusable.
+const guardedRegister = async () => {
+  if (Capacitor.getPlatform() !== 'android') {
+    // iOS registers against APNs, not FCM, so it never reaches
+    // FirebaseMessaging.getInstance() and needs no guard.
+    await PushNotifications.register();
+    return;
+  }
+
+  let status: FirebaseConfigStatus;
+  try {
+    status = await FirebaseConfig.getStatus();
+  } catch (e) {
+    // The plugin only exists in builds that carry this fix. An APK old
+    // enough to be missing it is exactly the kind that may also be
+    // missing google-services.json, so "can't tell" has to mean "don't
+    // register" — guessing wrong in the other direction crashes the app.
+    console.error('FirebaseConfig plugin unavailable; skipping push registration', e);
+    return;
+  }
+
+  if (!status?.configured) {
+    console.error(
+      'Push notifications unavailable: this build has no Firebase configuration '
+      + '(google-services.json was missing when the APK was built). Skipping '
+      + 'registration to avoid a native crash.'
+    );
+    return;
+  }
+
+  if (!status.appId.includes(':android:')) {
+    // Firebase initializes happily with the project's *web* app ID, but
+    // FCM rejects the token request because that ID is not bound to this
+    // package. Registration below still runs and fails as a normal
+    // registrationError; this line says why.
+    console.warn(
+      `Firebase app ID "${status.appId}" is not an Android app ID. FCM token `
+      + 'requests will be rejected — the FIREBASE_ANDROID_APP_ID build secret '
+      + 'is wrong or missing (see docs/DEPLOYMENT.md).'
+    );
+  }
+
+  await PushNotifications.register();
+};
 
 // Wires up push notifications for both native (Capacitor) and web
 // (Firebase Cloud Messaging) targets. Runs once per mount and is
@@ -97,7 +170,7 @@ export function usePushNotifications() {
             permStatus = await PushNotifications.requestPermissions();
           }
           if (permStatus.receive === 'granted') {
-            await PushNotifications.register();
+            await guardedRegister();
           }
         } catch (e) {
           console.error('Native push setup failed', e);

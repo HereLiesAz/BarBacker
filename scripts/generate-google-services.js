@@ -12,29 +12,103 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// The Android package name. Must match `applicationId` in
+// android/app/build.gradle and the package the Firebase console has
+// registered for the Android app — the Google Services Gradle plugin
+// fails the build outright ("No matching client found for package
+// name") when this doesn't line up, which is the one misconfiguration
+// here that is NOT silent.
+const PACKAGE_NAME = 'com.HereLiesAz.BarBacker';
+
+// Collected problems. We report every one of them at once rather than
+// dying on the first: a CI run that has to be re-triggered per missing
+// secret wastes a build cycle each time.
+const problems = [];
+
 // Helper function to validate and retrieve environment variables.
-// Exits if a required variable is missing to prevent generating an invalid config file.
-const getEnv = (key) => {
+const getEnv = (key, hint) => {
   const val = process.env[key];
   if (!val) {
-     console.error(`Error: Environment variable ${key} is missing.`);
-     return null;
+    problems.push(`${key} is missing or empty.${hint ? ` ${hint}` : ''}`);
+    return null;
   }
-  return val;
+  return val.trim();
 };
 
 // Retrieve required Firebase configuration values from environment variables.
 const project_number = getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'); // Project Number.
 const project_id = getEnv('VITE_FIREBASE_PROJECT_ID');
 const storage_bucket = getEnv('VITE_FIREBASE_STORAGE_BUCKET');
-const mobilesdk_app_id = getEnv('VITE_FIREBASE_APP_ID');
-const current_key = getEnv('VITE_FIREBASE_API_KEY');
-const package_name = 'com.HereLiesAz.BarBacker'; // The Android package name (must match AndroidManifest.xml).
 
-// Final validation check. Exit with error code 1 if any are missing.
-if (!project_number || !project_id || !mobilesdk_app_id || !current_key || !storage_bucket) {
-    console.error("Failed to generate google-services.json due to missing variables.");
-    process.exit(1);
+// The mobilesdk_app_id MUST be the *Android* app's ID, not the web
+// app's. These are different apps inside the same Firebase project and
+// their IDs differ only by the platform segment in the middle:
+//
+//   web:     1:869145643734:web:d902468d6942df6bc81777
+//   android: 1:869145643734:android:xxxxxxxxxxxxxxxxxxxxxx
+//
+// Nothing downstream catches the wrong one. The Gradle plugin copies
+// whatever it is given into the `google_app_id` string resource, and
+// FirebaseOptions.fromResource() accepts any non-empty string — so the
+// app boots fine and only fails later, when FirebaseMessaging.getToken()
+// is rejected by the FCM backend because the app ID isn't bound to this
+// package. That surfaces as a `registrationError` with an opaque
+// message and no push notifications, forever. Hence the explicit
+// platform check below.
+const android_app_id = process.env.FIREBASE_ANDROID_APP_ID
+  ? process.env.FIREBASE_ANDROID_APP_ID.trim()
+  // VITE_FIREBASE_APP_ID is the *web* SDK's app ID (it is what
+  // src/firebase.ts is configured with). Accept it only on the chance
+  // that someone has pointed it at the Android app; the format check
+  // below rejects it otherwise.
+  : (process.env.VITE_FIREBASE_APP_ID || '').trim();
+
+// The API key. Firebase auto-creates a separate "Android key" alongside
+// the browser key; either works for FCM as long as it isn't restricted
+// to HTTP referrers (browser keys often are, which silently breaks the
+// Android client). Optional override, defaulting to the web key so this
+// doesn't become a second mandatory secret.
+const current_key = (process.env.FIREBASE_ANDROID_API_KEY || '').trim()
+  || getEnv('VITE_FIREBASE_API_KEY');
+
+if (!android_app_id) {
+  problems.push(
+    'FIREBASE_ANDROID_APP_ID is missing or empty. Firebase console → '
+    + 'Project settings → Your apps → the Android app registered for '
+    + `${PACKAGE_NAME} → "App ID". Add it as a repository secret.`
+  );
+} else if (!/^1:\d+:android:[0-9a-f]+$/i.test(android_app_id)) {
+  const platform = android_app_id.split(':')[2];
+  problems.push(
+    `FIREBASE_ANDROID_APP_ID ("${android_app_id}") is not an Android app ID`
+    + `${platform ? ` — it is a "${platform}" app ID` : ''}. It must look `
+    + 'like 1:<project number>:android:<hash>. The web app ID that '
+    + 'VITE_FIREBASE_APP_ID holds belongs to a different app in the same '
+    + 'project and will not work for FCM on Android.'
+  );
+} else if (project_number && android_app_id.split(':')[1] !== project_number) {
+  problems.push(
+    `FIREBASE_ANDROID_APP_ID ("${android_app_id}") belongs to project number `
+    + `${android_app_id.split(':')[1]}, but VITE_FIREBASE_MESSAGING_SENDER_ID `
+    + `is ${project_number}. These must be the same Firebase project.`
+  );
+}
+
+// Final validation check. Exit with error code 1 if anything is wrong.
+//
+// This deliberately fails the build rather than writing a partial file
+// or skipping generation: an APK built without a usable
+// google-services.json has no Firebase configuration compiled into it,
+// and the very first PushNotifications.register() call then throws
+// "Default FirebaseApp is not initialized in this process" from a
+// native handler thread — an uncaught crash the JavaScript side cannot
+// catch. A red build is cheaper than a released APK that dies on
+// launch. android/app/build.gradle enforces the same rule from the
+// Gradle side.
+if (problems.length > 0) {
+  console.error('Failed to generate google-services.json:');
+  problems.forEach((p) => console.error(`  - ${p}`));
+  process.exit(1);
 }
 
 // Construct the google-services.json object.
@@ -48,9 +122,9 @@ const googleServices = {
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": mobilesdk_app_id,
+        "mobilesdk_app_id": android_app_id,
         "android_client_info": {
-          "package_name": package_name
+          "package_name": PACKAGE_NAME
         }
       },
       "oauth_client": [],

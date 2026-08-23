@@ -65,11 +65,41 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+// Apply the Google Services plugin, which compiles google-services.json
+// into the string resources (google_app_id, gcm_defaultSenderId, ...)
+// that FirebaseInitProvider reads at startup to create the default
+// FirebaseApp.
+//
+// This used to swallow a missing file with logger.info() and carry on.
+// The resulting APK builds and installs cleanly but has no Firebase
+// configuration in it at all, so FirebaseInitProvider silently gives up
+// and the first PushNotifications.register() call — which does
+// FirebaseMessaging.getInstance() — throws
+//
+//   java.lang.IllegalStateException: Default FirebaseApp is not
+//   initialized in this process com.HereLiesAz.BarBacker.
+//
+// That exception is raised inside Capacitor's Bridge on a handler
+// thread and rethrown as a RuntimeException, so it is an uncaught
+// native crash: the try/catch around the JS call site cannot see it,
+// and the app dies. A build that cannot produce a working app must
+// fail here instead of shipping that.
+//
+// Pass -PallowMissingGoogleServices for a local build with no Firebase
+// secrets to hand; the app then detects the missing config at runtime
+// (FirebaseConfigPlugin) and skips push registration rather than
+// crashing.
+def servicesJSON = file('google-services.json')
+if (servicesJSON.exists() && !servicesJSON.text.trim().isEmpty()) {
+    apply plugin: 'com.google.gms.google-services'
+} else if (project.hasProperty('allowMissingGoogleServices')) {
+    logger.lifecycle("google-services.json is missing — building WITHOUT Firebase. Push notifications will be disabled at runtime.")
+} else {
+    throw new GradleException(
+        "android/app/google-services.json is missing or empty. Without it the APK ships with no Firebase " +
+        "configuration and crashes the first time push notifications are registered.\n" +
+        "  CI: the 'Generate google-services.json' step in .github/workflows/build-mobile.yml must run first.\n" +
+        "  Locally: run `node scripts/generate-google-services.js` with the Firebase env vars set (see docs/DEPLOYMENT.md),\n" +
+        "           or build with -PallowMissingGoogleServices to accept an APK with push notifications disabled."
+    )
 }

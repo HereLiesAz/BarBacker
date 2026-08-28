@@ -25,6 +25,69 @@ const PACKAGE_NAME = 'com.HereLiesAz.BarBacker';
 // secret wastes a build cycle each time.
 const problems = [];
 
+// Shared between both paths below: what an Android (not web, not iOS)
+// Firebase app ID looks like.
+const ANDROID_APP_ID_RE = /^1:\d+:android:[0-9a-f]+$/i;
+
+const outputDir = path.join(__dirname, '../android/app');
+const outputFile = path.join(outputDir, 'google-services.json');
+
+// Preferred path: GOOGLE_SERVICES holds the *entire* google-services.json
+// file, exactly as downloaded from the Firebase console, pasted whole
+// into one repository secret. That's the file Firebase itself generated
+// for the registered Android app, so it's authoritative — no
+// reassembling it field-by-field from separate secrets, and no chance of
+// the web app's ID leaking in by accident. Still validated against the
+// same two things that make the synthesized path below safe to skip:
+// the package name has to match this app, and the app ID has to
+// actually be an Android one.
+const rawGoogleServices = (process.env.GOOGLE_SERVICES || '').trim();
+if (rawGoogleServices) {
+  let parsed;
+  try {
+    parsed = JSON.parse(rawGoogleServices);
+  } catch (e) {
+    console.error(`Failed to parse GOOGLE_SERVICES secret as JSON: ${e.message}`);
+    process.exit(1);
+  }
+
+  const client = parsed?.client?.[0];
+  const packageName = client?.client_info?.android_client_info?.package_name;
+  const appId = client?.client_info?.mobilesdk_app_id;
+
+  if (packageName !== PACKAGE_NAME) {
+    problems.push(
+      `GOOGLE_SERVICES secret's package_name ("${packageName}") does not match `
+      + `this app's applicationId ("${PACKAGE_NAME}"). Re-download `
+      + `google-services.json from Firebase console → Project settings → `
+      + `Your apps → the Android app registered for ${PACKAGE_NAME}.`
+    );
+  } else if (!ANDROID_APP_ID_RE.test(appId || '')) {
+    problems.push(
+      `GOOGLE_SERVICES secret's mobilesdk_app_id ("${appId}") is not an Android `
+      + 'app ID (expected 1:<project number>:android:<hash>).'
+    );
+  }
+
+  if (problems.length > 0) {
+    console.error('Failed to use GOOGLE_SERVICES secret:');
+    problems.forEach((p) => console.error(`  - ${p}`));
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(outputDir)) {
+    console.error(`Error: Directory ${outputDir} does not exist.`);
+    process.exit(1);
+  }
+  fs.writeFileSync(outputFile, JSON.stringify(parsed, null, 2));
+  console.log(`Successfully wrote ${outputFile} from the GOOGLE_SERVICES secret.`);
+  process.exit(0);
+}
+
+// Fallback path: no GOOGLE_SERVICES secret, so synthesize the file from
+// the individual VITE_FIREBASE_* secrets already used for the web build,
+// plus FIREBASE_ANDROID_APP_ID.
+
 // Helper function to validate and retrieve environment variables.
 const getEnv = (key, hint) => {
   const val = process.env[key];
@@ -77,7 +140,7 @@ if (!android_app_id) {
     + 'Project settings → Your apps → the Android app registered for '
     + `${PACKAGE_NAME} → "App ID". Add it as a repository secret.`
   );
-} else if (!/^1:\d+:android:[0-9a-f]+$/i.test(android_app_id)) {
+} else if (!ANDROID_APP_ID_RE.test(android_app_id)) {
   const platform = android_app_id.split(':')[2];
   problems.push(
     `FIREBASE_ANDROID_APP_ID ("${android_app_id}") is not an Android app ID`
@@ -143,9 +206,8 @@ const googleServices = {
   "configuration_version": "1"
 };
 
-// Define the output path for the JSON file (android/app/).
-const outputDir = path.join(__dirname, '../android/app');
-const outputFile = path.join(outputDir, 'google-services.json');
+// outputDir/outputFile are declared above, alongside the GOOGLE_SERVICES
+// path that also writes to them.
 
 // Ensure the target directory exists.
 if (!fs.existsSync(outputDir)) {

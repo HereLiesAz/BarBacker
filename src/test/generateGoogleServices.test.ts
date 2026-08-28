@@ -104,4 +104,88 @@ describe('generate-google-services.js', () => {
     const json = JSON.parse(fs.readFileSync(output, 'utf8'));
     expect(json.client[0].api_key[0].current_key).toBe('AIzaAndroidOnlyKey');
   });
+
+  // GOOGLE_SERVICES holds the whole file as downloaded from the Firebase
+  // console, pasted into one secret — the authoritative alternative to
+  // reassembling it from the individual VITE_FIREBASE_* secrets above.
+  describe('GOOGLE_SERVICES secret (whole-file source)', () => {
+    const REAL_FILE = {
+      project_info: {
+        project_number: '869145643734',
+        project_id: 'barbacker-test',
+        storage_bucket: 'barbacker-test.firebasestorage.app',
+      },
+      client: [
+        {
+          client_info: {
+            mobilesdk_app_id: '1:869145643734:android:aabbccdd11223344',
+            android_client_info: { package_name: 'com.HereLiesAz.BarBacker' },
+          },
+          oauth_client: [],
+          api_key: [{ current_key: 'AIzaRealKey' }],
+          services: { appinvite_service: { other_platform_oauth_client: [] } },
+        },
+      ],
+      configuration_version: '1',
+    };
+
+    it('writes the secret content through untouched', () => {
+      const result = run({ GOOGLE_SERVICES: JSON.stringify(REAL_FILE) });
+
+      expect(result.status).toBe(0);
+      expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toEqual(REAL_FILE);
+    });
+
+    it('takes precedence over the VITE_FIREBASE_*/FIREBASE_ANDROID_APP_ID fallback', () => {
+      const result = run({ GOOGLE_SERVICES: JSON.stringify(REAL_FILE), ...VALID });
+
+      expect(result.status).toBe(0);
+      const json = JSON.parse(fs.readFileSync(output, 'utf8'));
+      expect(json.client[0].api_key[0].current_key).toBe('AIzaRealKey');
+    });
+
+    it('rejects invalid JSON', () => {
+      const result = run({ GOOGLE_SERVICES: '{ not json' });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Failed to parse GOOGLE_SERVICES secret as JSON');
+      expect(fs.existsSync(output)).toBe(false);
+    });
+
+    it('rejects a file for the wrong package name', () => {
+      const wrongPackage = {
+        ...REAL_FILE,
+        client: [{
+          ...REAL_FILE.client[0],
+          client_info: {
+            ...REAL_FILE.client[0].client_info,
+            android_client_info: { package_name: 'com.example.other' },
+          },
+        }],
+      };
+      const result = run({ GOOGLE_SERVICES: JSON.stringify(wrongPackage) });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('does not match this app');
+      expect(fs.existsSync(output)).toBe(false);
+    });
+
+    it('rejects a file carrying the web app ID instead of the Android one', () => {
+      const webAppId = {
+        ...REAL_FILE,
+        client: [{
+          ...REAL_FILE.client[0],
+          client_info: {
+            ...REAL_FILE.client[0].client_info,
+            mobilesdk_app_id: '1:869145643734:web:d902468d6942df6bc81777',
+          },
+        }],
+      };
+      const result = run({ GOOGLE_SERVICES: JSON.stringify(webAppId) });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('is not an Android app ID');
+      expect(fs.existsSync(output)).toBe(false);
+    });
+  });
 });

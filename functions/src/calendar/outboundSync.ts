@@ -1,8 +1,15 @@
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getGoogleAccessToken } from "./connection";
 import { deleteGoogleEvent, insertGoogleEvent, updateGoogleEvent } from "./google";
 import { CalendarEvent } from "./types";
+
+// A rapid double-edit can dispatch two overlapping invocations for the
+// same document, both of which would see externalId as unset and both
+// insert a Google event — a stale claim past this age is treated as
+// abandoned (e.g. the function crashed after claiming but before the
+// Google insert completed) rather than blocking sync forever.
+const CLAIM_STALE_MS = 5 * 60 * 1000;
 
 // Fields that represent actual user-visible content — if none of
 // these changed between before/after, the write was this function's
@@ -56,9 +63,32 @@ export const onEventWritten = onDocumentWritten("bars/{barId}/events/{eventId}",
 
     const accessToken = await getGoogleAccessToken(barId);
     if (!after.externalId) {
+      const eventRef = db.doc(`bars/${barId}/events/${eventId}`);
+      // Atomically claim the insert so two overlapping invocations for
+      // the same document (a rapid double-edit) can't both call
+      // insertGoogleEvent — only one wins the transaction's
+      // check-and-set; Firestore serializes conflicting writes on the
+      // same doc and retries the loser, which then sees the claim.
+      const claimed = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(eventRef);
+        const data = snap.data() as (CalendarEvent & { externalSyncClaimedAt?: Timestamp }) | undefined;
+        if (!data) return false;
+        if (data.externalId || data.externalProvider) return false;
+        const claimAge = data.externalSyncClaimedAt ? Date.now() - data.externalSyncClaimedAt.toMillis() : Infinity;
+        if (claimAge < CLAIM_STALE_MS) return false;
+        tx.set(eventRef, { externalSyncClaimedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return true;
+      });
+      if (!claimed) return;
+
       const googleId = await insertGoogleEvent(accessToken, calendarId, { ...after, id: eventId });
-      await db.doc(`bars/${barId}/events/${eventId}`).set(
-        { externalId: googleId, lastSyncedAt: FieldValue.serverTimestamp() }, { merge: true },
+      await eventRef.set(
+        {
+          externalId: googleId,
+          lastSyncedAt: FieldValue.serverTimestamp(),
+          externalSyncClaimedAt: FieldValue.delete(),
+        },
+        { merge: true },
       );
     } else {
       await updateGoogleEvent(accessToken, calendarId, after.externalId, { ...after, id: eventId });

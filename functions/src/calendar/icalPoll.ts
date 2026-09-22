@@ -1,9 +1,57 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createHash } from "node:crypto";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIPv4 } from "node:net";
 import * as ical from "node-ical";
 
 const FETCH_TIMEOUT_MS = 15 * 1000;
+
+// Blocks loopback, link-local (including the 169.254.169.254 cloud
+// metadata endpoint), and RFC1918 private ranges. A Manager-supplied
+// feed URL is untrusted input fetched with the function's own network
+// access on a schedule — rejecting the scheme alone (below) still lets
+// it target internal services and the metadata server by IP or
+// hostname, so every resolved address is checked too.
+function isBlockedIPv4(ip: string): boolean {
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return true;
+  const [a, b] = parts;
+  if (a === 127) return true; // loopback
+  if (a === 169 && b === 254) return true; // link-local + cloud metadata
+  if (a === 10) return true; // RFC1918
+  if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+  if (a === 192 && b === 168) return true; // RFC1918
+  if (a === 0) return true;
+  return false;
+}
+
+function isBlockedIPv6(ip: string): boolean {
+  const normalized = ip.toLowerCase();
+  return (
+    normalized === "::1" || // loopback
+    normalized.startsWith("fe80:") || // link-local
+    normalized.startsWith("fc") || // unique local
+    normalized.startsWith("fd") || // unique local
+    normalized.startsWith("::ffff:127.") ||
+    normalized.startsWith("::ffff:169.254.")
+  );
+}
+
+async function isSafeExternalUrl(url: URL): Promise<boolean> {
+  const hostname = url.hostname;
+  if (hostname === "localhost" || hostname === "metadata.google.internal" || hostname.endsWith(".internal")) {
+    return false;
+  }
+  let resolved: { address: string; family: number }[];
+  try {
+    resolved = await dnsLookup(hostname, { all: true, verbatim: true });
+  } catch {
+    return false;
+  }
+  if (resolved.length === 0) return false;
+  return resolved.every(({ address }) => (isIPv4(address) ? !isBlockedIPv4(address) : !isBlockedIPv6(address)));
+}
 
 // Polls every Manager-added external .ics URL every 15 minutes and
 // upserts its events as read-only, externally-owned local events —
@@ -32,6 +80,12 @@ export const pollICalSubscriptions = onSchedule("every 15 minutes", async () => 
     if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
       await subDoc.ref.set(
         { lastPolledAt: FieldValue.serverTimestamp(), lastError: "Only http(s) URLs are supported." }, { merge: true },
+      );
+      continue;
+    }
+    if (!(await isSafeExternalUrl(parsedUrl))) {
+      await subDoc.ref.set(
+        { lastPolledAt: FieldValue.serverTimestamp(), lastError: "URL resolves to a disallowed address." }, { merge: true },
       );
       continue;
     }

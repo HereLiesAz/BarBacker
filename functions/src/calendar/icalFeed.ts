@@ -1,6 +1,20 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { CalendarEvent } from "./types";
+
+// Constant-time token check. token is the only thing standing between
+// a bar's private calendar and whoever else knows the feed URL, so a
+// plain `!==` here would give a remote, unauthenticated caller a
+// byte-at-a-time timing oracle over repeated requests (same class of
+// secret appleAuth.ts's claimMatches defends against). Both sides are
+// hashed to a fixed-length digest first so a length mismatch can never
+// itself leak information through timingSafeEqual's length check.
+function tokenMatches(presented: string, expected: string): boolean {
+  const presentedHash = createHash("sha256").update(presented).digest();
+  const expectedHash = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(presentedHash, expectedHash);
+}
 
 function icsEscape(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
@@ -29,7 +43,8 @@ export const icalFeed = onRequest(async (req, res) => {
 
   const db = getFirestore();
   const feedDoc = await db.doc(`bars/${barId}/icalFeed/config`).get();
-  if (!feedDoc.exists || feedDoc.data()?.token !== token) {
+  const storedToken = feedDoc.data()?.token as string | undefined;
+  if (!feedDoc.exists || !storedToken || !tokenMatches(token, storedToken)) {
     res.status(404).send("Not found.");
     return;
   }

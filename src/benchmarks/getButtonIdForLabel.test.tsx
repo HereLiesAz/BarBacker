@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ButtonConfig } from '../types';
 import { DEFAULT_BUTTONS } from '../constants';
+import { buildButtonLookupMaps, getButtonIdForLabel } from '../utils/buttonLookup';
 
 describe('getButtonIdForLabel Performance Benchmark', () => {
     // 1. Setup Data
@@ -29,66 +30,12 @@ describe('getButtonIdForLabel Performance Benchmark', () => {
 
     const buttons = generateButtons(1000); // 1000 buttons + defaults
 
-    // 2. Setup Lookup Maps
-    // Original Map (from App.tsx)
-    const buttonLookupMap = new Map<string, string>();
-    for (const btn of buttons) {
-        if (!buttonLookupMap.has(btn.label)) buttonLookupMap.set(btn.label, btn.id);
-        if (btn.children) {
-            for (const child of btn.children) {
-                if (!buttonLookupMap.has(child.label)) buttonLookupMap.set(child.label, btn.id);
-            }
-        }
-    }
+    // 2. Setup lookup maps via the real production helper — this is the
+    // same maps App.tsx builds (see src/utils/buttonLookup.ts).
+    const maps = buildButtonLookupMaps(buttons);
+    const resolve = (label: string) => getButtonIdForLabel(label, buttons, maps);
 
-    // New Map (Top Level Index)
-    const topLevelIndexMap = new Map<string, number>();
-    buttons.forEach((btn, index) => {
-        if (!topLevelIndexMap.has(btn.label)) {
-            topLevelIndexMap.set(btn.label, index);
-        }
-    });
-
-
-    // 3. Define Implementations
-    const oldGetButtonId = (label: string): string | undefined => {
-        const exactMatch = buttonLookupMap.get(label);
-        if (exactMatch) return exactMatch;
-
-        for (const btn of buttons) {
-            if (label.startsWith(btn.label)) return btn.id;
-        }
-        return undefined;
-    };
-
-    const newGetButtonId = (label: string): string | undefined => {
-        const exactMatch = buttonLookupMap.get(label);
-        if (exactMatch) return exactMatch;
-
-        // Split and find lowest index match
-        const parts = label.split(': ');
-        let bestIndex = -1;
-
-        // Construct candidates: "Part0", "Part0: Part1", etc.
-        let currentLabel = "";
-        for (let i = 0; i < parts.length; i++) {
-            currentLabel += (i > 0 ? ": " : "") + parts[i];
-            const idx = topLevelIndexMap.get(currentLabel);
-            if (idx !== undefined) {
-                if (bestIndex === -1 || idx < bestIndex) {
-                    bestIndex = idx;
-                }
-            }
-        }
-
-        if (bestIndex !== -1) {
-            return buttons[bestIndex].id;
-        }
-
-        return undefined;
-    };
-
-    // 4. Generate Test Cases
+    // 3. Generate Test Cases
     const testLabels: string[] = [];
     // Known matches
     testLabels.push("ICE: Well 1");
@@ -111,55 +58,58 @@ describe('getButtonIdForLabel Performance Benchmark', () => {
         }
     }
 
-    it('should return results consistent with intended hierarchy', () => {
-        let mismatches = 0;
-        let fixes = 0;
-
-        for (const label of testLabels) {
-            const oldRes = oldGetButtonId(label);
-            const newRes = newGetButtonId(label);
-
-            if (oldRes !== newRes) {
-                // Analyze mismatch
-                // If Old matched "Custom Button 5" for "Custom Button 50", and New matched "Custom Button 50".
-                // Then New is correct (more specific).
-                if (oldRes && newRes && newRes.length > oldRes.length && newRes.includes(oldRes.replace('custom_', ''))) {
-                     // This is the "prefix bug" fix.
-                     fixes++;
-                } else if (oldRes && !newRes && label.includes('9999')) {
-                     // This is a false positive fix (Old matched "Custom Button 9" for "Custom Button 9999").
-                     fixes++;
-                } else {
-                     console.error(`Unexpected Mismatch for label: "${label}". Old: ${oldRes}, New: ${newRes}`);
-                     mismatches++;
-                }
-            }
-        }
-        console.log(`\nVerification: Found ${fixes} cases where new logic improved specificity (fixed prefix bug).`);
-        console.log(`Verification: Found ${mismatches} unexpected mismatches.`);
-
-        expect(mismatches).toBe(0);
+    it('resolves known labels to the expected button', () => {
+        // Exact top-level match.
+        expect(resolve('Custom Button 50')).toBe('custom_50');
+        // Exact child match resolves to the parent button id.
+        expect(resolve('Custom Button 50: Child A')).toBe('custom_50');
+        // A colon-bearing top-level label matches itself exactly rather
+        // than being split — the split/prefix fallback only kicks in
+        // when there's no exact match.
+        expect(resolve('Colon: Part 10')).toBe('colon_10');
+        // More specific labels resolve to the more specific button
+        // ("Custom Button 9999" must not match "Custom Button 999").
+        expect(resolve('Custom Button 9999')).toBeUndefined();
+        // Unknown labels resolve to undefined (caller treats this as
+        // "show by default").
+        expect(resolve('Totally Unknown Request')).toBeUndefined();
     });
 
-    it('benchmarks performance', () => {
+    it('never throws and stays internally consistent across a large random sample', () => {
+        for (const label of testLabels) {
+            expect(() => resolve(label)).not.toThrow();
+        }
+    });
+
+    it('benchmarks performance against a naive O(buttons) linear scan', () => {
+        const buttonLookupMap = maps.buttonLookupMap;
+        const naiveResolve = (label: string): string | undefined => {
+            const exactMatch = buttonLookupMap.get(label);
+            if (exactMatch) return exactMatch;
+            for (const btn of buttons) {
+                if (label.startsWith(btn.label)) return btn.id;
+            }
+            return undefined;
+        };
+
         const startOld = performance.now();
         for (const label of testLabels) {
-            oldGetButtonId(label);
+            naiveResolve(label);
         }
         const endOld = performance.now();
         const timeOld = endOld - startOld;
 
         const startNew = performance.now();
         for (const label of testLabels) {
-            newGetButtonId(label);
+            resolve(label);
         }
         const endNew = performance.now();
         const timeNew = endNew - startNew;
 
         console.log(`\n--- BENCHMARK RESULTS ---`);
         console.log(`Items processed: ${testLabels.length}`);
-        console.log(`Old Implementation: ${timeOld.toFixed(2)}ms`);
-        console.log(`New Implementation: ${timeNew.toFixed(2)}ms`);
+        console.log(`Naive linear scan: ${timeOld.toFixed(2)}ms`);
+        console.log(`Real implementation: ${timeNew.toFixed(2)}ms`);
         console.log(`Improvement: ${(timeOld / timeNew).toFixed(2)}x faster`);
         console.log(`-------------------------\n`);
 

@@ -76,6 +76,8 @@ import '@material/web/menu/menu-item.js';
 // Import Types and Constants.
 import { Bar, BarTheme, ButtonConfig, Request, BarUser, EightySixEntry } from './types';
 import { DEFAULT_BUTTONS, ROLE_NOTIFICATION_DEFAULTS, DEFAULT_BEERS, DEFAULT_SPIRITS } from './constants';
+import { buildButtonLookupMaps, getButtonIdForLabel as getButtonIdForLabelUtil } from './utils/buttonLookup';
+import { filterAndSortActiveRequests } from './utils/activeRequests';
 // Import Custom Hooks.
 import { useNag } from './hooks/useNag';
 import { useBarTheme } from './hooks/useBarTheme';
@@ -272,103 +274,25 @@ function App() {
   const { sensors, activeId, isDraggingRef, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } =
     useDragAndDrop({ barId, customOrders, setCustomOrders });
 
-  // Memoized lookup map for button IDs. Maps both top-level and child labels to top-level button ID.
-  const buttonLookupMap = useMemo(() => {
-    const map = new Map<string, string>();
-    // Iterate in order; first match for a label wins, preserving original behavior.
-    for (const btn of buttons) {
-        if (!map.has(btn.label)) map.set(btn.label, btn.id);
-        if (btn.children) {
-            for (const child of btn.children) {
-                if (!map.has(child.label)) map.set(child.label, btn.id);
-            }
-        }
-    }
-    return map;
-  }, [buttons]);
-
-  // Memoized index map for top-level buttons. Maps label -> index in `buttons`.
-  const topLevelIndexMap = useMemo(() => {
-    const map = new Map<string, number>();
-    buttons.forEach((btn, index) => {
-        if (!map.has(btn.label)) {
-            map.set(btn.label, index);
-        }
-    });
-    return map;
-  }, [buttons]);
+  // Memoized lookup maps for button IDs — see src/utils/buttonLookup.ts
+  // for the matching logic itself (kept out of the component so it can
+  // be tested directly, without mounting the whole app).
+  const buttonLookupMaps = useMemo(() => buildButtonLookupMaps(buttons), [buttons]);
 
   // Helper: Find the Button ID given a Request Label string.
-  const getButtonIdForLabel = useCallback((label: string): string | undefined => {
-    // 1. Try exact match from the memoized map (O(1)).
-    const exactMatch = buttonLookupMap.get(label);
-    if (exactMatch) return exactMatch;
+  const getButtonIdForLabel = useCallback(
+    (label: string): string | undefined => getButtonIdForLabelUtil(label, buttons, buttonLookupMaps),
+    [buttons, buttonLookupMaps],
+  );
 
-    // 2. Check for partial matches using split logic (O(Parts) instead of O(Buttons)).
-    // We split by ": " and check if any prefix corresponds to a top-level button.
-    const parts = label.split(': ');
-    let bestIndex = -1;
-
-    // Construct candidates: "Part0", "Part0: Part1", etc.
-    let currentLabel = "";
-    for (let i = 0; i < parts.length; i++) {
-        currentLabel += (i > 0 ? ": " : "") + parts[i];
-        const idx = topLevelIndexMap.get(currentLabel);
-        if (idx !== undefined) {
-            // "First match wins" logic from original loop implies finding the matching button with lowest index.
-            if (bestIndex === -1 || idx < bestIndex) {
-                bestIndex = idx;
-            }
-        }
-    }
-
-    if (bestIndex !== -1) {
-        return buttons[bestIndex].id;
-    }
-
-    return undefined;
-  }, [buttons, buttonLookupMap, topLevelIndexMap]);
-
-  // Compute the list of active requests relevant to the user.
-  const activeRequests = useMemo(() => {
-      const ignoredSet = new Set(ignoredIds);
-      const prefsSet = new Set(notificationPreferences);
-
-      return requests.filter(r => {
-          // Only show pending requests.
-          if (r.status !== 'pending') return false;
-
-          // Always show the requester's own pending requests, regardless
-          // of their notification preferences — otherwise a bartender's
-          // own SECURITY/MANAGER tap (not in their default prefs) never
-          // appears in their own footer: no confirmation it sent, no way
-          // to cancel a mis-tap.
-          if (user && r.requesterId === user.uid) return true;
-
-          const btnId = getButtonIdForLabel(r.label);
-
-          // Special Logic: ALWAYS show BREAK requests. Exact match only
-          // (not a substring check) — free text containing "BREAK" (e.g.
-          // "BREAKAGE AT WELL 3") shouldn't bypass everyone's preferences.
-          if (btnId === 'break') {
-             return true;
-          }
-
-          // If we can't identify the button type, show it by default (safety).
-          if (!btnId) return true;
-
-          // Otherwise, check if the user has subscribed to this notification type.
-          return prefsSet.has(btnId);
-      }).sort((a, b) => {
-          // Sort Logic: Ignored requests go to the bottom.
-          const aIgnored = ignoredSet.has(a.id);
-          const bIgnored = ignoredSet.has(b.id);
-          if (aIgnored === bIgnored) {
-              return 0;
-          }
-          return aIgnored ? 1 : -1;
-      });
-  }, [requests, getButtonIdForLabel, notificationPreferences, ignoredIds, user]);
+  // Compute the list of active requests relevant to the user — see
+  // src/utils/activeRequests.ts for the filter/sort logic itself.
+  const activeRequests = useMemo(
+    () => filterAndSortActiveRequests({
+      requests, ignoredIds, notificationPreferences, currentUserId: user?.uid, getButtonIdForLabel,
+    }),
+    [requests, getButtonIdForLabel, notificationPreferences, ignoredIds, user],
+  );
 
   // Activate the Nag hook to play sounds for these requests.
   useNag(activeRequests, ignoredIds);
@@ -1500,6 +1424,12 @@ function App() {
             if (!existingSnap.exists()) {
                 await setDoc(barRef, {
                   name: b.name,
+                  // Lowercased for BarSearch's Firestore query — orderBy/
+                  // startAt/endAt on the raw `name` sorts by UTF-16 code
+                  // point, so a lowercase-typed search misses any
+                  // differently-cased existing name (e.g. "the" sorts
+                  // after "The Anchor Inn").
+                  nameLower: (b.name || '').trim().toLowerCase(),
                   address: b.address || '',
                   city: b.city || '',
                   state: b.state || '',

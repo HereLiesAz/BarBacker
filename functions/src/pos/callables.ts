@@ -2,12 +2,19 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { requireManagerPlus } from "../shared/authz";
 import { getConnectedClient } from "./connection";
-import { POSProvider } from "./types";
+import { isPOSProvider, POSProvider } from "./types";
 
 function parseArgs(data: unknown): { barId: string; provider: POSProvider } {
   const { barId, provider } = (data ?? {}) as { barId?: string; provider?: string };
   if (!barId || !provider) throw new HttpsError("invalid-argument", "barId and provider are required.");
-  return { barId, provider: provider as POSProvider };
+  if (!isPOSProvider(provider)) throw new HttpsError("invalid-argument", "Unknown provider.");
+  return { barId, provider };
+}
+
+function parseDate(value: string, field: string): Date {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new HttpsError("invalid-argument", `${field} is not a valid date.`);
+  return parsed;
 }
 
 // Menu sync as a smoke test — see "What Phase 3 ships" in the design
@@ -44,7 +51,7 @@ export const posGetOrders = onCall(async (request) => {
   const { since } = (request.data ?? {}) as { since?: string };
 
   const client = await getConnectedClient(barId, provider);
-  const orders = await client.getOrders(since ? { since: new Date(since) } : undefined);
+  const orders = await client.getOrders(since ? { since: parseDate(since, "since") } : undefined);
   return { orders };
 });
 
@@ -53,8 +60,11 @@ export const posGetSales = onCall(async (request) => {
   requireManagerPlus(request.auth, barId);
   const { start, end } = (request.data ?? {}) as { start?: string; end?: string };
   if (!start || !end) throw new HttpsError("invalid-argument", "start and end are required.");
+  const startDate = parseDate(start, "start");
+  const endDate = parseDate(end, "end");
+  if (startDate > endDate) throw new HttpsError("invalid-argument", "start must not be after end.");
 
   const client = await getConnectedClient(barId, provider);
-  const summary = await client.getSales(new Date(start), new Date(end));
+  const summary = await client.getSales(startDate, endDate);
   return summary;
 });

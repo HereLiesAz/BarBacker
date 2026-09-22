@@ -1,0 +1,62 @@
+name: Rules & Functions Tests
+
+# The PR-side build/test signal for the whole repo — see "CI Overview"
+# in docs/DEPLOYMENT.md. Runs the client unit suite, the Firestore/
+# Storage security-rules suite (against the Firebase emulator), and
+# the Cloud Functions build + unit suite. Without this, a rules change
+# that opens a hole, or a functions change that doesn't even compile,
+# merges with zero automated signal.
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  client-and-rules-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Client unit tests
+        run: npm test -- --run
+
+      - name: Firestore + Storage rules tests
+        run: npm run test:rules
+
+  functions-build-and-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build --if-present
+
+      - name: Test
+        run: npm test

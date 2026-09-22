@@ -13,6 +13,18 @@ import type { BarTheme } from '../types';
 import { getContrastColor } from '../utils/color';
 import { MdDialog } from './MdDialog';
 
+// Matches the file input's accept list below — the extension used for
+// the Storage path is derived from the validated MIME type, not the
+// filename (a naive `file.name.split('.').pop()` breaks on an
+// extension-less filename, and neither approach enforces that the file
+// is actually one of these types in the first place).
+const LOGO_EXTENSIONS_BY_TYPE: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+};
+
 const FONT_OPTIONS = [
   { label: 'System Default', value: 'system-ui, sans-serif' },
   { label: 'Roboto', value: 'Roboto, sans-serif' },
@@ -54,6 +66,12 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const ext = LOGO_EXTENSIONS_BY_TYPE[file.type];
+    if (!ext) {
+      alert('Logo must be a PNG, JPG, WebP, or SVG image.');
+      e.target.value = '';
+      return;
+    }
     if (file.size > 2 * 1024 * 1024) {
       alert('Logo must be under 2MB.');
       // Clear the input so a same-file retry after fixing the size
@@ -63,7 +81,6 @@ const ThemeEditor = ({ open, onClose, currentTheme, onSave, barId }: ThemeEditor
     }
     setUploading(true);
     try {
-      const ext = file.name.split('.').pop() || 'png';
       const storageRef = ref(storage, `bars/${barId}/logo.${ext}`);
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);

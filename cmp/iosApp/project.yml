@@ -156,15 +156,17 @@ targets:
         VITE_GOOGLE_SERVER_CLIENT_ID: $(VITE_GOOGLE_SERVER_CLIENT_ID)
         VITE_GOOGLE_IOS_CLIENT_ID: $(VITE_GOOGLE_IOS_CLIENT_ID)
 
-        # Google's iOS convention: the redirect scheme is the client id
-        # with its dot-separated parts reversed.
-        # ASWebAuthenticationSession claims a scheme without help from
-        # Info.plist, so this is belt and braces — but it is what every
-        # other tool looking at the bundle expects to find.
-        CFBundleURLTypes:
-          - CFBundleURLName: com.googleusercontent.apps
-            CFBundleURLSchemes:
-              - $(GOOGLE_REVERSED_CLIENT_ID)
+        # Google's iOS convention would register a URL scheme here (the
+        # client id with its dot-separated parts reversed), but
+        # ASWebAuthenticationSession claims that scheme itself and needs
+        # no Info.plist help — and XcodeGen has no way to omit this whole
+        # key only when GOOGLE_REVERSED_CLIENT_ID is unset. A
+        # CFBundleURLTypes entry with an empty CFBundleURLSchemes value
+        # (what an unset id would produce) is a malformed bundle that App
+        # Store validation rejects, so the entry is left out entirely
+        # rather than risk shipping it empty. Google sign-in already
+        # reports itself unsupported when its ids are unset (see
+        # docs/CMP.md), so nothing needs this registered.
 
     preBuildScripts:
       # Must run before "Compile Sources": the Swift here imports

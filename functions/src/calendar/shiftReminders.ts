@@ -43,7 +43,11 @@ export const sendShiftReminders = onSchedule("every 5 minutes", async () => {
       .map((t) => t.data().token)
       .filter((t): t is string => !!t);
 
-    const body = `Your shift "${event.title}" starts in 15 minutes.`;
+    // The event can fall anywhere in the 10-15 minute window (see
+    // above), so the reminder text reports the actual minutes remaining
+    // rather than a fixed number.
+    const minutesUntil = Math.round((new Date(event.start).getTime() - now) / 60000);
+    const body = `Your shift "${event.title}" starts in ${minutesUntil} minutes.`;
 
     if (tokens.length > 0) {
       await getMessaging().sendEachForMulticast({

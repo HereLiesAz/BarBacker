@@ -18,6 +18,7 @@ import coil3.compose.rememberAsyncImagePainter
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
+import coil3.svg.SvgDecoder
 import com.hereliesaz.barbacker.ui.theme.BarBackerColors
 import io.ktor.client.HttpClient
 
@@ -34,7 +35,10 @@ import io.ktor.client.HttpClient
 fun InstallImageLoader(httpClient: HttpClient) {
     setSingletonImageLoaderFactory { context: PlatformContext ->
         ImageLoader.Builder(context)
-            .components { add(KtorNetworkFetcherFactory(httpClient = { httpClient })) }
+            .components {
+                add(KtorNetworkFetcherFactory(httpClient = { httpClient }))
+                add(SvgDecoder.Factory())
+            }
             .crossfade(true)
             .build()
     }

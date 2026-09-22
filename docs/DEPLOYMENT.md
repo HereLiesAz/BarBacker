@@ -2,34 +2,51 @@
 
 ## CI Overview
 
-Every workflow lives in `.github/workflows/`; details of the notable
-ones are in their own sections below. Quick reference:
+Workflows local to this repo live in `.github/workflows/`. Several
+others — `rules-tests.yml`, `deploy.yml`, `codeql.yml`, `clear-cache.yml`,
+`cmp-build.yml`, `jules-glee.yml` — are **not** present as files here at
+all: they're centrally managed by the `HereLiesAz/workflows` catalog
+repo, which dispatches them against this repo's pushes/PRs and posts
+their results back as commit statuses (context names match the path
+the file would have, e.g. `.github/workflows/rules-tests.yml`, but the
+run itself happens in the catalog repo — see its
+`https://github.com/HereLiesAz/workflows/actions` for logs). This
+replaced an earlier "binding proxy" stub-file approach (see git log for
+"Bind ... to shared catalog" / "Centralize workflow bindings"): don't
+re-add local copies of these paths — a local file at one of these
+paths conflicts with the catalog's own dispatch/validation rather than
+adding coverage, since the catalog already provides it.
+
+Local-only workflows, still committed in this repo:
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `rules-tests.yml` | push/PR to `main` | Firestore + Storage security-rules test suite (Firebase emulator) and Cloud Functions build+tests — this is the PR-side build/test signal for the whole repo. |
 | `build-mobile.yml` | push to `main`, `workflow_dispatch` | Builds and publishes the Android release APK (see "Android Deployment" below). Not run on PRs. |
-| `deploy.yml` | push to `main` | Builds and publishes the web app to GitHub Pages. |
-| `codeql.yml` | push/PR to `main`, weekly schedule | Static analysis (CodeQL) — `javascript-typescript` and `actions` (the workflow files themselves). Advanced setup, not GitHub's managed Default setup, specifically so triggers/concurrency are editable here. `java-kotlin`/`swift` are deliberately excluded: both are Capacitor's generated wrapper boilerplate with no real app logic, and CodeQL's `autobuild` can't build either without first running `npx cap sync`, which this workflow doesn't do. |
 | `nag.yml` | every 5 minutes | Runs `scripts/nag-bot.js` — re-notifies anyone who hasn't dismissed a matching pending request. |
 | `deduplicate.yml` | daily | Runs `scripts/deduplicate.js`. |
 | `enrich-bars.yml` | every 6 hours | Runs `scripts/enrich-bars.js`. |
-| `clear-cache.yml` | `workflow_dispatch` | Manual cache-clearing utility. |
 | `jules-issue-handler.yml` / `jules-branch-handler.yml` | issue opened / comment created | Hands work to the Jules autonomous coding agent. Gated to owner/member/collaborator-authored issues and comments (`author_association`) so an attacker-authored issue/comment can't trigger it. |
 
-`build-mobile.yml` and `codeql.yml` both apply a `concurrency` group
-(keyed on `head_ref || ref`, `cancel-in-progress: true`) so a rapid
-second push supersedes an in-flight run for the same ref instead of
-both running to completion — worth knowing if you're watching the
-Actions tab and see more runs than expected. `rules-tests.yml` has no
-such group as of this writing; a burst of pushes will run each to
-completion independently.
+Centrally-managed (no local file — see above), by last-known behavior:
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `rules-tests.yml` | push/PR to `main` | Firestore + Storage security-rules test suite (Firebase emulator) and Cloud Functions build+tests — the PR-side build/test signal for the whole repo. |
+| `deploy.yml` | push to `main` | Builds and publishes the web app to GitHub Pages. |
+| `codeql.yml` | push/PR to `main`, weekly schedule | Static analysis (CodeQL) — `javascript-typescript` and `actions`. `java-kotlin`/`swift` are excluded: both are Capacitor's generated wrapper boilerplate, and CodeQL's `autobuild` can't build either without first running `npx cap sync`. |
+| `clear-cache.yml` | `workflow_dispatch` | Manual cache-clearing utility. |
+
+`build-mobile.yml` applies a `concurrency` group (keyed on
+`head_ref || ref`, `cancel-in-progress: true`) so a rapid second push
+supersedes an in-flight run for the same ref instead of both running
+to completion — worth knowing if you're watching the Actions tab and
+see more runs than expected.
 
 ## Web Deployment (GitHub Pages)
 
 The web application is hosted on GitHub Pages, deployed automatically
-by `.github/workflows/deploy.yml` on every push to `main` (via
-`peaceiris/actions-gh-pages`). The `npm run deploy` command below is
+by the centrally-managed `deploy.yml` (see "CI Overview" above) on
+every push to `main`. The `npm run deploy` command below is
 the same thing run by hand — use it only for an out-of-band deploy,
 not as the normal path, and only with every `VITE_FIREBASE_*` env var
 set locally first (see "Required environment variables" below):

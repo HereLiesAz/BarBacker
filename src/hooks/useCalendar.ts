@@ -100,6 +100,20 @@ export function useCalendar({ barId, isManagerPlus }: UseCalendarArgs) {
 
   const addICalSubscription = useCallback(async (url: string, uid: string) => {
     if (!barId) return;
+    // The Cloud Function poller (functions/src/calendar/icalPoll.ts)
+    // rejects non-http(s) schemes and disallowed addresses server-side
+    // — this is a client-side reject-early check, not the security
+    // boundary, so a malformed or unreachable scheme fails fast here
+    // instead of surfacing only on the next poll's lastError.
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error('Enter a valid http(s) URL.');
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Only http(s) URLs are supported.');
+    }
     await addDoc(collection(db, `bars/${barId}/icalSubscriptions`), {
       url, createdBy: uid, createdAt: serverTimestamp(),
     });

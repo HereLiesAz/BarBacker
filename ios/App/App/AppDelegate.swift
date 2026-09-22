@@ -46,4 +46,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+    // @capacitor/push-notifications' JS-side `register()`/`registration`/
+    // `registrationError` events resolve via these two callbacks being
+    // forwarded to Capacitor's proxy — without them, APNs registration
+    // still happens but the plugin never learns the outcome, so
+    // usePushNotifications.ts's fcmToken stays null forever with no
+    // error either.
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
+
 }

@@ -114,11 +114,18 @@ const BarSearch = ({ onJoin }: BarSearchProps) => {
 
           // 2. Firestore Search (Prefix match)
           // Uses 'startAt' and 'endAt' to emulate SQL 'LIKE query%'.
+          // Queried against the lowercased `nameLower` field (not the
+          // display-cased `name`) so typing in lowercase \u2014 the normal
+          // way to type on a phone \u2014 actually matches: UTF-16 code
+          // point ordering puts 't' after 'T', so an un-lowercased
+          // query for "the" would sort past "The Anchor Inn" and never
+          // match it.
+          const normalizedQuery = queryText.trim().toLowerCase();
           const fbQuery = query(
              collection(db, 'bars'),
-             orderBy('name'),
-             startAt(queryText),
-             endAt(queryText + '\uf8ff'),
+             orderBy('nameLower'),
+             startAt(normalizedQuery),
+             endAt(normalizedQuery + '\uf8ff'),
              limit(5)
           );
           const fbPromise = getDocs(fbQuery)

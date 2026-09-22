@@ -6,6 +6,7 @@ import { SquarePOSClient } from "./square";
 import { ToastPOSClient } from "./toast";
 import { encryptSecret } from "../shared/kms";
 import { requireManagerPlus } from "../shared/authz";
+import { isPOSProvider } from "./types";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -130,6 +131,7 @@ export const posConnectToast = onCall(async (request) => {
 export const posDisconnect = onCall(async (request) => {
   const { barId, provider } = (request.data ?? {}) as { barId?: string; provider?: string };
   if (!barId || !provider) throw new HttpsError("invalid-argument", "barId and provider are required.");
+  if (!isPOSProvider(provider)) throw new HttpsError("invalid-argument", "Unknown provider.");
   requireManagerPlus(request.auth, barId);
 
   const db = getFirestore();

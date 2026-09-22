@@ -180,10 +180,18 @@ class FirebaseMembershipRepository(
         if (barId == null) return@flow
         emitAll(
             firestore.collection(Paths.barMembers(barId))
-                // Off-clock and rejected members are excluded by the query
-                // rather than filtered client-side, so their details never
-                // reach a device that should not display them.
-                .where { Fields.STATUS inArray listOf(MemberStatus.Active.wire, MemberStatus.Pending.wire) }
+                // Rejected members are excluded by the query rather than
+                // filtered client-side, so their details never reach a
+                // device that should not display them. Off-clock members
+                // are included here — the UI filters them into their own
+                // roster section (see AppUiState.offClockMembers).
+                .where {
+                    Fields.STATUS inArray listOf(
+                        MemberStatus.Active.wire,
+                        MemberStatus.Pending.wire,
+                        MemberStatus.OffClock.wire,
+                    )
+                }
                 .snapshots
                 .map { snapshot -> snapshot.documents.mapNotNull { it.toBarUser() } },
         )

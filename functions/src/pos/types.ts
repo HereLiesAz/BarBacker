@@ -8,6 +8,14 @@ export type POSProvider =
   | "clover" | "lightspeed" | "spoton" | "touchbistro"
   | "revel" | "lavu" | "talech" | "aloha";
 
+export const ALL_POS_PROVIDERS: POSProvider[] = [
+  "square", "toast", "clover", "lightspeed", "spoton", "touchbistro", "revel", "lavu", "talech", "aloha",
+];
+
+export function isPOSProvider(value: unknown): value is POSProvider {
+  return typeof value === "string" && (ALL_POS_PROVIDERS as string[]).includes(value);
+}
+
 // Square and Toast are the only real implementations; the rest are
 // scaffolding files conforming to this interface, kept for future
 // implementations rather than deleted (see the "Adapter inventory"

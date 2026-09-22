@@ -29,7 +29,7 @@ This document provides guidelines for AI agents working on the BarBacker codebas
 
 *   **Client**: Vitest + React Testing Library (`npm test`). All new features must have accompanying tests.
 *   **Cloud Functions**: Vitest, run from `functions/` (`cd functions && npm test`). Prefer testing pure exported helpers over the trigger wiring itself — mocking the Admin SDK/Firebase Functions SDK for a full trigger is usually not worth it; the pattern used throughout `functions/src/__tests__/` is to extract the interesting logic into a small exported function and test that directly.
-*   **Firestore/Storage security rules**: `npm run test:rules` (spins up the Firebase emulator, requires `firebase-tools`; also runs in CI via `rules-tests.yml`). Every rules change should come with both a positive test (the intended write still succeeds) and a negative one (the specific thing being closed off is actually rejected) — see `src/test/rules/` for the existing convention, especially `privilegeEscalation.test.ts` for the style of "one test per closed exploit."
+*   **Firestore/Storage security rules**: `npm run test:rules` (spins up the Firebase emulator, requires `firebase-tools`; also runs in CI via the centrally-managed `rules-tests.yml` — see "CI Overview" in [DEPLOYMENT.md](docs/DEPLOYMENT.md), it's not a file in this repo). Every rules change should come with both a positive test (the intended write still succeeds) and a negative one (the specific thing being closed off is actually rejected) — see `src/test/rules/` for the existing convention, especially `privilegeEscalation.test.ts` for the style of "one test per closed exploit."
 
 ## Firebase
 

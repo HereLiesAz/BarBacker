@@ -10,7 +10,7 @@ The `scripts/` directory contains plain Node.js scripts used for build automatio
 ## `generate-google-services.js`
 *   **Purpose**: Generates the `google-services.json` file required by the Android build.
 *   **Why**: We do not commit `google-services.json` to git for security.
-*   **How**: It reads individual fields from environment variables (e.g., `VITE_FIREBASE_PROJECT_ID`) and constructs the JSON file at `android/app/google-services.json`.
+*   **How**: Preferred path — if the `GOOGLE_SERVICES` secret is set, it holds the entire `google-services.json` file as downloaded from the Firebase console; the script parses it, validates the package name and Android app ID, and writes it out verbatim. Fallback path — if `GOOGLE_SERVICES` is unset, it reads individual fields from environment variables (e.g., `VITE_FIREBASE_PROJECT_ID`) and constructs the JSON file at `android/app/google-services.json`. Both paths write to the same location.
 *   **`FIREBASE_ANDROID_APP_ID`, not `VITE_FIREBASE_APP_ID`**: `mobilesdk_app_id` must be the Firebase app ID of the *Android* app (`1:<project number>:android:<hash>`). `VITE_FIREBASE_APP_ID` is the *web* app — a different app in the same project (`...:web:...`) — and using it is invisible everywhere except at the FCM backend, which rejects token requests for an app ID not bound to the requesting package. The script validates the platform segment and that the project number matches `VITE_FIREBASE_MESSAGING_SENDER_ID`, and refuses to write the file otherwise. `FIREBASE_ANDROID_API_KEY` optionally overrides `VITE_FIREBASE_API_KEY` for the same reason (browser keys are often HTTP-referrer restricted).
 *   **Fails loudly**: every missing/invalid variable is reported at once and the script exits 1 without writing anything. A partial or absent `google-services.json` produces an APK with no Firebase configuration, which crashes natively (`Default FirebaseApp is not initialized in this process`) the first time push notifications are registered — `android/app/build.gradle` enforces the same rule from the Gradle side. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
@@ -27,7 +27,8 @@ The `scripts/` directory contains plain Node.js scripts used for build automatio
 *   **Runs**: Scheduled every 5 minutes via `.github/workflows/nag.yml`, using `FIREBASE_SERVICE_ACCOUNT`. Also runnable manually or locally — this is the primary reliability net for missed pushes, not an optional/experimental feature.
 
 ## `debug-test.cjs`
-*   **Purpose**: A CommonJS script for testing the debugging utilities in a standalone node environment.
+*   **Purpose**: A local self-diagnostic — not a test of `src/utils/debug.ts`, despite the name. Checks that required `VITE_FIREBASE_*` env vars and `node_modules` are present, runs `npx tsc --noEmit`, and heuristically scans `src/**/*.{ts,tsx}` for conditional-hook patterns.
+*   **Not wired up**: not referenced by any `package.json` script or CI workflow — run it manually (`node scripts/debug-test.cjs`) if you want it.
 
 ## `set-admin-claim.js`
 *   **Purpose**: Grants or revokes the `admin: true` Firebase custom claim on a user — this is the ONLY way to create an admin. `firestore.rules` and `storage.rules` both gate moderation/bypass behavior on this claim (`isAdmin()`); a fresh Firebase project has zero admins until this script is run once against it.

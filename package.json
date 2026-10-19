@@ -50,7 +50,7 @@
     "autoprefixer": "^10.4.23",
     "dotenv": "^17.2.3",
     "firebase-admin": "^13.10.0",
-    "firebase-tools": "^15.22.4",
+    "firebase-tools": "^15.34.0",
     "gh-pages": "^6.3.0",
     "jsdom": "^27.4.0",
     "playwright": "^1.57.0",
